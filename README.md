@@ -88,7 +88,7 @@ project ([documentation](https://akhundmurad.github.io/diator/)) with several en
 
 ## Installation
 
-**Python 3.9+** is required. CI runs on Python **3.9-3.14** and also tracks **3.15-dev** compatibility.
+**Python 3.9+** is required. CI runs on Python **3.9-3.14**.
 
 ```bash
 pip install python-cqrs

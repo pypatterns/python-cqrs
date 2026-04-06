@@ -17,8 +17,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Programming Language :: Python :: 3.15"
+  "Programming Language :: Python :: 3.14"
 ]
 dependencies = [
   "dataclass-wizard==0.*",
@@ -34,7 +33,7 @@ description = "Event-Driven Architecture Framework for Distributed Systems"
 maintainers = [{name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru"}]
 name = "python-cqrs"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9,<3.15"
 version = "4.10.1"
 
 [project.optional-dependencies]
