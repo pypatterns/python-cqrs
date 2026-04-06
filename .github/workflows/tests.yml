@@ -43,6 +43,9 @@ jobs:
 
     - name: Install dependencies
       run: |
+        if [ "${{ matrix.python-version }}" = "3.15-dev" ]; then
+          export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+        fi
         python -m pip install --upgrade pip
         pip install -e ".[dev,examples]"
 
@@ -114,6 +117,9 @@ jobs:
 
     - name: Install dependencies
       run: |
+        if [ "${{ matrix.python-version }}" = "3.15-dev" ]; then
+          export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+        fi
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
 
