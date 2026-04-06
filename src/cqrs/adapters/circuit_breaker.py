@@ -105,7 +105,7 @@ def default_memory_storage_factory(name: str) -> _CircuitBreakerStorage:
     return CircuitMemoryStorage(state=aiobreaker.CircuitBreakerState.CLOSED)
 
 
-def _identifier_to_name(identifier: type | str) -> str:
+def _identifier_to_name(identifier: typing.Union[type, str]) -> str:
     """Build circuit breaker namespace from type or string."""
     if isinstance(identifier, str):
         return identifier
@@ -142,8 +142,8 @@ class AioBreakerAdapter(ICircuitBreaker, ISagaStepCircuitBreaker):
         self,
         fail_max: int = 5,
         timeout_duration: int = 60,
-        exclude: list[type[Exception]] | None = None,
-        storage_factory: StorageFactory | None = None,
+        exclude: typing.Optional[list[type[Exception]]] = None,
+        storage_factory: typing.Optional[StorageFactory] = None,
     ) -> None:
         if CircuitBreaker is None:
             raise ImportError(
@@ -158,7 +158,7 @@ class AioBreakerAdapter(ICircuitBreaker, ISagaStepCircuitBreaker):
         # Dictionary to store circuit breakers per identifier (type or str)
         self._breakers: dict[str, typing.Any] = {}  # type: ignore[type-arg]
 
-    def _get_breaker(self, identifier: type | str) -> typing.Any:  # type: ignore[return-type]
+    def _get_breaker(self, identifier: typing.Union[type, str]) -> typing.Any:  # type: ignore[return-type]
         """
         Get or create circuit breaker for an identifier (type or string).
 
@@ -208,7 +208,7 @@ class AioBreakerAdapter(ICircuitBreaker, ISagaStepCircuitBreaker):
 
     async def call(
         self,
-        identifier: type | str,
+        identifier: typing.Union[type, str],
         func: typing.Callable[..., typing.Awaitable[typing.Any]],
         *args: typing.Any,
         **kwargs: typing.Any,

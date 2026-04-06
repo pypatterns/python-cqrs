@@ -5,8 +5,8 @@ from cqrs.events import event_handler
 from cqrs.events.fallback import EventHandlerFallback
 
 _KT = typing.TypeVar("_KT", bound=typing.Type[IEvent])
-_HandlerItem = typing.Type[event_handler.EventHandler] | EventHandlerFallback
-_VT: typing.TypeAlias = typing.List[_HandlerItem]
+_HandlerItem = typing.Union[typing.Type[event_handler.EventHandler], EventHandlerFallback]
+_VT = typing.List[_HandlerItem]
 
 
 class EventMap(typing.Dict[_KT, _VT]):

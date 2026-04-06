@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import typing
 
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -35,13 +36,13 @@ class SqlAlchemySagaStorageLegacy(SqlAlchemySagaStorage):
 
 
 @pytest.fixture(scope="session")
-def database_dsn() -> str | None:
+def database_dsn() -> typing.Optional[str]:
     """DATABASE_DSN from environment (set in CI by pytest-config.ini)."""
     return os.environ.get("DATABASE_DSN") or None
 
 
 @pytest.fixture(scope="session")
-def saga_benchmark_loop_and_engine(database_dsn: str | None):
+def saga_benchmark_loop_and_engine(database_dsn: typing.Optional[str]):
     """
     One event loop and one async engine for the whole benchmark session.
     Used by saga SQLAlchemy benchmarks so connection setup/teardown is not measured.

@@ -19,11 +19,11 @@ class SagaCompensator(typing.Generic[ContextT]):
         self,
         saga_id: typing.Any,
         context: ContextT,
-        storage: ISagaStorage | SagaStorageRun,
+        storage: typing.Union[ISagaStorage, SagaStorageRun],
         retry_count: int = 3,
         retry_delay: float = 1.0,
         retry_backoff: float = 2.0,
-        on_after_compensate_step: typing.Callable[[], typing.Awaitable[None]] | None = None,
+        on_after_compensate_step: typing.Optional[typing.Callable[[], typing.Awaitable[None]]] = None,
     ) -> None:
         """
         Create a SagaCompensator configured to perform compensation of completed saga steps with retry and optional post-step callback.
@@ -159,7 +159,7 @@ class SagaCompensator(typing.Generic[ContextT]):
         """
         step_name = step.__class__.__name__
 
-        last_exception: Exception | None = None
+        last_exception: typing.Optional[Exception] = None
         for attempt in range(1, self._retry_count + 1):
             try:
                 await step.compensate(self._context)

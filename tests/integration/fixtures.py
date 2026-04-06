@@ -1,4 +1,3 @@
-import contextlib
 import functools
 import os
 
@@ -39,9 +38,11 @@ async def session(init_orm):
         DATABASE_DSN,
         isolation_level="REPEATABLE READ",
     )
-    session = async_sessionmaker(engine_factory())()
-    async with contextlib.aclosing(session):
-        yield session
+    db_session = async_sessionmaker(engine_factory())()
+    try:
+        yield db_session
+    finally:
+        await db_session.close()
 
 
 # --- Saga storage: MySQL (отдельные фикстуры, поднимают схему и всё необходимое) ---

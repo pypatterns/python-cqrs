@@ -82,7 +82,7 @@ class ProcessPaymentCommand(cqrs.Request):
 
 class PaymentResult(cqrs.Response):
     success: bool
-    transaction_id: str | None = None
+    transaction_id: typing.Optional[str] = None
     message: str = ""
 
 
@@ -101,7 +101,7 @@ class CreditCardHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult])
         super().__init__()
         self._events: typing.List[cqrs.Event] = []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "credit_card":
             transaction_id = f"cc_{request.user_id}_{int(request.amount * 100)}"
             TRANSACTIONS["credit_card"].append(transaction_id)
@@ -134,7 +134,7 @@ class PayPalHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
         super().__init__()
         self._events: typing.List[cqrs.Event] = []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "paypal":
             transaction_id = f"pp_{request.user_id}_{int(request.amount * 100)}"
             TRANSACTIONS["paypal"].append(transaction_id)
@@ -167,7 +167,7 @@ class BankTransferHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult
         super().__init__()
         self._events: typing.List[cqrs.Event] = []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "bank_transfer":
             transaction_id = f"bt_{request.user_id}_{int(request.amount * 100)}"
             TRANSACTIONS["bank_transfer"].append(transaction_id)
@@ -198,7 +198,7 @@ class DefaultPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResu
     def events(self) -> typing.List[cqrs.Event]:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         # Default handler always handles the request (end of chain)
         print(
             f"Default: Unsupported payment method '{request.payment_method}' for user {request.user_id}",

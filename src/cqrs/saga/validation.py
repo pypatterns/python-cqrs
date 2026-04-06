@@ -14,7 +14,7 @@ class SagaContextTypeExtractor:
     """Extracts context type from Generic type parameters."""
 
     @staticmethod
-    def extract_from_class(klass: type, saga_base_class: type) -> type | None:
+    def extract_from_class(klass: type, saga_base_class: type) -> typing.Optional[type]:
         """
         Extract context type from a class that inherits from a Generic base.
 
@@ -48,7 +48,7 @@ class SagaContextTypeExtractor:
         return None
 
     @staticmethod
-    def extract_from_step(step_type: type) -> type | None:
+    def extract_from_step(step_type: type) -> typing.Optional[type]:
         """
         Extract context type from a SagaStepHandler class.
 
@@ -162,7 +162,7 @@ class SagaStepValidator:
     def __init__(
         self,
         saga_name: str,
-        context_type: type | None = None,
+        context_type: typing.Optional[type] = None,
     ) -> None:
         """
         Initialize validator.
@@ -178,7 +178,7 @@ class SagaStepValidator:
 
     def validate_steps(
         self,
-        steps: list[type[SagaStepHandler] | Fallback],
+        steps: list[typing.Union[type[SagaStepHandler], Fallback]],
     ) -> None:
         """
         Validate saga steps.

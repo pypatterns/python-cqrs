@@ -1,4 +1,5 @@
 from uuid import UUID, uuid4
+import typing
 
 import pydantic
 import pytest
@@ -62,7 +63,7 @@ class TestContainer:
     async def resolve(
         self,
         type_,
-    ) -> CloseMeetingRoomCommandHandler | ReadMeetingDetailsQueryHandler:
+    ) -> typing.Union[CloseMeetingRoomCommandHandler, ReadMeetingDetailsQueryHandler]:
         if type_ is CloseMeetingRoomCommandHandler:
             return self.close_meeting_room_command_handler
         elif type_ is ReadMeetingDetailsQueryHandler:

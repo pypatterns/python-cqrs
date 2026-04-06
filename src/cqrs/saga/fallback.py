@@ -1,6 +1,7 @@
 """Fallback wrapper for Saga steps to handle failures gracefully."""
 
 import dataclasses
+import typing
 
 from cqrs.circuit_breaker import ICircuitBreaker
 from cqrs.saga.step import SagaStepHandler
@@ -32,4 +33,4 @@ class Fallback:
     step: type[SagaStepHandler]
     fallback: type[SagaStepHandler]
     failure_exceptions: tuple[type[Exception], ...] = ()
-    circuit_breaker: ICircuitBreaker | None = None
+    circuit_breaker: typing.Optional[ICircuitBreaker] = None

@@ -1,5 +1,4 @@
 import asyncio
-import functools
 import logging
 import ssl
 import typing
@@ -8,7 +7,6 @@ from cqrs.adapters import protocol
 from cqrs.serializers import default
 
 import aiokafka
-import retry_async
 from aiokafka import errors
 
 
@@ -17,23 +15,19 @@ __all__ = (
     "kafka_producer_factory",
 )
 
-_retry = functools.partial(
-    retry_async.retry,
-    exceptions=(
-        errors.KafkaConnectionError,
-        errors.NodeNotReadyError,
-        errors.RequestTimedOutError,
-    ),
-    is_async=True,
+_RETRYABLE_KAFKA_EXCEPTIONS = (
+    errors.KafkaConnectionError,
+    errors.NodeNotReadyError,
+    errors.RequestTimedOutError,
 )
 
-SecurityProtocol: typing.TypeAlias = typing.Literal[
+SecurityProtocol = typing.Literal[
     "PLAINTEXT",
     "SSL",
     "SASL_PLAINTEXT",
     "SASL_SSL",
 ]
-SaslMechanism: typing.TypeAlias = typing.Literal[
+SaslMechanism = typing.Literal[
     "PLAIN",
     "GSSAPI",
     "SCRAM-SHA-256",
@@ -44,7 +38,7 @@ SaslMechanism: typing.TypeAlias = typing.Literal[
 logger = logging.getLogger("cqrs")
 logger.setLevel(logging.DEBUG)
 
-Serializer = typing.Callable[[typing.Any], typing.ByteString | None]
+Serializer = typing.Callable[[typing.Any], typing.Optional[typing.ByteString]]
 
 
 class KafkaProducer(protocol.KafkaProducer):
@@ -73,26 +67,27 @@ class KafkaProducer(protocol.KafkaProducer):
         Produces event to kafka broker.
         Tries to reconnect if connect has been lost or has not been opened.
         """
-        await _retry(tries=self._retry_count, delay=self._retry_delay)(self._produce)(
-            topic,
-            message,
-        )
+        for attempt in range(1, self._retry_count + 1):
+            try:
+                await self._produce(topic, message)
+                return
+            except _RETRYABLE_KAFKA_EXCEPTIONS:
+                if attempt == self._retry_count:
+                    raise
+                await asyncio.sleep(self._retry_delay)
 
 
 def kafka_producer_factory(
     dsn: typing.Text,
     security_protocol: SecurityProtocol = "PLAINTEXT",
     sasl_mechanism: SaslMechanism = "PLAIN",
-    ssl_context: ssl.SSLContext | None = None,
+    ssl_context: typing.Optional[ssl.SSLContext] = None,
     retry_count: int = 3,
     retry_delay: int = 1,
-    user: typing.Text | None = None,
-    password: typing.Text | None = None,
-    value_serializer: Serializer | None = None,
+    user: typing.Optional[typing.Text] = None,
+    password: typing.Optional[typing.Text] = None,
+    value_serializer: typing.Optional[Serializer] = None,
 ) -> KafkaProducer:
-    loop = asyncio.get_event_loop()
-    asyncio.set_event_loop(loop)
-
     producer = aiokafka.AIOKafkaProducer(
         bootstrap_servers=dsn,
         value_serializer=value_serializer or default.default_serializer,
@@ -101,7 +96,6 @@ def kafka_producer_factory(
         sasl_plain_username=user,
         sasl_plain_password=password,
         ssl_context=ssl_context,
-        loop=loop,
     )
     return KafkaProducer(
         producer=producer,

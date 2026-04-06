@@ -42,7 +42,7 @@ class ReserveInventoryStep(SagaStepHandler[OrderContext, ReserveInventoryRespons
         self._events: list[Event] = []
         self.act_called = False
         self.compensate_called = False
-        self._inventory_id: str | None = None
+        self._inventory_id: typing.Optional[str] = None
 
     @property
     def events(self) -> list[Event]:
@@ -70,7 +70,7 @@ class ProcessPaymentStep(SagaStepHandler[OrderContext, ProcessPaymentResponse]):
         self._events: list[Event] = []
         self.act_called = False
         self.compensate_called = False
-        self._payment_id: str | None = None
+        self._payment_id: typing.Optional[str] = None
 
     @property
     def events(self) -> list[Event]:
@@ -95,7 +95,7 @@ class ShipOrderStep(SagaStepHandler[OrderContext, ShipOrderResponse]):
         self._events: list[Event] = []
         self.act_called = False
         self.compensate_called = False
-        self._shipment_id: str | None = None
+        self._shipment_id: typing.Optional[str] = None
 
     @property
     def events(self) -> list[Event]:

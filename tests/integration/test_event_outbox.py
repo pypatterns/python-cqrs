@@ -128,7 +128,7 @@ class TestOutbox:
         await OutboxRequestHandler(repository).handle(request)
         [event_over_get_all_events_method] = await repository.get_many(1)
 
-        event: outbox_repository.OutboxedEvent | None = next(
+        event: typing.Optional[outbox_repository.OutboxedEvent] = next(
             iter(
                 await repository.get_many(
                     batch_size=1,

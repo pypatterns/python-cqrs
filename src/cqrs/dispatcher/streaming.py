@@ -34,7 +34,7 @@ class StreamingRequestDispatcher:
         self,
         request_map: RequestMap,
         container: Container,
-        middleware_chain: MiddlewareChain | None = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
     ) -> None:
         self._request_map = request_map
         self._container = container

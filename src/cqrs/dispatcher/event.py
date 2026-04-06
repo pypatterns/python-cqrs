@@ -8,7 +8,7 @@ from cqrs.events.fallback import EventHandlerFallback
 from cqrs.events.map import EventMap
 from cqrs.middlewares.base import MiddlewareChain
 
-_EventHandler: typing.TypeAlias = EventHandler
+_EventHandler = EventHandler
 
 logger = logging.getLogger("cqrs")
 
@@ -18,7 +18,7 @@ class EventDispatcher:
         self,
         event_map: EventMap,
         container: Container,
-        middleware_chain: MiddlewareChain | None = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
     ) -> None:
         self._event_map = event_map
         self._container = container

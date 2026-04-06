@@ -127,9 +127,9 @@ class OrderContext(SagaContext):
     shipping_address: str
 
     # These fields are populated by steps during execution
-    inventory_reservation_id: str | None = None
-    payment_id: str | None = None
-    shipment_id: str | None = None
+    inventory_reservation_id: typing.Optional[str] = None
+    payment_id: typing.Optional[str] = None
+    shipment_id: typing.Optional[str] = None
 
 
 # ============================================================================

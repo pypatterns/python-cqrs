@@ -80,7 +80,10 @@ class JsonDeserializer(typing.Generic[_T]):
         # Store model - type is preserved through generic parameter _T for return type
         self._model: typing.Type[typing.Any] = model
 
-    def __call__(self, data: str | bytes | None) -> _T | None | DeserializeJsonError:
+    def __call__(
+        self,
+        data: typing.Union[str, typing.Optional[bytes]],
+    ) -> typing.Union[typing.Optional[_T], DeserializeJsonError]:
         """
         Deserialize JSON data into model instance.
 

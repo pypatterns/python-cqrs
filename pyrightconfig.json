@@ -8,18 +8,18 @@
   "defineConstant": {
     "DEBUG": true
   },
-  "pythonVersion": "3.10",
+  "pythonVersion": "3.9",
   "pythonPlatform": "Linux",
   "executionEnvironments": [
     {
       "root": "./",
-      "pythonVersion": "3.10",
+      "pythonVersion": "3.9",
       "pythonPlatform": "Linux",
       "reportMissingImports": "error"
     },
     {
       "root": "./examples",
-      "pythonVersion": "3.10",
+      "pythonVersion": "3.9",
       "pythonPlatform": "Linux",
       "reportMissingImports": "warning"
     }

@@ -81,7 +81,7 @@ class PaymentResult(cqrs.Response):
     """Payment processing result."""
 
     success: bool
-    transaction_id: str | None = None
+    transaction_id: typing.Optional[str] = None
     message: str = ""
 
 
@@ -109,7 +109,7 @@ class CreditCardHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult])
     def events(self) -> typing.List[Event]:
         return self._events.copy()
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         """Process credit card payment."""
         if request.payment_method == "credit_card":
             transaction_id = f"cc_{request.user_id}_{int(request.amount * 100)}"
@@ -143,7 +143,7 @@ class PayPalHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
     def events(self) -> typing.List[Event]:
         return self._events.copy()
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         """Process PayPal payment."""
         if request.payment_method == "paypal":
             transaction_id = f"pp_{request.user_id}_{int(request.amount * 100)}"
@@ -177,7 +177,7 @@ class BankTransferHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult
     def events(self) -> typing.List[Event]:
         return self._events.copy()
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         """Process bank transfer payment."""
         if request.payment_method == "bank_transfer":
             transaction_id = f"bt_{request.user_id}_{int(request.amount * 100)}"
@@ -207,7 +207,7 @@ class DefaultPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResu
     def events(self) -> typing.List[Event]:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         """Handle unsupported payment methods."""
         return PaymentResult(
             success=False,

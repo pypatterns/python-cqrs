@@ -18,7 +18,7 @@ class SagaLogEntry:
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
         timestamp: datetime.datetime,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         self.saga_id = saga_id
         self.step_name = step_name

@@ -18,7 +18,7 @@ class TResult(cqrs.Response):
     message: str = ""
 
 
-class TestHandlerA(CORRequestHandler[TRequest, TResult | None]):
+class TestHandlerA(CORRequestHandler[TRequest, TResult]):
     """Test handler that processes method_a and tracks calls."""
 
     call_count: int = 0
@@ -27,7 +27,7 @@ class TestHandlerA(CORRequestHandler[TRequest, TResult | None]):
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         TestHandlerA.call_count += 1
 
         if request.method == "method_a":
@@ -40,7 +40,7 @@ class TestHandlerA(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class TestHandlerB(CORRequestHandler[TRequest, TResult | None]):
+class TestHandlerB(CORRequestHandler[TRequest, TResult]):
     """Test handler that processes method_b and tracks calls."""
 
     call_count: int = 0
@@ -49,7 +49,7 @@ class TestHandlerB(CORRequestHandler[TRequest, TResult | None]):
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         TestHandlerB.call_count += 1
 
         if request.method == "method_b":
@@ -62,7 +62,7 @@ class TestHandlerB(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class TestHandlerC(CORRequestHandler[TRequest, TResult | None]):
+class TestHandlerC(CORRequestHandler[TRequest, TResult]):
     """Test handler that processes method_c and tracks calls."""
 
     call_count: int = 0
@@ -71,7 +71,7 @@ class TestHandlerC(CORRequestHandler[TRequest, TResult | None]):
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         TestHandlerC.call_count += 1
 
         if request.method == "method_c":
@@ -84,7 +84,7 @@ class TestHandlerC(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class DefaultTestHandler(CORRequestHandler[TRequest, TResult | None]):
+class DefaultTestHandler(CORRequestHandler[TRequest, TResult]):
     """Default handler that always handles the request (end of chain)."""
 
     call_count: int = 0
@@ -93,7 +93,7 @@ class DefaultTestHandler(CORRequestHandler[TRequest, TResult | None]):
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         DefaultTestHandler.call_count += 1
         return TResult(
             success=False,

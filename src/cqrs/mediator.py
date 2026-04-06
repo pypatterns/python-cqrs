@@ -61,9 +61,9 @@ class RequestMediator:
         self,
         request_map: RequestMap,
         container: Container,
-        event_emitter: EventEmitter | None = None,
-        middleware_chain: MiddlewareChain | None = None,
-        event_map: EventMap | None = None,
+        event_emitter: typing.Optional[EventEmitter] = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
+        event_map: typing.Optional[EventMap] = None,
         max_concurrent_event_handlers: int = 1,
         concurrent_event_handle_enable: bool = True,
         *,
@@ -116,7 +116,7 @@ class EventMediator:
         self,
         event_map: EventMap,
         container: Container,
-        middleware_chain: MiddlewareChain | None = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
         *,
         dispatcher_type: typing.Type[EventDispatcher] = EventDispatcher,
     ):
@@ -166,9 +166,9 @@ class StreamingRequestMediator:
         self,
         request_map: RequestMap,
         container: Container,
-        event_emitter: EventEmitter | None = None,
-        middleware_chain: MiddlewareChain | None = None,
-        event_map: EventMap | None = None,
+        event_emitter: typing.Optional[EventEmitter] = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
+        event_map: typing.Optional[EventMap] = None,
         max_concurrent_event_handlers: int = 1,
         concurrent_event_handle_enable: bool = True,
         *,
@@ -189,7 +189,7 @@ class StreamingRequestMediator:
     def stream(
         self,
         request: IRequest,
-    ) -> typing.AsyncIterator[IResponse | None]:
+    ) -> typing.AsyncIterator[IResponse]:
         """
         Stream results from a generator-based handler.
 
@@ -207,7 +207,7 @@ class StreamingRequestMediator:
     async def _stream_impl(
         self,
         request: IRequest,
-    ) -> typing.AsyncIterator[IResponse | None]:
+    ) -> typing.AsyncIterator[IResponse]:
         async for dispatch_result in self._dispatcher.dispatch(request):
             await self._event_processor.emit_events(dispatch_result.events)
 
@@ -251,12 +251,12 @@ class SagaMediator:
         self,
         saga_map: SagaMap,
         container: Container,
-        event_emitter: EventEmitter | None = None,
-        middleware_chain: MiddlewareChain | None = None,
-        event_map: EventMap | None = None,
+        event_emitter: typing.Optional[EventEmitter] = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
+        event_map: typing.Optional[EventMap] = None,
         max_concurrent_event_handlers: int = 1,
         concurrent_event_handle_enable: bool = True,
-        storage: ISagaStorage | None = None,
+        storage: typing.Optional[ISagaStorage] = None,
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
@@ -282,7 +282,7 @@ class SagaMediator:
     def stream(
         self,
         context: SagaContext,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
     ) -> typing.AsyncIterator[SagaStepResult]:
         """
         Stream results from saga execution.
@@ -309,7 +309,7 @@ class SagaMediator:
     async def _stream_impl(
         self,
         context: SagaContext,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
     ) -> typing.AsyncIterator[SagaStepResult]:
         async for dispatch_result in self._dispatcher.dispatch(
             context,

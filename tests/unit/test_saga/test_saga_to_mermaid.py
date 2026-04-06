@@ -22,7 +22,7 @@ def test_to_mermaid_empty_steps(saga_container: SagaContainer) -> None:
     """Test that Mermaid handles empty steps list correctly."""
 
     class EmptySaga(Saga[OrderContext]):
-        steps: typing.ClassVar[list[type[SagaStepHandler] | Fallback]] = []
+        steps: typing.ClassVar[list[typing.Union[type[SagaStepHandler], Fallback]]] = []
 
     saga = EmptySaga()
     generator = SagaMermaid(saga)
@@ -239,7 +239,7 @@ def test_class_diagram_empty_steps(saga_container: SagaContainer) -> None:
     """Test that class_diagram() handles empty steps list correctly."""
 
     class EmptySaga(Saga[OrderContext]):
-        steps: typing.ClassVar[list[type[SagaStepHandler] | Fallback]] = []
+        steps: typing.ClassVar[list[typing.Union[type[SagaStepHandler], Fallback]]] = []
 
     saga = EmptySaga()
     generator = SagaMermaid(saga)

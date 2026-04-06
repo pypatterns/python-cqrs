@@ -53,14 +53,14 @@ repos:
   hooks:
   - id: pytest-unit
     name: unit tests
-    entry: pytest -c ./tests/pytest-config.ini ./tests/unit
+    entry: env PYTHONPATH=src ./venv/bin/python -m pytest -c ./tests/pytest-config.ini ./tests/unit
     language: system
     types: [python]
     pass_filenames: false
     always_run: true
   - id: pytest-integration
     name: integration tests
-    entry: pytest -c ./tests/pytest-config.ini ./tests/integration
+    entry: env PYTHONPATH=src ./venv/bin/python -m pytest -c ./tests/pytest-config.ini ./tests/integration
     language: system
     types: [python]
     pass_filenames: false

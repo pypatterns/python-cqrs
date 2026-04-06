@@ -1,4 +1,5 @@
 import logging
+import typing
 
 from cqrs.middlewares import base
 from cqrs.middlewares.base import HandleType
@@ -9,7 +10,7 @@ logger = logging.getLogger("cqrs")
 
 
 class LoggingMiddleware(base.Middleware):
-    async def __call__(self, request: IRequest, handle: HandleType) -> IResponse | None:
+    async def __call__(self, request: IRequest, handle: HandleType) -> typing.Optional[IResponse]:
         logger.debug(
             "Handle %s request",
             type(request).__name__,

@@ -10,7 +10,7 @@ from cqrs.events.fallback import EventHandlerFallback
 
 logger = logging.getLogger("cqrs")
 
-_H: typing.TypeAlias = event_handler.EventHandler
+_H = event_handler.EventHandler
 
 
 class EventEmitter:
@@ -28,7 +28,7 @@ class EventEmitter:
         self,
         event_map: map.EventMap,
         container: di_container.Container,
-        message_broker: message_brokers.MessageBroker | None = None,
+        message_broker: typing.Optional[message_brokers.MessageBroker] = None,
     ) -> None:
         """
         Initialize the event emitter.

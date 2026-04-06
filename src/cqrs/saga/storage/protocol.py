@@ -33,7 +33,7 @@ class SagaStorageRun(typing.Protocol):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         """
         Persist a snapshot of the saga's execution context, optionally using optimistic locking.
@@ -41,7 +41,7 @@ class SagaStorageRun(typing.Protocol):
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga to update.
             context (dict[str, Any]): JSON-serializable context object to store as the new snapshot.
-            current_version (int | None): If provided, perform an optimistic-locking update that succeeds only
+            current_version (typing.Optional[int ]): If provided, perform an optimistic-locking update that succeeds only
                 if the stored version matches this value; on success the stored version is incremented.
 
         Raises:
@@ -70,7 +70,7 @@ class SagaStorageRun(typing.Protocol):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         """
         Append a step transition to the saga's execution log.
@@ -80,7 +80,7 @@ class SagaStorageRun(typing.Protocol):
             step_name (str): Logical name of the step (used for diagnostics and replay).
             action (Literal["act", "compensate"]): Whether this entry records the primary action ("act") or its compensating action ("compensate").
             status (SagaStepStatus): The step transition status to record (e.g., started, completed, failed, compensated).
-            details (str | None): Optional human-readable details or diagnostics about the transition.
+            details (typing.Optional[str ]): Optional human-readable details or diagnostics about the transition.
         """
 
     async def load_saga_state(
@@ -164,7 +164,7 @@ class ISagaStorage(abc.ABC):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         """Save saga context snapshot (e.g. after a step completes).
 
@@ -209,7 +209,7 @@ class ISagaStorage(abc.ABC):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         """Append a step transition to the saga log.
 
@@ -271,8 +271,8 @@ class ISagaStorage(abc.ABC):
         self,
         limit: int,
         max_recovery_attempts: int = 5,
-        stale_after_seconds: int | None = None,
-        saga_name: str | None = None,
+        stale_after_seconds: typing.Optional[int] = None,
+        saga_name: typing.Optional[str] = None,
     ) -> list[uuid.UUID]:
         """Return saga IDs that are candidates for recovery.
 
@@ -307,7 +307,7 @@ class ISagaStorage(abc.ABC):
     async def increment_recovery_attempts(
         self,
         saga_id: uuid.UUID,
-        new_status: SagaStatus | None = None,
+        new_status: typing.Optional[SagaStatus] = None,
     ) -> None:
         """Increment recovery attempt counter after a failed recovery run.
 

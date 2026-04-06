@@ -114,7 +114,7 @@ async def empty_message_decoder(
         [kafka.KafkaMessage],
         typing.Awaitable[types.DecodedMessage],
     ],
-) -> types.DecodedMessage | None:
+) -> typing.Optional[types.DecodedMessage]:
     """
     Decode a kafka message and return it if it is not empty.
     """
@@ -158,7 +158,7 @@ def mediator_factory() -> cqrs.EventMediator:
     decoder=empty_message_decoder,
 )
 async def hello_world_event_handler(
-    body: cqrs.NotificationEvent[HelloWorldPayload] | deserializers.DeserializeJsonError | None,
+    body: typing.Union[cqrs.NotificationEvent[HelloWorldPayload], typing.Optional[deserializers.DeserializeJsonError]],
     msg: kafka.KafkaMessage,
     mediator: cqrs.EventMediator = faststream.Depends(mediator_factory),
 ):

@@ -1,4 +1,5 @@
 from uuid import UUID, uuid4
+import typing
 
 import pydantic
 
@@ -13,12 +14,12 @@ from cqrs.response import Response
 
 class ReadMeetingDetailsQuery(Request):
     meeting_room_id: UUID = pydantic.Field()
-    status: str | None = pydantic.Field(default=None)
+    status: typing.Optional[str] = pydantic.Field(default=None)
 
 
 class ReadMeetingDetailsQueryResult(Response):
     meeting_room_id: UUID = pydantic.Field()
-    status: str | None = pydantic.Field(default=None)
+    status: typing.Optional[str] = pydantic.Field(default=None)
 
 
 class ReadMeetingDetailsQueryHandler(

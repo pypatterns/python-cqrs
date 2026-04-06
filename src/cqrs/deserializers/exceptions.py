@@ -15,4 +15,4 @@ class DeserializeJsonError:
 
     error_message: str
     error_type: typing.Type[Exception]
-    message_data: str | bytes | None
+    message_data: typing.Union[str, typing.Optional[bytes]]

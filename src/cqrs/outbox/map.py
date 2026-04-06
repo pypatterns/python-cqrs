@@ -20,5 +20,5 @@ class OutboxedEventMap:
     def get(
         cls,
         event_name: typing.Text,
-    ) -> typing.Type[INotificationEvent] | None:
+    ) -> typing.Optional[typing.Type[INotificationEvent]]:
         return cls._registry.get(event_name)

@@ -18,7 +18,7 @@ class ICircuitBreaker(typing.Protocol):
 
     async def call(
         self,
-        identifier: type | str,
+        identifier: typing.Union[type, str],
         func: typing.Callable[..., typing.Awaitable[typing.Any]],
         *args: typing.Any,
         **kwargs: typing.Any,
@@ -56,7 +56,7 @@ class ICircuitBreaker(typing.Protocol):
 
 def should_use_fallback(
     primary_error: Exception,
-    circuit_breaker: ICircuitBreaker | None,
+    circuit_breaker: typing.Optional[ICircuitBreaker],
     failure_exceptions: tuple[type[Exception], ...],
 ) -> bool:
     """

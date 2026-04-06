@@ -74,7 +74,7 @@ class SagaTransaction(typing.Generic[ContextT]):
         context: ContextT,
         container: Container,
         storage: ISagaStorage,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
@@ -84,7 +84,7 @@ class SagaTransaction(typing.Generic[ContextT]):
         self._container = container
         self._storage = storage
         self._completed_steps: list[SagaStepHandler[ContextT, typing.Any]] = []
-        self._error: BaseException | None = None
+        self._error: typing.Optional[BaseException] = None
         self._compensated: bool = False
         self._comp_retry_count = compensation_retry_count
         self._comp_retry_delay = compensation_retry_delay
@@ -140,9 +140,9 @@ class SagaTransaction(typing.Generic[ContextT]):
 
     async def __aexit__(
         self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: types.TracebackType | None,
+        exc_type: typing.Optional[type[BaseException]],
+        exc_val: typing.Optional[BaseException],
+        exc_tb: typing.Optional[types.TracebackType],
     ) -> bool:
         # If an exception occurred, compensate all completed steps.
         # Do not compensate on GeneratorExit: consumer stopped iteration intentionally
@@ -222,13 +222,13 @@ class SagaTransaction(typing.Generic[ContextT]):
 
     async def _execute(
         self,
-        run: SagaStorageRun | None,
+        run: typing.Optional[SagaStorageRun],
     ) -> typing.AsyncIterator[SagaStepResult[ContextT, typing.Any]]:
         """
         Execute the saga's configured steps, using the provided storage run for checkpointed operations when available, and perform recovery and compensation as required.
 
         Parameters:
-            run (SagaStorageRun | None): Optional per-saga storage run. When provided, the run is used for loading saga state, creating run-scoped managers/executors, and committing at checkpoint boundaries. When None, the transaction's internal managers and executors are used.
+            run (typing.Optional[SagaStorageRun ]): Optional per-saga storage run. When provided, the run is used for loading saga state, creating run-scoped managers/executors, and committing at checkpoint boundaries. When None, the transaction's internal managers and executors are used.
 
         Returns:
             Async iterator that yields SagaStepResult values for each step that completes; each yielded result will include the transaction's saga_id.
@@ -326,14 +326,12 @@ class SagaTransaction(typing.Generic[ContextT]):
         try:
             for step_item in self._saga.steps:
                 if isinstance(step_item, Fallback):
-                    (
-                        step_result,
-                        executed_step,
-                    ) = await fallback_executor.execute_fallback_step(
+                    fallback_result = await fallback_executor.execute_fallback_step(
                         step_item,
                         completed_step_names,
                     )
-                    if step_result is not None and executed_step is not None:
+                    if fallback_result is not None:
+                        step_result, executed_step = fallback_result
                         self._completed_steps.append(executed_step)
                         if run is not None:
                             await run.commit()
@@ -341,7 +339,7 @@ class SagaTransaction(typing.Generic[ContextT]):
                             step_result,
                             saga_id=self._saga_id,
                         )
-                    elif executed_step is None:
+                    else:
                         primary_name = step_item.step.__name__
                         fallback_name = step_item.fallback.__name__
                         if primary_name in completed_step_names:
@@ -439,7 +437,7 @@ class Saga(typing.Generic[ContextT]):
         they handle the correct context type.
     """
 
-    steps: typing.ClassVar[list[type[SagaStepHandler] | Fallback]] = []
+    steps: typing.ClassVar[list[typing.Union[type[SagaStepHandler], Fallback]]] = []
 
     def __init_subclass__(cls, **kwargs: typing.Any) -> None:
         """Validate steps when subclass is created."""
@@ -481,7 +479,7 @@ class Saga(typing.Generic[ContextT]):
         context: ContextT,
         container: Container,
         storage: ISagaStorage,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,

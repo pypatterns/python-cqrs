@@ -182,7 +182,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         """
         Update the stored context for a saga and increment its version, optionally enforcing an optimistic version check.
@@ -190,7 +190,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga to update.
             context (dict[str, typing.Any]): New serialized saga context to persist.
-            current_version (int | None): If provided, require the saga's current version to match this value before updating.
+            current_version (typing.Optional[int ]): If provided, require the saga's current version to match this value before updating.
 
         Raises:
             SagaConcurrencyError: If an optimistic version check fails (indicating a concurrent modification) or if the saga does not exist when a version was supplied.
@@ -256,7 +256,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         """
         Record a saga step event by creating and staging a log entry in the active session.
@@ -266,7 +266,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
             step_name (str): Name of the step being recorded.
             action (Literal["act", "compensate"]): The performed action: "act" for normal action or "compensate" for compensation.
             status (SagaStepStatus): The step's outcome status.
-            details (str | None): Optional free-form details or error message associated with the step.
+            details (typing.Optional[str ]): Optional free-form details or error message associated with the step.
         """
         log_entry = SagaLogModel(
             saga_id=saga_id,
@@ -343,7 +343,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
                     if row.created_at.tzinfo is None
                     else row.created_at,
                 ),
-                details=typing.cast(str | None, row.details),
+                details=typing.cast(typing.Optional[str], row.details),
             )
             for row in rows
         ]
@@ -438,7 +438,7 @@ class SqlAlchemySagaStorage(ISagaStorage):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         async with self.session_factory() as session:
             try:
@@ -508,7 +508,7 @@ class SqlAlchemySagaStorage(ISagaStorage):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         async with self.session_factory() as session:
             try:
@@ -576,7 +576,7 @@ class SqlAlchemySagaStorage(ISagaStorage):
                         if row.created_at.tzinfo is None
                         else row.created_at,
                     ),
-                    details=typing.cast(str | None, row.details),
+                    details=typing.cast(typing.Optional[str], row.details),
                 )
                 for row in rows
             ]
@@ -585,8 +585,8 @@ class SqlAlchemySagaStorage(ISagaStorage):
         self,
         limit: int,
         max_recovery_attempts: int = 5,
-        stale_after_seconds: int | None = None,
-        saga_name: str | None = None,
+        stale_after_seconds: typing.Optional[int] = None,
+        saga_name: typing.Optional[str] = None,
     ) -> list[uuid.UUID]:
         recoverable = (
             SagaStatus.RUNNING,
@@ -615,14 +615,14 @@ class SqlAlchemySagaStorage(ISagaStorage):
     async def increment_recovery_attempts(
         self,
         saga_id: uuid.UUID,
-        new_status: SagaStatus | None = None,
+        new_status: typing.Optional[SagaStatus] = None,
     ) -> None:
         """
         Increment the recovery attempts counter for the given saga execution and optionally update its status.
 
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga execution to update.
-            new_status (SagaStatus | None): If provided, set the saga's status to this value.
+            new_status (typing.Optional[SagaStatus ]): If provided, set the saga's status to this value.
 
         Raises:
             ValueError: If no saga execution exists with the given `saga_id`.

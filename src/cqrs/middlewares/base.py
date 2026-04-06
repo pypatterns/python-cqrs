@@ -4,11 +4,11 @@ import typing
 from cqrs.saga.models import SagaContext
 from cqrs.requests.request import ReqT, ResT
 
-HandleType = typing.Callable[[ReqT], typing.Awaitable[ResT] | ResT]
+HandleType = typing.Callable[[ReqT], typing.Awaitable[typing.Optional[ResT]]]
 
 
 class Middleware(typing.Protocol[ReqT, ResT]):
-    async def __call__(self, request: ReqT, handle: HandleType) -> ResT | None:
+    async def __call__(self, request: ReqT, handle: HandleType) -> typing.Optional[ResT]:
         raise NotImplementedError
 
 

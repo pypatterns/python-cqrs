@@ -7,7 +7,7 @@ from cqrs.circuit_breaker import ICircuitBreaker
 from cqrs.generic_utils import get_generic_args_for_origin
 from cqrs.requests.request_handler import RequestHandler, StreamingRequestHandler
 
-RequestHandlerT = type[RequestHandler] | type[StreamingRequestHandler]
+RequestHandlerT = typing.Union[type[RequestHandler], type[StreamingRequestHandler]]
 
 _REQUEST_HANDLER_ORIGINS: tuple[type, ...] = (RequestHandler, StreamingRequestHandler)
 
@@ -47,7 +47,7 @@ class RequestHandlerFallback:
     primary: RequestHandlerT
     fallback: RequestHandlerT
     failure_exceptions: tuple[type[Exception], ...] = ()
-    circuit_breaker: ICircuitBreaker | None = None
+    circuit_breaker: typing.Optional[ICircuitBreaker] = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.primary, type) or not isinstance(self.fallback, type):

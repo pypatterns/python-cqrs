@@ -24,12 +24,12 @@ class TResult(cqrs.DCResponse):
     message: str = ""
 
 
-class HandlerA(CORRequestHandler[TRequest, TResult | None]):
+class HandlerA(CORRequestHandler[TRequest, TResult]):
     @property
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         if request.method == "method_a":
             return TResult(
                 success=True,
@@ -39,12 +39,12 @@ class HandlerA(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class HandlerB(CORRequestHandler[TRequest, TResult | None]):
+class HandlerB(CORRequestHandler[TRequest, TResult]):
     @property
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         if request.method == "method_b":
             return TResult(
                 success=True,
@@ -54,12 +54,12 @@ class HandlerB(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class HandlerC(CORRequestHandler[TRequest, TResult | None]):
+class HandlerC(CORRequestHandler[TRequest, TResult]):
     @property
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         if request.method == "method_c":
             return TResult(
                 success=True,
@@ -69,12 +69,12 @@ class HandlerC(CORRequestHandler[TRequest, TResult | None]):
         return await self.next(request)
 
 
-class DefaultHandler(CORRequestHandler[TRequest, TResult | None]):
+class DefaultHandler(CORRequestHandler[TRequest, TResult]):
     @property
     def events(self) -> typing.Sequence[cqrs.IEvent]:
         return []
 
-    async def handle(self, request: TRequest) -> TResult | None:
+    async def handle(self, request: TRequest) -> typing.Optional[TResult]:
         return TResult(
             success=False,
             handler_name="DefaultHandler",

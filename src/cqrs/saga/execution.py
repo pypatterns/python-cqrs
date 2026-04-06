@@ -21,7 +21,7 @@ class SagaStateManager:
     def __init__(
         self,
         saga_id: typing.Any,
-        storage: ISagaStorage | SagaStorageRun,
+        storage: typing.Union[ISagaStorage, SagaStorageRun],
     ) -> None:
         """
         Create a SagaStateManager bound to a specific saga identifier and storage backend.
@@ -61,7 +61,7 @@ class SagaStateManager:
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        error: str | None = None,
+        error: typing.Optional[str] = None,
     ) -> None:
         """Log step execution."""
         await self._storage.log_step(
@@ -79,9 +79,9 @@ class SagaRecoveryManager:
     def __init__(
         self,
         saga_id: typing.Any,
-        storage: ISagaStorage | SagaStorageRun,
+        storage: typing.Union[ISagaStorage, SagaStorageRun],
         container: Container,
-        saga_steps: list[type[SagaStepHandler] | Fallback],
+        saga_steps: list[typing.Union[type[SagaStepHandler], Fallback]],
     ) -> None:
         """
         Construct a SagaRecoveryManager that holds the identifiers, storage, DI container, and configured saga steps required to reconstruct a saga's execution state.
@@ -229,7 +229,12 @@ class FallbackStepExecutor(typing.Generic[ContextT]):
         self,
         fallback_wrapper: Fallback,
         completed_step_names: set[str],
-    ) -> tuple[SagaStepResult[ContextT, typing.Any] | None, SagaStepHandler | None]:
+    ) -> typing.Optional[
+        tuple[
+            SagaStepResult[ContextT, typing.Any],
+            SagaStepHandler,
+        ]
+    ]:
         """
         Execute a Fallback step with context snapshot/restore mechanism.
 
@@ -251,13 +256,13 @@ class FallbackStepExecutor(typing.Generic[ContextT]):
             logger.debug(
                 f"Skipping already completed Fallback primary step: {primary_step_name}",
             )
-            return None, None
+            return None
 
         if fallback_step_name in completed_step_names:
             logger.debug(
                 f"Skipping already completed Fallback fallback step: {fallback_step_name}",
             )
-            return None, None
+            return None
 
         # Resolve step handlers
         primary_step = await self._container.resolve(fallback_wrapper.step)

@@ -144,13 +144,19 @@ class CoRMermaid:
         # Collect all types
         request_types: set[type] = set()
         response_types: set[type] = set()
-        handler_info: list[tuple[str, type | None, type | None]] = []
+        handler_info: list[
+            tuple[
+                str,
+                typing.Optional[type],
+                typing.Optional[type],
+            ]
+        ] = []
 
         # Extract type information from each handler
         for handler_type in handlers:
             handler_name = handler_type.__name__
-            request_type: type | None = None
-            response_type: type | None = None
+            request_type: typing.Optional[type] = None
+            response_type: typing.Optional[type] = None
 
             # Extract generic type parameters from __orig_bases__
             orig_bases = getattr(handler_type, "__orig_bases__", ())
@@ -187,8 +193,8 @@ class CoRMermaid:
         # Add CORRequestHandler base class
         lines.append("    class CORRequestHandler {")
         lines.append("        <<abstract>>")
-        lines.append("        +handle(request) Response | None")
-        lines.append("        +next(request) Response | None")
+        lines.append("        +handle(request) typing.Optional[Response ]")
+        lines.append("        +next(request) typing.Optional[Response ]")
         lines.append("        +set_next(handler) CORRequestHandler")
         lines.append("        +events: List[Event]")
         lines.append("    }")
@@ -197,8 +203,8 @@ class CoRMermaid:
         # Add handler classes
         for handler_name, request_type, response_type in handler_info:
             lines.append(f"    class {handler_name} {{")
-            lines.append("        +handle(request) Response | None")
-            lines.append("        +next(request) Response | None")
+            lines.append("        +handle(request) typing.Optional[Response ]")
+            lines.append("        +next(request) typing.Optional[Response ]")
             lines.append("        +events: List[Event]")
             lines.append("    }")
             lines.append("")

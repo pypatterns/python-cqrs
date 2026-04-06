@@ -55,6 +55,7 @@ Make sure you have installed:
 
 import asyncio
 import logging
+import typing
 
 import di
 from di import dependent
@@ -96,7 +97,7 @@ class SourceAHandler(CORRequestHandler[FetchDataCommand, FetchDataResult]):
     def events(self) -> list[cqrs.Event]:
         return []
 
-    async def handle(self, request: FetchDataCommand) -> FetchDataResult | None:
+    async def handle(self, request: FetchDataCommand) -> typing.Optional[FetchDataResult]:
         if request.source == "a":
             logger.info("COR chain: SourceAHandler handled source=a")
             HANDLER_SOURCE.append("chain")
@@ -109,7 +110,7 @@ class SourceBHandler(CORRequestHandler[FetchDataCommand, FetchDataResult]):
     def events(self) -> list[cqrs.Event]:
         return []
 
-    async def handle(self, request: FetchDataCommand) -> FetchDataResult | None:
+    async def handle(self, request: FetchDataCommand) -> typing.Optional[FetchDataResult]:
         if request.source == "b":
             logger.info("COR chain: SourceBHandler handled source=b")
             HANDLER_SOURCE.append("chain")
@@ -124,7 +125,7 @@ class DefaultChainHandler(CORRequestHandler[FetchDataCommand, FetchDataResult]):
     def events(self) -> list[cqrs.Event]:
         return []
 
-    async def handle(self, request: FetchDataCommand) -> FetchDataResult | None:
+    async def handle(self, request: FetchDataCommand) -> typing.Optional[FetchDataResult]:
         if request.source == "error":
             logger.info("COR chain: DefaultChainHandler raising ConnectionError for source=error")
             raise ConnectionError("Downstream service unavailable")

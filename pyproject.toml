@@ -11,9 +11,14 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12"
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15"
 ]
 dependencies = [
   "dataclass-wizard==0.*",
@@ -22,15 +27,14 @@ dependencies = [
   "orjson==3.*",
   "pydantic==2.*",
   "sqlalchemy[asyncio]==2.0.*",
-  "python-dotenv==1.*",
-  "retry-async==0.1.*",
+  "python-dotenv>=0.21,<2",
   "typing-extensions>=4.0"
 ]
 description = "Event-Driven Architecture Framework for Distributed Systems"
 maintainers = [{name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru"}]
 name = "python-cqrs"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.9"
 version = "4.10.1"
 
 [project.optional-dependencies]

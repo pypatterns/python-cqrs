@@ -27,8 +27,8 @@ class SagaDispatcher:
         self,
         saga_map: SagaMap,
         container: Container,
-        storage: ISagaStorage | None = None,
-        middleware_chain: MiddlewareChain | None = None,
+        storage: typing.Optional[ISagaStorage] = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
@@ -56,7 +56,7 @@ class SagaDispatcher:
     def dispatch(
         self,
         context: SagaContext,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
     ) -> typing.AsyncIterator[SagaDispatchResult]:
         """
         Dispatch a saga execution for the given context.
@@ -81,7 +81,7 @@ class SagaDispatcher:
     async def _dispatch_impl(
         self,
         context: SagaContext,
-        saga_id: uuid.UUID | None = None,
+        saga_id: typing.Optional[uuid.UUID] = None,
     ) -> typing.AsyncIterator[SagaDispatchResult]:
         # Find saga type by context type
         saga_type = self._saga_map.get(type(context))

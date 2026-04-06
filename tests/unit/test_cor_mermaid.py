@@ -15,7 +15,7 @@ class ProcessPaymentCommand(cqrs.Request):
 
 class PaymentResult(cqrs.Response):
     success: bool
-    transaction_id: str | None = None
+    transaction_id: typing.Optional[str] = None
     message: str = ""
 
 
@@ -24,7 +24,7 @@ class CreditCardHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult])
     def events(self) -> typing.List:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "credit_card":
             return PaymentResult(
                 success=True,
@@ -39,7 +39,7 @@ class PayPalHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
     def events(self) -> typing.List:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "paypal":
             return PaymentResult(
                 success=True,
@@ -54,7 +54,7 @@ class BankTransferHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult
     def events(self) -> typing.List:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         if request.payment_method == "bank_transfer":
             return PaymentResult(
                 success=True,
@@ -69,7 +69,7 @@ class DefaultPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResu
     def events(self) -> typing.List:
         return []
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand) -> typing.Optional[PaymentResult]:
         return PaymentResult(
             success=False,
             message=f"Unsupported payment method: {request.payment_method}",
@@ -179,8 +179,8 @@ def test_class_diagram_basic_structure() -> None:
     assert "classDiagram" in diagram
     assert "class CORRequestHandler" in diagram
     assert "<<abstract>>" in diagram
-    assert "+handle(request) Response | None" in diagram
-    assert "+next(request) Response | None" in diagram
+    assert "+handle(request) typing.Optional[Response ]" in diagram
+    assert "+next(request) typing.Optional[Response ]" in diagram
     assert "+set_next(handler) CORRequestHandler" in diagram
 
     # Check handler classes
@@ -189,8 +189,8 @@ def test_class_diagram_basic_structure() -> None:
     assert "class BankTransferHandler" in diagram
 
     # Check handler methods
-    assert "+handle(request) Response | None" in diagram
-    assert "+next(request) Response | None" in diagram
+    assert "+handle(request) typing.Optional[Response ]" in diagram
+    assert "+next(request) typing.Optional[Response ]" in diagram
     assert "+events: List[Event]" in diagram
 
     # Check types are included

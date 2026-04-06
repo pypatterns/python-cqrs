@@ -18,7 +18,7 @@ async def test_decompression_positive(session):
     repository.add(event)
     await session.commit()
 
-    read_event: outbox_repository.OutboxedEvent | None = next(
+    read_event: typing.Optional[outbox_repository.OutboxedEvent] = next(
         iter(
             await repository.get_many(
                 batch_size=1,

@@ -47,7 +47,7 @@ class _MemorySagaStorageRun(SagaStorageRun):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         """
         Update the stored context for the given saga.
@@ -55,7 +55,7 @@ class _MemorySagaStorageRun(SagaStorageRun):
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga whose context will be updated.
             context (dict[str, typing.Any]): New context to store for the saga.
-            current_version (int | None): If provided, require the stored saga version to match this value (optimistic locking).
+            current_version (typing.Optional[int ]): If provided, require the stored saga version to match this value (optimistic locking).
 
         Raises:
             ValueError: If the saga_id does not exist.
@@ -86,7 +86,7 @@ class _MemorySagaStorageRun(SagaStorageRun):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         """
         Log a step entry for the given saga into the underlying storage.
@@ -96,7 +96,7 @@ class _MemorySagaStorageRun(SagaStorageRun):
             step_name (str): Name of the saga step.
             action (Literal["act", "compensate"]): Whether the step is a forward action ("act") or a compensation ("compensate").
             status (SagaStepStatus): Outcome status of the step.
-            details (str | None): Optional free-form details or metadata about the step.
+            details (typing.Optional[str ]): Optional free-form details or metadata about the step.
         """
         await self._storage.log_step(
             saga_id,
@@ -225,7 +225,7 @@ class MemorySagaStorage(ISagaStorage):
         self,
         saga_id: uuid.UUID,
         context: dict[str, typing.Any],
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         if saga_id not in self._sagas:
             raise ValueError(f"Saga {saga_id} not found")
@@ -260,7 +260,7 @@ class MemorySagaStorage(ISagaStorage):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         if saga_id not in self._sagas:
             raise ValueError(f"Saga {saga_id} not found")
@@ -301,8 +301,8 @@ class MemorySagaStorage(ISagaStorage):
         self,
         limit: int,
         max_recovery_attempts: int = 5,
-        stale_after_seconds: int | None = None,
-        saga_name: str | None = None,
+        stale_after_seconds: typing.Optional[int] = None,
+        saga_name: typing.Optional[str] = None,
     ) -> list[uuid.UUID]:
         """
         Selects saga IDs eligible for recovery based on status, recovery attempts, staleness, and an optional name filter.
@@ -310,8 +310,8 @@ class MemorySagaStorage(ISagaStorage):
         Parameters:
             limit (int): Maximum number of saga IDs to return.
             max_recovery_attempts (int): Upper bound (exclusive) on recovery attempts; only sagas with fewer attempts are considered.
-            stale_after_seconds (int | None): If provided, only sagas last updated earlier than this many seconds before now are considered; if None, staleness is ignored.
-            saga_name (str | None): If provided, only sagas with this name are considered; if None, name is not filtered.
+            stale_after_seconds (typing.Optional[int ]): If provided, only sagas last updated earlier than this many seconds before now are considered; if None, staleness is ignored.
+            saga_name (typing.Optional[str ]): If provided, only sagas with this name are considered; if None, name is not filtered.
 
         Returns:
             list[uuid.UUID]: Up to `limit` saga IDs sorted by oldest `updated_at` first that match the recovery criteria.
@@ -333,7 +333,7 @@ class MemorySagaStorage(ISagaStorage):
     async def increment_recovery_attempts(
         self,
         saga_id: uuid.UUID,
-        new_status: SagaStatus | None = None,
+        new_status: typing.Optional[SagaStatus] = None,
     ) -> None:
         if saga_id not in self._sagas:
             raise ValueError(f"Saga {saga_id} not found")

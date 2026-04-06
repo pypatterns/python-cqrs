@@ -6,6 +6,7 @@ import typing
 
 from cqrs.events.event import IEvent
 from cqrs.requests.request import ReqT, ResT
+from cqrs.response import IResponse
 
 
 class CORRequestHandler(abc.ABC, typing.Generic[ReqT, ResT]):
@@ -22,13 +23,30 @@ class CORRequestHandler(abc.ABC, typing.Generic[ReqT, ResT]):
               self._auth_service = auth_service
               self.events: typing.List[IEvent] = []
 
-          async def handle(self, request: LoginCommand) -> None | None:
+          async def handle(self, request: LoginCommand) -> typing.Optional[None ]:
               if self._auth_service.can_authenticate(request):
                   return await self._auth_service.authenticate(request)
               return await super().handle(request)
     """
 
-    _next_handler: "CORRequestHandler[ReqT, ResT] | None" = None
+    _next_handler: "typing.Optional[CORRequestHandler[ReqT, ResT] ]" = None
+
+    def __class_getitem__(cls, params):  # type: ignore[override]
+        """
+        Backward-compatible generic subscription.
+
+        Supports both forms:
+        - CORRequestHandler[RequestType, ResponseType]
+        - CORRequestHandler[RequestType]  # legacy shorthand
+        """
+        if not isinstance(params, tuple):
+            params = (params,)
+        if len(params) == 1:
+            params = (
+                params[0],
+                typing.Optional[IResponse],
+            )
+        return super().__class_getitem__(params)  # pyright: ignore[reportAttributeAccessIssue]
 
     def set_next(
         self,
@@ -39,7 +57,7 @@ class CORRequestHandler(abc.ABC, typing.Generic[ReqT, ResT]):
 
         return self._next_handler
 
-    async def next(self, request: ReqT) -> ResT | None:
+    async def next(self, request: ReqT) -> typing.Optional[ResT]:
         if self._next_handler:
             return await self._next_handler.handle(request)
 
@@ -56,11 +74,11 @@ class CORRequestHandler(abc.ABC, typing.Generic[ReqT, ResT]):
         return ()
 
     @abc.abstractmethod
-    async def handle(self, request: ReqT) -> ResT | None:
+    async def handle(self, request: ReqT) -> typing.Optional[ResT]:
         raise NotImplementedError
 
 
-CORRequestHandlerT: typing.TypeAlias = CORRequestHandler
+CORRequestHandlerT = CORRequestHandler
 
 
 def build_chain(handlers: typing.List[CORRequestHandlerT]) -> CORRequestHandlerT:

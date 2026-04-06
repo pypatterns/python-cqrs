@@ -217,7 +217,14 @@ class SagaMermaid:
         context_types: set[type] = set()
         response_types: set[type] = set()
         event_types: set[type] = set()
-        step_info: list[tuple[str, type | None, type | None, list[type]]] = []
+        step_info: list[
+            tuple[
+                str,
+                typing.Optional[type],
+                typing.Optional[type],
+                list[type],
+            ]
+        ] = []
 
         # Extract type information from each step
         for step_item in steps:
@@ -228,8 +235,8 @@ class SagaMermaid:
 
                 # Process primary step
                 primary_name = primary_step.__name__
-                primary_context_type: type | None = None
-                primary_response_type: type | None = None
+                primary_context_type: typing.Optional[type] = None
+                primary_response_type: typing.Optional[type] = None
                 primary_events: list[type] = []
 
                 # Extract generic type parameters from primary step
@@ -250,8 +257,8 @@ class SagaMermaid:
 
                 # Process fallback step
                 fallback_name = fallback_step.__name__
-                fallback_context_type: type | None = None
-                fallback_response_type: type | None = None
+                fallback_context_type: typing.Optional[type] = None
+                fallback_response_type: typing.Optional[type] = None
                 fallback_events: list[type] = []
 
                 # Extract generic type parameters from fallback step
@@ -290,8 +297,8 @@ class SagaMermaid:
             else:
                 # Regular step
                 step_name = step_item.__name__
-                context_type: type | None = None
-                response_type: type | None = None
+                context_type: typing.Optional[type] = None
+                response_type: typing.Optional[type] = None
                 step_events: list[type] = []
 
                 # Extract generic type parameters from __orig_bases__

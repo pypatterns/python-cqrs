@@ -1,4 +1,5 @@
 import asyncio
+import typing
 from unittest import mock
 
 import pydantic
@@ -279,7 +280,7 @@ async def test_event_processor_follow_ups_sequential_bfs() -> None:
             return (_ChainedEvent(level=self._last.level + 1, seq=self._last.seq),)
 
         def __init__(self) -> None:
-            self._last: _ChainedEvent | None = None
+            self._last: typing.Optional[_ChainedEvent] = None
 
         async def handle(self, event: _ChainedEvent) -> None:
             self._last = event

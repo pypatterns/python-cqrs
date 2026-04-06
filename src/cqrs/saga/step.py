@@ -9,7 +9,7 @@ from cqrs.events.event import IEvent
 from cqrs.response import IResponse
 from cqrs.saga.models import ContextT
 
-Resp = typing.TypeVar("Resp", bound=IResponse | None, covariant=True)
+Resp = typing.TypeVar("Resp", bound=typing.Optional[IResponse], covariant=True)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,10 +43,10 @@ class SagaStepResult(typing.Generic[ContextT, Resp]):
     response: Resp
     step_type: type[SagaStepHandler[ContextT, Resp]]
     with_error: bool = False
-    error_message: str | None = None
-    error_traceback: list[str] | None = None
-    error_type: typing.Type[Exception] | None = None
-    saga_id: uuid.UUID | None = None
+    error_message: typing.Optional[str] = None
+    error_traceback: typing.Optional[list[str]] = None
+    error_type: typing.Optional[typing.Type[Exception]] = None
+    saga_id: typing.Optional[uuid.UUID] = None
 
 
 class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
@@ -112,11 +112,11 @@ class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
 
     def _generate_step_result(
         self,
-        response: IResponse | None,
+        response: typing.Optional[IResponse],
         with_error: bool = False,
-        error_message: str | None = None,
-        error_traceback: list[str] | None = None,
-        error_type: typing.Type[Exception] | None = None,
+        error_message: typing.Optional[str] = None,
+        error_traceback: typing.Optional[list[str]] = None,
+        error_type: typing.Optional[typing.Type[Exception]] = None,
     ) -> SagaStepResult[ContextT, Resp]:
         """
         Generate a SagaStepResult with proper typing from the class.

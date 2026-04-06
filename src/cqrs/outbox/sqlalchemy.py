@@ -138,7 +138,7 @@ class OutboxModel(Base):
     def get_batch_query(
         cls,
         size: int,
-        topic: typing.Text | None = None,
+        topic: typing.Optional[typing.Text] = None,
     ) -> sqlalchemy.Select:
         return (
             sqlalchemy.select(cls)
@@ -192,7 +192,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
     def __init__(
         self,
         session: sql_session.AsyncSession,
-        compressor: compressors.Compressor | None = None,
+        compressor: typing.Optional[compressors.Compressor] = None,
     ):
         self.session = session
         self._compressor = compressor
@@ -225,7 +225,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
             ),
         )
 
-    def _process_events(self, model: OutboxModel) -> repository.OutboxedEvent | None:
+    def _process_events(self, model: OutboxModel) -> typing.Optional[repository.OutboxedEvent]:
         event_dict = model.row_to_dict()
 
         event_model = map.OutboxedEventMap.get(event_dict["event_name"])
@@ -248,7 +248,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
     async def get_many(
         self,
         batch_size: int = 100,
-        topic: typing.Text | None = None,
+        topic: typing.Optional[typing.Text] = None,
     ) -> typing.List[repository.OutboxedEvent]:
         events: typing.Sequence[OutboxModel] = (
             (await self.session.execute(OutboxModel.get_batch_query(batch_size, topic))).scalars().all()
@@ -283,7 +283,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
 def rebind_outbox_model(
     model: typing.Any,
     new_base: DeclarativeMeta,
-    table_name: typing.Text | None = None,
+    table_name: typing.Optional[typing.Text] = None,
 ):
     model.__bases__ = (new_base,)
     model.__table__.name = table_name or model.__table__.name

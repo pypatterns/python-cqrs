@@ -42,7 +42,7 @@ class StorageWithoutCreateRun(ISagaStorage):
         self,
         saga_id: uuid.UUID,
         context: dict,
-        current_version: int | None = None,
+        current_version: typing.Optional[int] = None,
     ) -> None:
         """
         Update the stored context for a saga, optionally validating the expected current version.
@@ -50,7 +50,7 @@ class StorageWithoutCreateRun(ISagaStorage):
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga whose context will be updated.
             context (dict): New context data to persist for the saga.
-            current_version (int | None): If provided, the update will only proceed when the stored version equals this value; pass None to skip version validation.
+            current_version (typing.Optional[int ]): If provided, the update will only proceed when the stored version equals this value; pass None to skip version validation.
         """
         await self._inner.update_context(saga_id, context, current_version)
 
@@ -70,7 +70,7 @@ class StorageWithoutCreateRun(ISagaStorage):
         step_name: str,
         action: typing.Literal["act", "compensate"],
         status: SagaStepStatus,
-        details: str | None = None,
+        details: typing.Optional[str] = None,
     ) -> None:
         """
         Record the execution or compensation outcome of a saga step.
@@ -80,7 +80,7 @@ class StorageWithoutCreateRun(ISagaStorage):
             step_name (str): Name of the step being logged.
             action (Literal["act", "compensate"]): Whether this log entry is for the step's normal action ("act") or its compensation ("compensate").
             status (SagaStepStatus): Resulting status of the step.
-            details (str | None): Optional human-readable details or metadata about the step event.
+            details (typing.Optional[str ]): Optional human-readable details or metadata about the step event.
         """
         await self._inner.log_step(saga_id, step_name, action, status, details)
 
@@ -121,8 +121,8 @@ class StorageWithoutCreateRun(ISagaStorage):
         self,
         limit: int,
         max_recovery_attempts: int = 5,
-        stale_after_seconds: int | None = None,
-        saga_name: str | None = None,
+        stale_after_seconds: typing.Optional[int] = None,
+        saga_name: typing.Optional[str] = None,
     ) -> list[uuid.UUID]:
         """
         Selects saga IDs that are eligible for recovery.
@@ -130,8 +130,8 @@ class StorageWithoutCreateRun(ISagaStorage):
         Parameters:
             limit (int): Maximum number of saga IDs to return.
             max_recovery_attempts (int): Only include sagas with fewer than this many recovery attempts.
-            stale_after_seconds (int | None): If provided, only include sagas last updated more than this many seconds ago; if None, do not filter by staleness.
-            saga_name (str | None): If provided, restrict results to sagas with this name.
+            stale_after_seconds (typing.Optional[int ]): If provided, only include sagas last updated more than this many seconds ago; if None, do not filter by staleness.
+            saga_name (typing.Optional[str ]): If provided, restrict results to sagas with this name.
 
         Returns:
             list[uuid.UUID]: Saga UUIDs that match the recovery criteria, up to `limit`.
@@ -146,14 +146,14 @@ class StorageWithoutCreateRun(ISagaStorage):
     async def increment_recovery_attempts(
         self,
         saga_id: uuid.UUID,
-        new_status: SagaStatus | None = None,
+        new_status: typing.Optional[SagaStatus] = None,
     ) -> None:
         """
         Increment the recovery-attempts counter for a saga and optionally update its status.
 
         Parameters:
             saga_id (uuid.UUID): Identifier of the saga whose recovery attempts should be incremented.
-            new_status (SagaStatus | None): If provided, update the saga's status to this value after incrementing attempts; otherwise leave status unchanged.
+            new_status (typing.Optional[SagaStatus ]): If provided, update the saga's status to this value after incrementing attempts; otherwise leave status unchanged.
         """
         await self._inner.increment_recovery_attempts(saga_id, new_status)
 
@@ -270,7 +270,7 @@ async def test_saga_with_run_path_compensates_on_failure() -> None:
     storage = MemorySagaStorage()
     saga = SagaWithFailure()
     context = OrderContext(order_id="o3", user_id="u3", amount=70.0)
-    saga_id: uuid.UUID | None = None
+    saga_id: typing.Optional[uuid.UUID] = None
     with pytest.raises(ValueError, match="Step failed"):
         async with saga.transaction(
             context=context,

@@ -9,10 +9,26 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        include:
+          - python-version: "3.9"
+            pyright-version: "3.9"
+          - python-version: "3.10"
+            pyright-version: "3.10"
+          - python-version: "3.11"
+            pyright-version: "3.11"
+          - python-version: "3.12"
+            pyright-version: "3.12"
+          - python-version: "3.13"
+            pyright-version: "3.13"
+          - python-version: "3.14"
+            pyright-version: "3.14"
+          - python-version: "3.15-dev"
+            pyright-version: "3.14"
+            experimental: true
 
     steps:
     - uses: actions/checkout@v4
@@ -23,6 +39,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Install dependencies
       run: |
@@ -61,20 +78,30 @@ jobs:
         while IFS= read -r f; do [ -f "$f" ] && echo "$f"; done < changed.txt | xargs -r ruff format --check --config ruff.toml
 
     - name: Run pyright
+      if: ${{ matrix.python-version != '3.15-dev' }}
       run: |
-        pyright --pythonversion ${{ matrix.python-version }} src tests examples
+        pyright --pythonversion ${{ matrix.pyright-version }} src
 
     - name: Check minimum Python version (vermin)
       run: |
-        vermin --target=3.10- --violations --eval-annotations --backport typing_extensions --exclude=venv --exclude=build --exclude=.git --exclude=.venv src examples tests
+        vermin --target=3.9- --violations --eval-annotations --backport typing_extensions --exclude=venv --exclude=build --exclude=.git --exclude=.venv src examples tests
 
   test:
     name: test (py ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.experimental || false }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        include:
+          - python-version: "3.9"
+          - python-version: "3.10"
+          - python-version: "3.11"
+          - python-version: "3.12"
+          - python-version: "3.13"
+          - python-version: "3.14"
+          - python-version: "3.15-dev"
+            experimental: true
 
     steps:
     - uses: actions/checkout@v4
@@ -83,6 +110,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        allow-prereleases: true
 
     - name: Install dependencies
       run: |

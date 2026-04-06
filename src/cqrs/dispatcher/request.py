@@ -10,7 +10,7 @@ from cqrs.dispatcher.exceptions import (
     RequestHandlerTypeError,
 )
 from cqrs.dispatcher.models import RequestDispatchResult
-from cqrs.middlewares.base import MiddlewareChain
+from cqrs.middlewares.base import HandleType, MiddlewareChain
 from cqrs.requests.cor_request_handler import (
     CORRequestHandler,
     build_chain,
@@ -23,7 +23,7 @@ from cqrs.requests.request_handler import RequestHandler
 
 logger = logging.getLogger("cqrs")
 
-_RequestHandler: typing.TypeAlias = RequestHandler | CORRequestHandler
+_RequestHandler = typing.Union[RequestHandler, CORRequestHandler]
 
 
 class RequestDispatcher:
@@ -31,7 +31,7 @@ class RequestDispatcher:
         self,
         request_map: RequestMap,
         container: Container,
-        middleware_chain: MiddlewareChain | None = None,
+        middleware_chain: typing.Optional[MiddlewareChain] = None,
     ) -> None:
         self._request_map = request_map
         self._container = container
@@ -80,7 +80,9 @@ class RequestDispatcher:
         """Dispatch using primary handler with fallback on failure."""
         primary = await self._container.resolve(fallback_config.primary)
         try:
-            wrapped_primary = self._middleware_chain.wrap(primary.handle)
+            wrapped_primary = self._middleware_chain.wrap(
+                typing.cast(HandleType, primary.handle),
+            )
             if fallback_config.circuit_breaker is not None:
                 response = await fallback_config.circuit_breaker.call(
                     fallback_config.primary,
@@ -116,7 +118,9 @@ class RequestDispatcher:
                         fallback_config.fallback.__name__,
                     )
                 fallback_handler = await self._container.resolve(fallback_config.fallback)
-                wrapped_fallback = self._middleware_chain.wrap(fallback_handler.handle)
+                wrapped_fallback = self._middleware_chain.wrap(
+                    typing.cast(HandleType, fallback_handler.handle),
+                )
                 response = await wrapped_fallback(request)
                 return RequestDispatchResult(
                     response=response,

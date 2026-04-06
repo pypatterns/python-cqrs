@@ -2,6 +2,7 @@
 
 import asyncio
 import dataclasses
+import typing
 
 import pytest
 
@@ -63,7 +64,7 @@ class _HandlerL3(EventHandler[_EventL3]):
 
 class _ChainContainer(Container[object]):
     def __init__(self) -> None:
-        self._external: object | None = None
+        self._external: typing.Optional[object] = None
 
     @property
     def external_container(self) -> object:

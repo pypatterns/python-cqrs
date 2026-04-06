@@ -25,4 +25,4 @@ class SagaDispatchResult:
 
     step_result: SagaStepResult
     events: typing.List[IEvent] = dataclasses.field(default_factory=list)
-    saga_id: str | None = None
+    saga_id: typing.Optional[str] = None

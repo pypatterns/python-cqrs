@@ -53,7 +53,7 @@ class FallbackStep(SagaStepHandler[OrderContext, ReserveInventoryResponse]):
         self._events: list[Event] = []
         self.act_called = False
         self.compensate_called = False
-        self._inventory_id: str | None = None
+        self._inventory_id: typing.Optional[str] = None
 
     @property
     def events(self) -> list[Event]:
@@ -491,7 +491,7 @@ async def test_primary_step_success_no_fallback(container, storage):
         def __init__(self) -> None:
             self._events: list[Event] = []
             self.act_called = False
-            self._inventory_id: str | None = None
+            self._inventory_id: typing.Optional[str] = None
 
         @property
         def events(self) -> list[Event]:
@@ -585,7 +585,7 @@ async def test_fallback_context_snapshot_restore(container, storage):
         def __init__(self) -> None:
             self._events: list[Event] = []
             self.act_called = False
-            self._inventory_id: str | None = None
+            self._inventory_id: typing.Optional[str] = None
 
         @property
         def events(self) -> list[Event]:
@@ -647,7 +647,7 @@ async def test_fallback_compensation(container, storage):
             self._events: list[Event] = []
             self.act_called = False
             self.compensate_called = False
-            self._inventory_id: str | None = None
+            self._inventory_id: typing.Optional[str] = None
 
         @property
         def events(self) -> list[Event]:

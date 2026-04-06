@@ -69,7 +69,7 @@ class OutboxedEventRepository(abc.ABC):
     async def get_many(
         self,
         batch_size: int = 100,
-        topic: typing.Text | None = None,
+        topic: typing.Optional[typing.Text] = None,
     ) -> typing.List[OutboxedEvent]:
         """Get many events from the repository."""
 

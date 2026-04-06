@@ -1,6 +1,7 @@
 """Benchmarks: 3-level event chain, volume >> semaphore (parallel follow-ups)."""
 
 import asyncio
+import typing
 
 import pydantic
 import pytest
@@ -66,7 +67,7 @@ class _ChainContainer(Container[object]):
         self._h1 = _HandlerL1()
         self._h2 = _HandlerL2()
         self._h3 = _HandlerL3()
-        self._external: object | None = None
+        self._external: typing.Optional[object] = None
 
     @property
     def external_container(self) -> object:

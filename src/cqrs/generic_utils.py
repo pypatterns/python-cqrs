@@ -7,7 +7,7 @@ def get_generic_args_for_origin(
     klass: type,
     origin_classes: tuple[type, ...],
     min_args: int = 1,
-) -> tuple[type, ...] | None:
+) -> typing.Optional[tuple[type, ...]]:
     """
     Extract generic type arguments from a class that inherits from a Generic base.
 

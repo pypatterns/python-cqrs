@@ -70,6 +70,7 @@ Or install with optional dependencies:
 import asyncio
 import dataclasses
 import logging
+import typing
 import uuid
 
 import di
@@ -104,7 +105,7 @@ class OrderContext(SagaContext):
     amount: float
 
     # This field is populated by step during execution
-    reservation_id: str | None = None
+    reservation_id: typing.Optional[str] = None
 
 
 # ============================================================================

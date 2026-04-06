@@ -100,7 +100,7 @@ async def test_streaming_mediator_integration(
     kafka_producer,
 ) -> None:
     mediator, container = streaming_mediator
-    handler: ProcessItemsCommandHandler | None = await container.resolve(
+    handler: typing.Optional[ProcessItemsCommandHandler] = await container.resolve(
         ProcessItemsCommandHandler,
     )
 
@@ -134,7 +134,7 @@ async def test_streaming_mediator_events_emitted_after_each_yield(
     kafka_producer,
 ) -> None:
     mediator, container = streaming_mediator
-    _: ProcessItemsCommandHandler | None = await container.resolve(
+    _: typing.Optional[ProcessItemsCommandHandler] = await container.resolve(
         ProcessItemsCommandHandler,
     )
 
@@ -162,7 +162,7 @@ async def test_streaming_mediator_empty_items_list(
     kafka_producer,
 ) -> None:
     mediator, container = streaming_mediator
-    handler: ProcessItemsCommandHandler | None = await container.resolve(
+    handler: typing.Optional[ProcessItemsCommandHandler] = await container.resolve(
         ProcessItemsCommandHandler,
     )
 
@@ -183,7 +183,7 @@ async def test_streaming_mediator_single_item(
     kafka_producer,
 ) -> None:
     mediator, container = streaming_mediator
-    handler: ProcessItemsCommandHandler | None = await container.resolve(
+    handler: typing.Optional[ProcessItemsCommandHandler] = await container.resolve(
         ProcessItemsCommandHandler,
     )
 

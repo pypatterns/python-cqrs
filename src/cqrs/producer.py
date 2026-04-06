@@ -9,7 +9,7 @@ from cqrs.outbox import repository as repository_protocol
 logger = logging.getLogger("cqrs")
 logger.setLevel(logging.DEBUG)
 
-SessionFactory: typing.TypeAlias = typing.Callable[[], sql_session.AsyncSession]
+SessionFactory = typing.Callable[[], sql_session.AsyncSession]
 
 
 class EventProducer:

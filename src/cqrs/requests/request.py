@@ -54,7 +54,7 @@ class IRequest(abc.ABC):
 # Type variables for request/response (defined here to avoid circular import with
 # cqrs.types <-> cqrs.requests.request_handler). Re-exported from cqrs.types for compatibility.
 ReqT = typing.TypeVar("ReqT", bound=IRequest, contravariant=True)
-ResT = typing.TypeVar("ResT", bound=IResponse | None, covariant=True)
+ResT = typing.TypeVar("ResT", bound=typing.Optional[IResponse], covariant=True)
 
 
 @dataclasses.dataclass

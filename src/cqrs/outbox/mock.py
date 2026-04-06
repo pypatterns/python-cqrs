@@ -28,7 +28,7 @@ class MockOutboxedEventRepository(repository.OutboxedEventRepository):
     async def get_many(
         self,
         batch_size: int = 100,
-        topic: typing.Text | None = None,
+        topic: typing.Optional[typing.Text] = None,
     ) -> typing.List[repository.OutboxedEvent]:
         return list(
             filter(lambda e: topic == e.topic, self.session.values()) if topic else list(self.session.values()),

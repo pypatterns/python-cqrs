@@ -33,7 +33,7 @@ class EventProcessor:
     def __init__(
         self,
         event_map: EventMap,
-        event_emitter: EventEmitter | None = None,
+        event_emitter: typing.Optional[EventEmitter] = None,
         max_concurrent_event_handlers: int = 1,
         concurrent_event_handle_enable: bool = True,
     ) -> None:

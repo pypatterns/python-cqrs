@@ -105,8 +105,8 @@ class ProcessServiceStreamingHandler(
 class MockContainer:
     def __init__(
         self,
-        handler: ProcessServiceStreamingHandler | None = None,
-        event_handler: ServiceChangedEventHandler | None = None,
+        handler: typing.Optional[ProcessServiceStreamingHandler] = None,
+        event_handler: typing.Optional[ServiceChangedEventHandler] = None,
     ) -> None:
         self._handler = handler
         self._event_handler = event_handler

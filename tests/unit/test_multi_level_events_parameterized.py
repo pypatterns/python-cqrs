@@ -51,7 +51,7 @@ class _FanHandler(EventHandler[_FanEvent]):
 class _FanContainer(Container[object]):
     def __init__(self, handler: _FanHandler) -> None:
         self._handler = handler
-        self._external: object | None = None
+        self._external: typing.Optional[object] = None
 
     @property
     def external_container(self) -> object:
@@ -153,7 +153,7 @@ class _DispatcherContainer(Container[object]):
         self._h1 = _HandlerL1()
         self._h2 = _HandlerL2()
         self._h3 = _HandlerL3()
-        self._external: object | None = None
+        self._external: typing.Optional[object] = None
 
     @property
     def external_container(self) -> object:

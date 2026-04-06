@@ -87,9 +87,9 @@ class OrderContext(SagaContext):
     total_amount: float
     shipping_address: str
 
-    inventory_reservation_id: str | None = None
-    payment_id: str | None = None
-    shipment_id: str | None = None
+    inventory_reservation_id: typing.Optional[str] = None
+    payment_id: typing.Optional[str] = None
+    shipment_id: typing.Optional[str] = None
 
 
 class ReserveInventoryResponse(Response):

@@ -21,11 +21,11 @@ def setup_saga_mediator(
     event_emitter: events.EventEmitter,
     container: di_container_impl.DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    event_map: events.EventMap | None = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    event_map: typing.Optional[events.EventMap] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
-    saga_storage: ISagaStorage | None = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -34,23 +34,23 @@ def setup_saga_mediator(
     event_emitter: events.EventEmitter,
     container: CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    event_map: events.EventMap | None = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    event_map: typing.Optional[events.EventMap] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
-    saga_storage: ISagaStorage | None = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
 ) -> cqrs.SagaMediator: ...
 
 
 def setup_saga_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: typing.Union[di_container_impl.DIContainer, CQRSContainer],
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    event_map: events.EventMap | None = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    event_map: typing.Optional[events.EventMap] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
-    saga_storage: ISagaStorage | None = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
 ) -> cqrs.SagaMediator:
     """
     Setup SagaMediator with configured saga map and dependencies.
@@ -101,36 +101,36 @@ def setup_saga_mediator(
 @overload
 def bootstrap(
     di_container: di.Container,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
+    message_broker: typing.Optional[protocol.MessageBroker] = None,
+    middlewares: typing.Optional[typing.Sequence[mediator_middlewares.Middleware]] = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    domain_events_mapper: typing.Optional[typing.Callable[[events.EventMap], None]] = None,
+    on_startup: typing.Optional[typing.List[typing.Callable[[], None]]] = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
 ) -> cqrs.SagaMediator: ...
 
 
 @overload
 def bootstrap(
     di_container: CQRSContainer,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
+    message_broker: typing.Optional[protocol.MessageBroker] = None,
+    middlewares: typing.Optional[typing.Sequence[mediator_middlewares.Middleware]] = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    domain_events_mapper: typing.Optional[typing.Callable[[events.EventMap], None]] = None,
+    on_startup: typing.Optional[typing.List[typing.Callable[[], None]]] = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
 ) -> cqrs.SagaMediator: ...
 
 
 @overload
 def bootstrap(
     di_container: di.Container,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
+    message_broker: typing.Optional[protocol.MessageBroker] = None,
+    middlewares: typing.Optional[typing.Sequence[mediator_middlewares.Middleware]] = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    domain_events_mapper: typing.Optional[typing.Callable[[events.EventMap], None]] = None,
+    on_startup: typing.Optional[typing.List[typing.Callable[[], None]]] = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
 ) -> cqrs.SagaMediator: ...
@@ -139,25 +139,25 @@ def bootstrap(
 @overload
 def bootstrap(
     di_container: CQRSContainer,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
+    message_broker: typing.Optional[protocol.MessageBroker] = None,
+    middlewares: typing.Optional[typing.Sequence[mediator_middlewares.Middleware]] = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    domain_events_mapper: typing.Optional[typing.Callable[[events.EventMap], None]] = None,
+    on_startup: typing.Optional[typing.List[typing.Callable[[], None]]] = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
 ) -> cqrs.SagaMediator: ...
 
 
 def bootstrap(
-    di_container: di.Container | CQRSContainer,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
+    di_container: typing.Union[di.Container, CQRSContainer],
+    message_broker: typing.Optional[protocol.MessageBroker] = None,
+    middlewares: typing.Optional[typing.Sequence[mediator_middlewares.Middleware]] = None,
+    sagas_mapper: typing.Optional[typing.Callable[[SagaMap], None]] = None,
+    domain_events_mapper: typing.Optional[typing.Callable[[events.EventMap], None]] = None,
+    on_startup: typing.Optional[typing.List[typing.Callable[[], None]]] = None,
+    saga_storage: typing.Optional[ISagaStorage] = None,
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = True,
 ) -> cqrs.SagaMediator:
