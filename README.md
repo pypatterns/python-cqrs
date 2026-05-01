@@ -30,7 +30,7 @@
       <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
     </a>
     <a href="https://github.com/mjhea0/awesome-fastapi#developer-tools">
-      <img src="https://img.shields.io/badge/Awesome%20FastAPI-✓%20in%20awesome%20list-ff69b4?logo=eye&logoColor=white&style=for-the-badge" alt="Included in Awesome FastAPI">
+      <img src="https://img.shields.io/badge/Awesome%20FastAPI-✓%20in%20list-purple?logo=eye&logoColor=white&style=flat-square" alt="Included in Awesome FastAPI">
     </a>
   </p>
 </div>
