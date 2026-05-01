@@ -5,8 +5,6 @@
     <strong>Python 3.9+</strong> · Full documentation: <a href="https://mkdocs.python-cqrs.dev/">mkdocs.python-cqrs.dev</a>
   </p>
   <p>
-    <!-- твои существующие бейджи -->
-
     <a href="https://pypi.org/project/python-cqrs/">
       <img src="https://img.shields.io/pypi/pyversions/python-cqrs?logo=python&logoColor=white" alt="Python Versions">
     </a>
