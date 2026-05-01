@@ -29,6 +29,9 @@
     <a href="https://deepwiki.com/vadikko2/python-cqrs">
       <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
     </a>
+    <a href="https://github.com/mjhea0/awesome-fastapi#developer-tools">
+      <img src="https://img.shields.io/badge/Featured%20in-Awesome%20FastAPI-purple" alt="Featured in Awesome FastAPI">
+    </a>
   </p>
 </div>
 
