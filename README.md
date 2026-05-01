@@ -2,9 +2,11 @@
   <h1>Python CQRS</h1>
   <p><strong>Event-Driven Architecture Framework for Distributed Systems</strong></p>
   <p>
-    <strong>Python 3.10+</strong> · Full documentation: <a href="https://mkdocs.python-cqrs.dev/">mkdocs.python-cqrs.dev</a>
+    <strong>Python 3.9+</strong> · Full documentation: <a href="https://mkdocs.python-cqrs.dev/">mkdocs.python-cqrs.dev</a>
   </p>
   <p>
+    <!-- твои существующие бейджи -->
+
     <a href="https://pypi.org/project/python-cqrs/">
       <img src="https://img.shields.io/pypi/pyversions/python-cqrs?logo=python&logoColor=white" alt="Python Versions">
     </a>
@@ -30,7 +32,7 @@
       <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
     </a>
     <a href="https://github.com/mjhea0/awesome-fastapi#developer-tools">
-      <img src="https://img.shields.io/badge/Featured%20in-Awesome%20FastAPI-purple" alt="Featured in Awesome FastAPI">
+      <img src="https://img.shields.io/badge/Awesome%20FastAPI-✓%20in%20awesome%20list-ff69b4?logo=eye&logoColor=white&style=for-the-badge" alt="Included in Awesome FastAPI">
     </a>
   </p>
 </div>
