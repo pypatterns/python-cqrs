@@ -2,7 +2,7 @@
   <h1>Python CQRS</h1>
   <p><strong>Event-Driven Architecture Framework for Distributed Systems</strong></p>
   <p>
-    <strong>Python 3.9+</strong> · Full documentation: <a href="https://mkdocs.python-cqrs.dev/">mkdocs.python-cqrs.dev</a>
+    <strong>Python 3.10+</strong> · Full documentation: <a href="https://mkdocs.python-cqrs.dev/">mkdocs.python-cqrs.dev</a>
   </p>
   <p>
     <a href="https://pypi.org/project/python-cqrs/">
