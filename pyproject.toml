@@ -23,7 +23,6 @@ dependencies = [
   "pydantic==2.*",
   "sqlalchemy[asyncio]==2.0.*",
   "python-dotenv==1.*",
-  "retry-async==0.1.*",
   "typing-extensions>=4.0"
 ]
 description = "Event-Driven Architecture Framework for Distributed Systems"
@@ -31,7 +30,7 @@ maintainers = [{name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru"}]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "4.10.1"
+version = "4.10.2"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
@@ -47,6 +46,7 @@ dev = [
   # Tests
   "aio-pika==9.3.0",  # from rabbit
   "aiokafka==0.10.0",  # from kafka
+  "retry-async==0.1.*", # from kafka
   "requests==2.*",  # from aiokafka
   "pytest~=7.4.2",
   "pytest-asyncio~=0.21.1",
@@ -66,7 +66,7 @@ examples = [
   "aiohttp==3.13.2",
   "protobuf>=4.25.8",
 ]
-kafka = ["aiokafka==0.10.0"]
+kafka = ["aiokafka==0.10.0", "retry-async==0.1.*"]
 rabbit = ["aio-pika==9.3.0"]
 sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
 
