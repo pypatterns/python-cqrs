@@ -30,7 +30,7 @@ from cqrs.requests import bootstrap
 
 # ---------------------------------------------------------------------------
 # Schema (SQLite in-memory). OutboxModel.id uses Identity(), which SQLite
-# does not autoincrement — recreate that table by hand, same as fastapi_outbox.
+# does not autoincrement -- recreate that table by hand, same as fastapi_outbox.
 # ---------------------------------------------------------------------------
 
 
