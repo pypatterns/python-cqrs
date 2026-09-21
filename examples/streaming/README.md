@@ -1,4 +1,4 @@
-"""Streaming request-handler examples.
+Streaming request-handler examples.
 
 | File | When to open |
 |------|----------------|
@@ -7,4 +7,3 @@
 | `fastapi_sse_streaming.py` | FastAPI SSE endpoint over a streaming handler |
 
 Docs: https://mkdocs.python-cqrs.dev/stream_handling/
-"""

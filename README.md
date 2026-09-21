@@ -507,46 +507,27 @@ Complete examples can be found in:
 
 ### Scoped dependencies
 
-With `scope_strategy=ScopeStrategy.SEND`, generator providers (UoW / DB sessions) stay alive until the CQRS scope exits — inject `IUoW` directly instead of a factory:
+By default, the container opens and closes a scope **inside** `resolve()`. A generator such as `async def session() -> AsyncIterator[AsyncSession]` therefore finishes **before** `handle`, which is why people inject factories.
 
-```python
-# Before: factory in the handler
-class CancelTaskHandler(cqrs.RequestHandler[CancelTask, None]):
-    def __init__(self, uow_factory: Callable[..., AbstractAsyncContextManager[IUoW]]) -> None:
-        self._uow_factory = uow_factory
+Pass `scope_strategy=ScopeStrategy.SEND` and that session lives until `mediator.send()` returns — including domain-event handlers that run afterwards.
 
-    async def handle(self, command: CancelTask) -> None:
-        async with self._uow_factory() as uow:
-            await uow.tasks.cancel(command.task_id)
-
-# After: live dependency; cleanup on scope exit
-class CancelTaskHandler(cqrs.RequestHandler[CancelTask, None]):
-    def __init__(self, uow: IUoW) -> None:
-        self._uow = uow
-
-    async def handle(self, command: CancelTask) -> None:
-        await self._uow.tasks.cancel(command.task_id)
-```
-
-Configure the boundary with `scope_strategy=` on bootstrap:
+If you do not use generator providers, leave the default `ScopeStrategy.NONE` and change nothing.
 
 ```python
 mediator = bootstrap.bootstrap(
     di_container=container,
-    commands_mapper=...,
+    commands_mapper=commands_mapper,
     scope_strategy=cqrs.ScopeStrategy.SEND,
 )
 ```
 
-The default is `ScopeStrategy.NONE` (no framework scopes, same behaviour as before scoped dependencies were introduced), so scopes are an explicit opt-in: pass `SEND` for one scope per `send()` / `stream()` including domain events, or `HANDLER` for a fresh scope per resolve+handle. You can also override the boundary ad hoc with `async with cqrs.enter_scope(container):` / `cqrs.bind_scope(...)`.
+Copy-paste SQLAlchemy session + outbox under one SEND scope: the [Tutorial](https://mkdocs.python-cqrs.dev/scoped_dependencies/tutorial/) (`examples/di/scoped_dependencies_sqlalchemy.py`). Minimal `di` UoW: `examples/di/scoped_dependencies_di.py`.
 
-**Fallback × strategy:** under `SEND`, fallback runs in the same UoW as the primary handler (and domain events). After a DB error the session may need `rollback()` / a savepoint, or use `HANDLER`. Under `HANDLER`, the primary scope is closed with **rollback**, then fallback runs in a new scope — primary writes are not visible. `NONE` stays one-shot. Yields already sent to a streaming client are not undone.
+- **SEND** — one UoW per `send()` (command, fallback, and domain events).
+- **HANDLER** — a fresh UoW per handler, including fallback (the primary rolls back first).
+- **NONE** — legacy one-shot resolve; the default.
 
-**`SEND` implies sequential events:** `concurrent_event_handle_enable=None` becomes `False`. Passing `True` with `SEND` raises `ValueError`; use `HANDLER` or `NONE` for parallel events.
-
-Long streams under `SEND` hold the UoW for the whole lifetime — exhaust the iterator or `aclose()` / `async with aclosing(...)`. An abandoned SEND stream keeps the UoW until GC. For sagas with scoped dependencies prefer `SEND`: it keeps one UoW for the whole saga including compensation. Under `HANDLER` each step gets its own scope and compensation re-resolves the step in a fresh scope, so state kept on the step instance during `act` is not visible in `compensate`. `recover_saga` / `saga.transaction` take the same `scope_strategy` as the original run; a plain container is enough (no manual `ScopeAwareContainer`).
-
-Docs: [Scoped Dependencies](https://mkdocs.python-cqrs.dev/scoped_dependencies/). Examples: [`examples/di/`](https://github.com/vadikko2/python-cqrs/tree/master/examples/di) (`scoped_dependencies_*.py`).
+`di`'s `scope="request"` is provider lifetime, not a CQRS scope — that is only `scope_strategy=`. Docs: [Scoped Dependencies](https://mkdocs.python-cqrs.dev/scoped_dependencies/).
 
 ## Bootstrap
 

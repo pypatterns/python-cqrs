@@ -8,6 +8,7 @@ from cqrs.dispatcher.exceptions import SagaDoesNotExist
 from cqrs.dispatcher.models import SagaDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
 from cqrs.requests.map import SagaMap
+from cqrs.saga.execution import SagaStepRef
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import SagaTransaction
 from cqrs.saga.storage.memory import MemorySagaStorage
@@ -120,9 +121,8 @@ class SagaDispatcher:
                     # It should be the last one in completed_steps
                     if transaction.completed_steps:
                         step_instance = transaction.completed_steps[-1]
-                        step_events_list = getattr(step_instance, "events", None)
-                        if isinstance(step_events_list, list):
-                            step_events.extend(step_events_list)
+                        if not isinstance(step_instance, SagaStepRef):
+                            step_events.extend(step_instance.events)
                 except Exception as e:
                     logger.warning(
                         f"Failed to collect events from step {step_result.step_type.__name__}: {e}",

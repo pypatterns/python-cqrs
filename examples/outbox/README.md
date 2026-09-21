@@ -1,4 +1,4 @@
-"""Transactional outbox examples.
+Transactional outbox examples.
 
 | File | When to open |
 |------|----------------|
@@ -7,4 +7,3 @@
 | `fastapi_outbox.py` | FastAPI + one-tx write + publisher stub (needs examples extra) |
 
 Docs: https://mkdocs.python-cqrs.dev/outbox/
-"""

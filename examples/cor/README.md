@@ -1,4 +1,4 @@
-"""Chain of Responsibility (CoR) examples.
+Chain of Responsibility (CoR) examples.
 
 | File | When to open |
 |------|----------------|
@@ -7,4 +7,3 @@
 | `cor_mermaid.py` | Generate Mermaid diagrams for a CoR chain |
 
 Docs: https://mkdocs.python-cqrs.dev/chain_of_responsibility/
-"""

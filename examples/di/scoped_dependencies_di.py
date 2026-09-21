@@ -42,7 +42,7 @@ class CancelTask(cqrs.Request):
 
 
 class CancelTaskHandler(cqrs.RequestHandler[CancelTask, None]):
-    def __init__(self, uow: UoW) -> None:
+    def __init__(self, uow: IUoW) -> None:
         self._uow = uow
 
     @property
@@ -59,7 +59,7 @@ def setup_di() -> di.Container:
     container.bind(
         di.bind_by_type(
             dependent.Dependent(uow_provider, scope="request"),
-            UoW,
+            IUoW,
         ),
     )
     return container

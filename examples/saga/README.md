@@ -1,4 +1,4 @@
-"""Saga pattern examples.
+Saga pattern examples.
 
 | File | When to open |
 |------|----------------|
@@ -11,4 +11,3 @@
 | `saga_mermaid.py` | Generate Mermaid diagrams from a saga |
 
 Docs: https://mkdocs.python-cqrs.dev/saga/
-"""

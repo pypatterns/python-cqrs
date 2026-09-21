@@ -1,4 +1,4 @@
-"""Requests, domain events, and Kafka consume examples.
+Requests, domain events, and Kafka consume examples.
 
 | File | When to open |
 |------|----------------|
@@ -12,4 +12,3 @@
 | `fastapi_integration.py` | Wire mediator into FastAPI routes |
 
 Docs: https://mkdocs.python-cqrs.dev/event_handler/
-"""
