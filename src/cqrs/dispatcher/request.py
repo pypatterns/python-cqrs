@@ -5,6 +5,12 @@ from collections import abc
 
 from cqrs.circuit_breaker import should_use_fallback
 from cqrs.container.protocol import Container
+from cqrs.container.scope import (
+    ScopeStrategy,
+    _Fallback,
+    _run_with_fallback_scope,
+    handler_scope,
+)
 from cqrs.dispatcher.exceptions import (
     RequestHandlerDoesNotExist,
     RequestHandlerTypeError,
@@ -32,10 +38,12 @@ class RequestDispatcher:
         request_map: RequestMap,
         container: Container,
         middleware_chain: MiddlewareChain | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         self._request_map = request_map
         self._container = container
         self._middleware_chain = middleware_chain or MiddlewareChain()
+        self._scope_strategy = scope_strategy
 
     async def _resolve_handler(
         self,
@@ -78,51 +86,63 @@ class RequestDispatcher:
         fallback_config: RequestHandlerFallback,
     ) -> RequestDispatchResult:
         """Dispatch using primary handler with fallback on failure."""
-        primary = await self._container.resolve(fallback_config.primary)
-        try:
-            wrapped_primary = self._middleware_chain.wrap(primary.handle)
-            if fallback_config.circuit_breaker is not None:
-                response = await fallback_config.circuit_breaker.call(
-                    fallback_config.primary,
-                    wrapped_primary,
-                    request,
-                )
-            else:
-                response = await wrapped_primary(request)
-            return RequestDispatchResult(response=response, events=primary.events)
-        except Exception as primary_error:
-            should_fallback = should_use_fallback(
-                primary_error,
-                fallback_config.circuit_breaker,
-                fallback_config.failure_exceptions,
-            )
-            if should_fallback:
-                if (
-                    fallback_config.circuit_breaker is not None
-                    and fallback_config.circuit_breaker.is_circuit_breaker_error(
-                        primary_error,
-                    )
-                ):
-                    logger.warning(
-                        "Circuit breaker open for request handler %s, switching to fallback %s",
-                        fallback_config.primary.__name__,
-                        fallback_config.fallback.__name__,
+
+        async def primary() -> RequestDispatchResult:
+            primary_handler = await self._container.resolve(fallback_config.primary)
+            try:
+                wrapped_primary = self._middleware_chain.wrap(primary_handler.handle)
+                if fallback_config.circuit_breaker is not None:
+                    response = await fallback_config.circuit_breaker.call(
+                        fallback_config.primary,
+                        wrapped_primary,
+                        request,
                     )
                 else:
-                    logger.warning(
-                        "Primary handler %s failed: %s. Switching to fallback %s.",
-                        fallback_config.primary.__name__,
-                        primary_error,
-                        fallback_config.fallback.__name__,
-                    )
-                fallback_handler = await self._container.resolve(fallback_config.fallback)
-                wrapped_fallback = self._middleware_chain.wrap(fallback_handler.handle)
-                response = await wrapped_fallback(request)
-                return RequestDispatchResult(
-                    response=response,
-                    events=fallback_handler.events,
+                    response = await wrapped_primary(request)
+                return RequestDispatchResult(response=response, events=primary_handler.events)
+            except Exception as primary_error:
+                should_fallback = should_use_fallback(
+                    primary_error,
+                    fallback_config.circuit_breaker,
+                    fallback_config.failure_exceptions,
                 )
-            raise primary_error
+                if should_fallback:
+                    if (
+                        fallback_config.circuit_breaker is not None
+                        and fallback_config.circuit_breaker.is_circuit_breaker_error(
+                            primary_error,
+                        )
+                    ):
+                        logger.warning(
+                            "Circuit breaker open for request handler %s, switching to fallback %s",
+                            fallback_config.primary.__name__,
+                            fallback_config.fallback.__name__,
+                        )
+                    else:
+                        logger.warning(
+                            "Primary handler %s failed: %s. Switching to fallback %s.",
+                            fallback_config.primary.__name__,
+                            primary_error,
+                            fallback_config.fallback.__name__,
+                        )
+                    raise _Fallback(primary_error) from primary_error
+                raise primary_error
+
+        async def fallback() -> RequestDispatchResult:
+            fallback_handler = await self._container.resolve(fallback_config.fallback)
+            wrapped_fallback = self._middleware_chain.wrap(fallback_handler.handle)
+            response = await wrapped_fallback(request)
+            return RequestDispatchResult(
+                response=response,
+                events=fallback_handler.events,
+            )
+
+        return await _run_with_fallback_scope(
+            self._container,
+            self._scope_strategy,
+            primary,
+            fallback,
+        )
 
     async def dispatch(self, request: IRequest) -> RequestDispatchResult:
         handler_type = self._request_map.get(type(request), None)
@@ -132,8 +152,9 @@ class RequestDispatcher:
             )
         if isinstance(handler_type, RequestHandlerFallback):
             return await self._dispatch_fallback(request, handler_type)
-        handler: _RequestHandler = await self._resolve_handler(handler_type)
-        wrapped_handle = self._middleware_chain.wrap(handler.handle)
-        response = await wrapped_handle(request)
+        async with handler_scope(self._container, self._scope_strategy):
+            handler: _RequestHandler = await self._resolve_handler(handler_type)
+            wrapped_handle = self._middleware_chain.wrap(handler.handle)
+            response = await wrapped_handle(request)
 
-        return RequestDispatchResult(response=response, events=handler.events)
+            return RequestDispatchResult(response=response, events=handler.events)

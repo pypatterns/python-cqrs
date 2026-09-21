@@ -7,6 +7,7 @@ import cqrs
 from cqrs import events
 from cqrs.container import di as di_container_impl
 from cqrs.container.protocol import Container as CQRSContainer
+from cqrs.container.scope import ScopeStrategy
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.requests.bootstrap import setup_event_emitter
@@ -24,8 +25,9 @@ def setup_saga_mediator(
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
     event_map: events.EventMap | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
     saga_storage: ISagaStorage | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -37,8 +39,9 @@ def setup_saga_mediator(
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
     event_map: events.EventMap | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
     saga_storage: ISagaStorage | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -49,8 +52,9 @@ def setup_saga_mediator(
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
     event_map: events.EventMap | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
     saga_storage: ISagaStorage | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator:
     """
     Setup SagaMediator with configured saga map and dependencies.
@@ -62,7 +66,8 @@ def setup_saga_mediator(
         sagas_mapper: Function to register sagas in SagaMap
         event_map: Event map for processing events. If None, uses event_emitter's map
         max_concurrent_event_handlers: Maximum concurrent event handlers
-        concurrent_event_handle_enable: Whether to process events in parallel
+        concurrent_event_handle_enable: Whether to process events in parallel.
+            ``None`` becomes ``False`` under ``ScopeStrategy.SEND`` and ``True`` otherwise.
         saga_storage: Saga storage implementation. If None, uses MemorySagaStorage
 
     Returns:
@@ -95,6 +100,7 @@ def setup_saga_mediator(
         max_concurrent_event_handlers=max_concurrent_event_handlers,
         concurrent_event_handle_enable=concurrent_event_handle_enable,
         storage=saga_storage,
+        scope_strategy=scope_strategy,
     )
 
 
@@ -107,32 +113,9 @@ def bootstrap(
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
     saga_storage: ISagaStorage | None = None,
-) -> cqrs.SagaMediator: ...
-
-
-@overload
-def bootstrap(
-    di_container: CQRSContainer,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
-) -> cqrs.SagaMediator: ...
-
-
-@overload
-def bootstrap(
-    di_container: di.Container,
-    message_broker: protocol.MessageBroker | None = None,
-    middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
-    sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
-    domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
-    on_startup: typing.List[typing.Callable[[], None]] | None = None,
-    saga_storage: ISagaStorage | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -146,7 +129,8 @@ def bootstrap(
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
     saga_storage: ISagaStorage | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -159,7 +143,8 @@ def bootstrap(
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
     saga_storage: ISagaStorage | None = None,
     max_concurrent_event_handlers: int = 1,
-    concurrent_event_handle_enable: bool = True,
+    concurrent_event_handle_enable: bool | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.SagaMediator:
     """
     Bootstrap SagaMediator with all necessary dependencies.
@@ -201,7 +186,8 @@ def bootstrap(
                      If None and sagas require storage, they will use
                      MemorySagaStorage as default.
         max_concurrent_event_handlers: Maximum concurrent event handlers
-        concurrent_event_handle_enable: Whether to process events in parallel
+        concurrent_event_handle_enable: Whether to process events in parallel.
+            ``None`` becomes ``False`` under ``ScopeStrategy.SEND`` and ``True`` otherwise.
 
     Returns:
         Configured SagaMediator instance
@@ -243,6 +229,7 @@ def bootstrap(
         container,
         domain_events_mapper,
         message_broker,
+        scope_strategy=scope_strategy,
     )
 
     middlewares_list: typing.List[mediator_middlewares.Middleware] = list(
@@ -260,4 +247,5 @@ def bootstrap(
         max_concurrent_event_handlers=max_concurrent_event_handlers,
         concurrent_event_handle_enable=concurrent_event_handle_enable,
         saga_storage=saga_storage,
+        scope_strategy=scope_strategy,
     )

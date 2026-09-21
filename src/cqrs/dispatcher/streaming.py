@@ -4,6 +4,12 @@ import typing
 
 from cqrs.circuit_breaker import should_use_fallback
 from cqrs.container.protocol import Container
+from cqrs.container.scope import (
+    ScopeStrategy,
+    _Fallback,
+    _stream_with_fallback_scope,
+    handler_scope,
+)
 from cqrs.dispatcher.exceptions import RequestHandlerDoesNotExist
 from cqrs.dispatcher.models import RequestDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
@@ -35,10 +41,12 @@ class StreamingRequestDispatcher:
         request_map: RequestMap,
         container: Container,
         middleware_chain: MiddlewareChain | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         self._request_map = request_map
         self._container = container
         self._middleware_chain = middleware_chain or MiddlewareChain()
+        self._scope_strategy = scope_strategy
 
     def dispatch(
         self,
@@ -82,65 +90,80 @@ class StreamingRequestDispatcher:
             )
 
         if isinstance(handler_type, RequestHandlerFallback):
-            primary = await self._container.resolve(handler_type.primary)
-            fallback_handler = await self._container.resolve(handler_type.fallback)
-            if not inspect.isasyncgenfunction(primary.handle) or not inspect.isasyncgenfunction(
-                fallback_handler.handle,
+            if not inspect.isasyncgenfunction(handler_type.primary.handle) or not inspect.isasyncgenfunction(
+                handler_type.fallback.handle,
             ):
                 raise TypeError(
                     "RequestHandlerFallback with StreamingRequestDispatcher requires "
                     "both primary and fallback to be async generator handlers",
                 )
-            try:
-                async for result in self._stream_from_handler(
-                    request,
-                    typing.cast(StreamingRequestHandler, primary),
-                ):
-                    yield result
-            except Exception as primary_error:
-                should_fallback = should_use_fallback(
-                    primary_error,
-                    handler_type.circuit_breaker,
-                    handler_type.failure_exceptions,
-                )
-                if should_fallback:
-                    if (
-                        handler_type.circuit_breaker is not None
-                        and handler_type.circuit_breaker.is_circuit_breaker_error(
-                            primary_error,
-                        )
-                    ):
-                        logger.warning(
-                            "Circuit breaker open for streaming handler %s, switching to fallback %s",
-                            handler_type.primary.__name__,
-                            handler_type.fallback.__name__,
-                        )
-                    else:
-                        logger.warning(
-                            "Primary streaming handler %s failed: %s. Switching to fallback %s.",
-                            handler_type.primary.__name__,
-                            primary_error,
-                            handler_type.fallback.__name__,
-                        )
+
+            async def primary_stream() -> typing.AsyncIterator[RequestDispatchResult]:
+                primary = await self._container.resolve(handler_type.primary)
+                try:
                     async for result in self._stream_from_handler(
                         request,
-                        typing.cast(StreamingRequestHandler, fallback_handler),
+                        typing.cast(StreamingRequestHandler, primary),
                     ):
                         yield result
-                else:
+                except _Fallback:
+                    raise
+                except Exception as primary_error:
+                    should_fallback = should_use_fallback(
+                        primary_error,
+                        handler_type.circuit_breaker,
+                        handler_type.failure_exceptions,
+                    )
+                    if should_fallback:
+                        if (
+                            handler_type.circuit_breaker is not None
+                            and handler_type.circuit_breaker.is_circuit_breaker_error(
+                                primary_error,
+                            )
+                        ):
+                            logger.warning(
+                                "Circuit breaker open for streaming handler %s, switching to fallback %s",
+                                handler_type.primary.__name__,
+                                handler_type.fallback.__name__,
+                            )
+                        else:
+                            logger.warning(
+                                "Primary streaming handler %s failed: %s. Switching to fallback %s.",
+                                handler_type.primary.__name__,
+                                primary_error,
+                                handler_type.fallback.__name__,
+                            )
+                        raise _Fallback(primary_error) from primary_error
                     raise primary_error
+
+            async def fallback_stream() -> typing.AsyncIterator[RequestDispatchResult]:
+                fallback_handler = await self._container.resolve(handler_type.fallback)
+                async for result in self._stream_from_handler(
+                    request,
+                    typing.cast(StreamingRequestHandler, fallback_handler),
+                ):
+                    yield result
+
+            async for result in _stream_with_fallback_scope(
+                self._container,
+                self._scope_strategy,
+                primary_stream,
+                fallback_stream,
+            ):
+                yield result
             return
 
         handler_type_typed = typing.cast(typing.Type[StreamingRequestHandler], handler_type)
-        handler: StreamingRequestHandler = await self._container.resolve(handler_type_typed)
+        async with handler_scope(self._container, self._scope_strategy):
+            handler: StreamingRequestHandler = await self._container.resolve(handler_type_typed)
 
-        if not inspect.isasyncgenfunction(handler.handle):
-            handler_name = (
-                handler_type_typed.__name__ if hasattr(handler_type_typed, "__name__") else str(handler_type_typed)
-            )
-            raise TypeError(
-                f"Handler {handler_name}.handle must be an async generator function",
-            )
+            if not inspect.isasyncgenfunction(handler.handle):
+                handler_name = (
+                    handler_type_typed.__name__ if hasattr(handler_type_typed, "__name__") else str(handler_type_typed)
+                )
+                raise TypeError(
+                    f"Handler {handler_name}.handle must be an async generator function",
+                )
 
-        async for result in self._stream_from_handler(request, handler):
-            yield result
+            async for result in self._stream_from_handler(request, handler):
+                yield result

@@ -5,12 +5,14 @@ import typing
 import uuid
 
 from cqrs.container.protocol import Container
+from cqrs.container.scope import ScopeStrategy, current_container, wrap_container
 from cqrs.saga.compensation import SagaCompensator
 from cqrs.saga.execution import (
     FallbackStepExecutor,
     SagaRecoveryManager,
     SagaStateManager,
     SagaStepExecutor,
+    SagaStepRef,
 )
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.models import ContextT
@@ -78,17 +80,19 @@ class SagaTransaction(typing.Generic[ContextT]):
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ):
         self._saga = saga
         self._context = context
-        self._container = container
+        self._container = wrap_container(container)
         self._storage = storage
-        self._completed_steps: list[SagaStepHandler[ContextT, typing.Any]] = []
+        self._completed_steps: list[SagaStepHandler[ContextT, typing.Any] | SagaStepRef] = []
         self._error: BaseException | None = None
         self._compensated: bool = False
         self._comp_retry_count = compensation_retry_count
         self._comp_retry_delay = compensation_retry_delay
         self._comp_retry_backoff = compensation_retry_backoff
+        self._scope_strategy = scope_strategy
 
         self._saga_id = saga_id or uuid.uuid4()
         self._is_new_saga = saga_id is None
@@ -98,18 +102,20 @@ class SagaTransaction(typing.Generic[ContextT]):
         self._recovery_manager = SagaRecoveryManager(
             self._saga_id,
             storage,
-            container,
+            self._container,
             saga.steps,
         )
         self._step_executor: SagaStepExecutor[ContextT] = SagaStepExecutor[ContextT](
             context,
-            container,
+            self._container,
             self._state_manager,
+            scope_strategy=scope_strategy,
         )
         self._fallback_executor: FallbackStepExecutor[ContextT] = FallbackStepExecutor[ContextT](
             context,
-            container,
+            self._container,
             self._state_manager,
+            scope_strategy=scope_strategy,
         )
         self._compensator: SagaCompensator[ContextT] = SagaCompensator[ContextT](
             self._saga_id,
@@ -118,6 +124,8 @@ class SagaTransaction(typing.Generic[ContextT]):
             self._comp_retry_count,
             self._comp_retry_delay,
             self._comp_retry_backoff,
+            container=self._container,
+            scope_strategy=scope_strategy,
         )
 
     @property
@@ -125,17 +133,24 @@ class SagaTransaction(typing.Generic[ContextT]):
         return self._saga_id
 
     @property
-    def completed_steps(self) -> list[SagaStepHandler[ContextT, typing.Any]]:
+    def completed_steps(self) -> list[SagaStepHandler[ContextT, typing.Any] | SagaStepRef]:
         """
         Get list of completed step handlers.
 
         Returns:
-            List of step handlers that have been executed successfully.
-            Can be used to collect events from steps.
+            List of step handlers that have been executed successfully, or
+            type markers for skipped/reconstructed steps. Can be used to collect
+            events from executed steps.
         """
         return self._completed_steps
 
     async def __aenter__(self) -> "SagaTransaction[ContextT]":
+        if self._scope_strategy == ScopeStrategy.SEND and current_container() is None:
+            logger.warning(
+                "ScopeStrategy.SEND is set but no DI scope is active. "
+                "Resolves will be one-shot. Use SagaMediator, cqrs.enter_scope(), "
+                "or recover_saga(..., scope_strategy=SEND).",
+            )
         return self
 
     async def __aexit__(
@@ -197,11 +212,13 @@ class SagaTransaction(typing.Generic[ContextT]):
             self._context,
             self._container,
             state_manager,
+            scope_strategy=self._scope_strategy,
         )
         fallback_executor = FallbackStepExecutor(
             self._context,
             self._container,
             state_manager,
+            scope_strategy=self._scope_strategy,
         )
         compensator = SagaCompensator(
             self._saga_id,
@@ -211,6 +228,8 @@ class SagaTransaction(typing.Generic[ContextT]):
             self._comp_retry_delay,
             self._comp_retry_backoff,
             on_after_compensate_step=run.commit,
+            container=self._container,
+            scope_strategy=self._scope_strategy,
         )
         return (
             state_manager,
@@ -290,9 +309,10 @@ class SagaTransaction(typing.Generic[ContextT]):
                     reconstructed_steps = await recovery_manager.reconstruct_completed_steps(
                         completed_act_steps,
                     )
-                    self._completed_steps = [
-                        typing.cast(SagaStepHandler[ContextT, typing.Any], step) for step in reconstructed_steps
-                    ]
+                    self._completed_steps = typing.cast(
+                        list[SagaStepHandler[ContextT, typing.Any] | SagaStepRef],
+                        list(reconstructed_steps),
+                    )
                     if not self._completed_steps:
                         logger.warning(
                             f"Saga {self._saga_id}: no completed steps to compensate "
@@ -342,30 +362,30 @@ class SagaTransaction(typing.Generic[ContextT]):
                             saga_id=self._saga_id,
                         )
                     elif executed_step is None:
+                        # Type markers only: compensation re-resolves the step
+                        # inside a live scope (see SagaCompensator).
                         primary_name = step_item.step.__name__
                         fallback_name = step_item.fallback.__name__
                         if primary_name in completed_step_names:
-                            step = await self._container.resolve(step_item.step)
-                            self._completed_steps.append(step)
+                            self._completed_steps.append(SagaStepRef(step_item.step))
                         elif fallback_name in completed_step_names:
-                            step = await self._container.resolve(step_item.fallback)
-                            self._completed_steps.append(step)
+                            self._completed_steps.append(SagaStepRef(step_item.fallback))
                     continue
 
                 step_type = step_item
                 step_name = step_type.__name__
 
                 if step_name in completed_step_names:
-                    step = await self._container.resolve(step_type)
-                    self._completed_steps.append(step)
+                    # Type marker only (see the Fallback skip branch above):
+                    # compensation re-resolves the step inside a live scope.
+                    self._completed_steps.append(SagaStepRef(step_type))
                     logger.debug(f"Skipping already completed step: {step_name}")
                     continue
 
-                step_result = await step_executor.execute_step(
+                step_result, step = await step_executor.execute_step(
                     step_type,
                     step_name,
                 )
-                step = await self._container.resolve(step_type)
                 self._completed_steps.append(step)
                 if run is not None:
                     await run.commit()
@@ -485,6 +505,7 @@ class Saga(typing.Generic[ContextT]):
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> SagaTransaction[ContextT]:
         """
         Create a transaction context manager for saga execution.
@@ -503,6 +524,13 @@ class Saga(typing.Generic[ContextT]):
             compensation_retry_count: Number of retry attempts for compensation (default: 3)
             compensation_retry_delay: Initial delay between retries in seconds (default: 1.0)
             compensation_retry_backoff: Backoff multiplier for exponential delay (default: 2.0)
+            scope_strategy: DI scope boundary (default NONE, no framework
+                    scopes). SEND keeps one scope for the whole saga including
+                    compensation; HANDLER opens a fresh scope per step, and
+                    compensation re-resolves the step in a new scope.
+                    A plain container is enough; the transaction wraps it so
+                    resolves read the ambient scope. Pass the same strategy to
+                    ``recover_saga``.
 
         Returns:
             A SagaTransaction context manager that can be used in an async with statement.
@@ -513,6 +541,7 @@ class Saga(typing.Generic[ContextT]):
                 context=OrderContext(order_id="123"),
                 container=container,
                 storage=storage,
+                scope_strategy=ScopeStrategy.SEND,
             ) as transaction:
                 async for step_result in transaction:
                     # Process step_result
@@ -527,4 +556,5 @@ class Saga(typing.Generic[ContextT]):
             compensation_retry_count=compensation_retry_count,
             compensation_retry_delay=compensation_retry_delay,
             compensation_retry_backoff=compensation_retry_backoff,
+            scope_strategy=scope_strategy,
         )

@@ -1,6 +1,13 @@
 from cqrs.compressors import Compressor, ZlibCompressor
 from cqrs.container.di import DIContainer
-from cqrs.container.protocol import Container
+from cqrs.container.protocol import Container, SupportsScope
+from cqrs.container.scope import (
+    ScopeAwareContainer,
+    ScopeStrategy,
+    bind_scope,
+    current_container,
+    enter_scope,
+)
 from cqrs.circuit_breaker import ICircuitBreaker
 from cqrs.events import EventMap
 from cqrs.events.fallback import EventHandlerFallback
@@ -105,7 +112,13 @@ __all__ = (
     "SqlAlchemyOutboxedEventRepository",
     "EventProducer",
     "Container",
+    "SupportsScope",
     "DIContainer",
+    "ScopeAwareContainer",
+    "ScopeStrategy",
+    "bind_scope",
+    "current_container",
+    "enter_scope",
     "Compressor",
     "ZlibCompressor",
     "rebind_outbox_model",

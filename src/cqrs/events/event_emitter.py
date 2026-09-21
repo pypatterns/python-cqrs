@@ -5,6 +5,13 @@ import typing
 
 from cqrs import container as di_container, message_brokers
 from cqrs.circuit_breaker import should_use_fallback
+from cqrs.container.scope import (
+    ScopeStrategy,
+    _Fallback,
+    _run_with_fallback_scope,
+    handler_scope,
+    wrap_container,
+)
 from cqrs.events.event import IDomainEvent, IEvent, INotificationEvent
 from cqrs.events import event_handler, map
 from cqrs.events.fallback import EventHandlerFallback
@@ -30,6 +37,7 @@ class EventEmitter:
         event_map: map.EventMap,
         container: di_container.Container,
         message_broker: message_brokers.MessageBroker | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         """
         Initialize the event emitter.
@@ -39,6 +47,7 @@ class EventEmitter:
             container: DI container to resolve handler instances.
             message_broker: Optional broker for notification events; required
                 when emitting :class:`~cqrs.events.event.INotificationEvent`.
+            scope_strategy: DI scope boundary; HANDLER opens a scope per handler.
 
         Example::
 
@@ -52,8 +61,9 @@ class EventEmitter:
             follow_ups = await emitter.emit(OrderCreatedEvent(order_id="1"))
         """
         self._event_map = event_map
-        self._container = container
+        self._container = wrap_container(container)
         self._message_broker = message_broker
+        self._scope_strategy = scope_strategy
 
     @functools.singledispatchmethod
     async def emit(self, event: IEvent) -> typing.Sequence[IEvent]:
@@ -119,46 +129,58 @@ class EventEmitter:
         fallback_config: EventHandlerFallback,
     ) -> typing.Sequence[IEvent]:
         """Run primary handler with fallback on failure; return events from the handler that ran."""
-        primary: _H = await self._container.resolve(fallback_config.primary)
-        try:
-            if fallback_config.circuit_breaker is not None:
-                await fallback_config.circuit_breaker.call(
-                    fallback_config.primary,
-                    primary.handle,
-                    event,
-                )
-            else:
-                await primary.handle(event)
-            return list(primary.events)
-        except Exception as primary_error:
-            should_fallback = should_use_fallback(
-                primary_error,
-                fallback_config.circuit_breaker,
-                fallback_config.failure_exceptions,
-            )
-            if should_fallback:
-                if (
-                    fallback_config.circuit_breaker is not None
-                    and fallback_config.circuit_breaker.is_circuit_breaker_error(
-                        primary_error,
-                    )
-                ):
-                    logger.warning(
-                        "Circuit breaker open for event handler %s, switching to fallback %s",
-                        fallback_config.primary.__name__,
-                        fallback_config.fallback.__name__,
+
+        async def primary() -> typing.Sequence[IEvent]:
+            primary_handler: _H = await self._container.resolve(fallback_config.primary)
+            try:
+                if fallback_config.circuit_breaker is not None:
+                    await fallback_config.circuit_breaker.call(
+                        fallback_config.primary,
+                        primary_handler.handle,
+                        event,
                     )
                 else:
-                    logger.warning(
-                        "Primary event handler %s failed: %s. Switching to fallback %s.",
-                        fallback_config.primary.__name__,
-                        primary_error,
-                        fallback_config.fallback.__name__,
-                    )
-                fallback_handler: _H = await self._container.resolve(fallback_config.fallback)
-                await fallback_handler.handle(event)
-                return list(fallback_handler.events)
-            raise primary_error
+                    await primary_handler.handle(event)
+                return list(primary_handler.events)
+            except Exception as primary_error:
+                should_fallback = should_use_fallback(
+                    primary_error,
+                    fallback_config.circuit_breaker,
+                    fallback_config.failure_exceptions,
+                )
+                if should_fallback:
+                    if (
+                        fallback_config.circuit_breaker is not None
+                        and fallback_config.circuit_breaker.is_circuit_breaker_error(
+                            primary_error,
+                        )
+                    ):
+                        logger.warning(
+                            "Circuit breaker open for event handler %s, switching to fallback %s",
+                            fallback_config.primary.__name__,
+                            fallback_config.fallback.__name__,
+                        )
+                    else:
+                        logger.warning(
+                            "Primary event handler %s failed: %s. Switching to fallback %s.",
+                            fallback_config.primary.__name__,
+                            primary_error,
+                            fallback_config.fallback.__name__,
+                        )
+                    raise _Fallback(primary_error) from primary_error
+                raise primary_error
+
+        async def fallback() -> typing.Sequence[IEvent]:
+            fallback_handler: _H = await self._container.resolve(fallback_config.fallback)
+            await fallback_handler.handle(event)
+            return list(fallback_handler.events)
+
+        return await _run_with_fallback_scope(
+            self._container,
+            self._scope_strategy,
+            primary,
+            fallback,
+        )
 
     @emit.register(IDomainEvent)
     async def _(self, event: IDomainEvent) -> typing.Sequence[IEvent]:
@@ -171,10 +193,7 @@ class EventEmitter:
             )
             return ()
 
-        results = await asyncio.gather(
-            *(self._process_single_handler(event, item) for item in handlers_types),
-            return_exceptions=True,
-        )
+        results = await self._run_handlers(event, handlers_types)
 
         follow_ups: list[IEvent] = []
         for handler_item, res in zip(handlers_types, results):
@@ -204,6 +223,25 @@ class EventEmitter:
         await self._send_to_broker(event)
         return ()
 
+    async def _run_handlers(
+        self,
+        event: IDomainEvent,
+        handlers_types: list[typing.Union[typing.Type[_H], EventHandlerFallback]],
+    ) -> list[typing.Sequence[IEvent] | BaseException]:
+        """Run handlers for one event; SEND stays sequential so they share one UoW."""
+        if self._scope_strategy == ScopeStrategy.SEND:
+            results: list[typing.Sequence[IEvent] | BaseException] = []
+            for item in handlers_types:
+                try:
+                    results.append(await self._process_single_handler(event, item))
+                except Exception as e:
+                    results.append(e)
+            return results
+        return await asyncio.gather(
+            *(self._process_single_handler(event, item) for item in handlers_types),
+            return_exceptions=True,
+        )
+
     async def _process_single_handler(
         self,
         event: IDomainEvent,
@@ -214,11 +252,12 @@ class EventEmitter:
             return await self._handle_with_fallback(event, handler_item)
 
         handler_type = handler_item
-        handler: _H = await self._container.resolve(handler_type)
-        logger.debug(
-            "Handling Event(%s) via event handler(%s)",
-            type(event).__name__,
-            handler_type.__name__,
-        )
-        await handler.handle(event)
-        return list(handler.events)
+        async with handler_scope(self._container, self._scope_strategy):
+            handler: _H = await self._container.resolve(handler_type)
+            logger.debug(
+                "Handling Event(%s) via event handler(%s)",
+                type(event).__name__,
+                handler_type.__name__,
+            )
+            await handler.handle(event)
+            return list(handler.events)

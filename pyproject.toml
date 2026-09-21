@@ -31,7 +31,7 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "4.13.0"
+version = "4.14.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
@@ -59,6 +59,7 @@ dev = [
   "redis>=5.0.0",
   # Circuit breaker for tests
   "aiobreaker>=0.3.0", # from aiobreaker
+  "dishka>=1.0",  # scoped-deps dishka adapter tests / examples
 ]
 examples = [
   "fastapi==0.109.*",
@@ -68,10 +69,12 @@ examples = [
   "aiohttp==3.14.3",
   "protobuf>=4.25.8",
   "aiosqlite>=0.20.0",
+  "dishka>=1.0",
 ]
 kafka = ["aiokafka==0.10.0", "retry-async==0.1.*"]
 rabbit = ["aio-pika==9.3.0"]
 sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
+dishka = ["dishka>=1.0"]
 
 [project.urls]
 Documentation = "https://mkdocs.python-cqrs.dev/"

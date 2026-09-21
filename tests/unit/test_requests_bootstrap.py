@@ -69,7 +69,7 @@ class TestSetupEventEmitter:
         # Assert
         assert isinstance(emitter, events.EventEmitter)
         assert emitter._event_map is not None
-        assert emitter._container is container
+        assert emitter._container.root is container
 
     def test_setup_event_emitter_with_custom_message_broker(self) -> None:
         # Arrange
@@ -118,7 +118,7 @@ class TestSetupEventEmitter:
 
         # Assert
         assert isinstance(emitter, events.EventEmitter)
-        assert emitter._container is container
+        assert emitter._container.root is container
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ class TestSetupMediator:
         # Assert
         assert isinstance(mediator, cqrs.RequestMediator)
         assert mediator._event_processor._event_emitter is emitter
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     def test_setup_mediator_with_commands_mapper_registers_commands(self) -> None:
         # Arrange
@@ -270,7 +270,7 @@ class TestBootstrapRequests:
 
         # Assert
         assert isinstance(mediator, cqrs.RequestMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     @pytest.mark.asyncio
     async def test_bootstrap_calls_on_startup_callables(self) -> None:
@@ -516,7 +516,7 @@ class TestBootstrapStreaming:
 
         # Assert
         assert isinstance(mediator, cqrs.StreamingRequestMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     @pytest.mark.asyncio
     async def test_bootstrap_streaming_calls_on_startup(self) -> None:

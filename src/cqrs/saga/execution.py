@@ -5,7 +5,14 @@ import dataclasses
 import logging
 import typing
 
+from cqrs.circuit_breaker import should_use_fallback
 from cqrs.container.protocol import Container
+from cqrs.container.scope import (
+    ScopeStrategy,
+    _Fallback,
+    _run_with_fallback_scope,
+    handler_scope,
+)
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.models import ContextT, SagaContext
 from cqrs.saga.step import SagaStepHandler, SagaStepResult
@@ -13,6 +20,13 @@ from cqrs.saga.storage.enums import SagaStepStatus
 from cqrs.saga.storage.protocol import ISagaStorage, SagaStorageRun
 
 logger = logging.getLogger("cqrs.saga")
+
+
+@dataclasses.dataclass(frozen=True)
+class SagaStepRef:
+    """Marker for a completed saga step that was skipped or reconstructed without resolving."""
+
+    step_type: type[SagaStepHandler]
 
 
 class SagaStateManager:
@@ -110,18 +124,22 @@ class SagaRecoveryManager:
     async def reconstruct_completed_steps(
         self,
         completed_step_names: set[str],
-    ) -> list[SagaStepHandler[SagaContext, typing.Any]]:
+    ) -> list[SagaStepHandler[SagaContext, typing.Any] | SagaStepRef]:
         """
-        Reconstructs and returns the resolved step handler instances corresponding to the completed steps, preserving saga execution order.
+        Reconstructs and returns markers for completed steps, preserving saga execution order.
 
         Parameters:
             completed_step_names (set[str]): Names of steps that completed the "act" action.
 
         Returns:
-            list[SagaStepHandler[SagaContext, typing.Any]]: Resolved step handler instances in execution order. For Fallback wrappers, the primary handler is chosen if its name appears in completed_step_names; otherwise the fallback handler is chosen when present.
+            Markers (not live handler instances) in execution order. For Fallback
+            wrappers, the primary handler is chosen if its name appears in
+            completed_step_names; otherwise the fallback handler is chosen when present.
         """
-        completed_steps: list[SagaStepHandler[SagaContext, typing.Any]] = []
+        completed_steps: list[SagaStepHandler[SagaContext, typing.Any] | SagaStepRef] = []
 
+        # Do not resolve here: instances would hold one-shot / closed scoped
+        # dependencies. Compensation re-resolves from these type markers.
         for step_item in self._saga_steps:
             # Handle Fallback wrapper
             if isinstance(step_item, Fallback):
@@ -129,17 +147,14 @@ class SagaRecoveryManager:
                 primary_name = step_item.step.__name__
                 fallback_name = step_item.fallback.__name__
                 if primary_name in completed_step_names:
-                    step = await self._container.resolve(step_item.step)
-                    completed_steps.append(step)
+                    completed_steps.append(SagaStepRef(step_item.step))
                 elif fallback_name in completed_step_names:
-                    step = await self._container.resolve(step_item.fallback)
-                    completed_steps.append(step)
+                    completed_steps.append(SagaStepRef(step_item.fallback))
             else:
                 # Regular step
                 step_name = step_item.__name__
                 if step_name in completed_step_names:
-                    step = await self._container.resolve(step_item)
-                    completed_steps.append(step)
+                    completed_steps.append(SagaStepRef(step_item))
 
         return completed_steps
 
@@ -152,6 +167,7 @@ class SagaStepExecutor(typing.Generic[ContextT]):
         context: ContextT,
         container: Container,
         state_manager: SagaStateManager,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         """
         Initialize step executor.
@@ -160,16 +176,18 @@ class SagaStepExecutor(typing.Generic[ContextT]):
             context: Saga context
             container: DI container for resolving step handlers
             state_manager: State manager for logging and updates
+            scope_strategy: When HANDLER, opens a DI scope per step
         """
         self._context = context
         self._container = container
         self._state_manager = state_manager
+        self._scope_strategy = scope_strategy
 
     async def execute_step(
         self,
         step_type: type[SagaStepHandler],
         step_name: str,
-    ) -> SagaStepResult[ContextT, typing.Any]:
+    ) -> tuple[SagaStepResult[ContextT, typing.Any], SagaStepHandler[ContextT, typing.Any]]:
         """
         Execute a regular saga step.
 
@@ -178,30 +196,34 @@ class SagaStepExecutor(typing.Generic[ContextT]):
             step_name: Name of the step (for logging)
 
         Returns:
-            Result of step execution
+            Tuple of (step result, the resolved step instance that ran ``act``).
+            Callers must reuse this instance for ``completed_steps`` and events —
+            do not re-resolve it after the handler scope exits. Compensation is
+            handled by ``SagaCompensator``, which opens its own scope.
         """
-        # Resolve step handler from DI container
-        step = await self._container.resolve(step_type)
+        async with handler_scope(self._container, self._scope_strategy):
+            # Resolve step handler from DI container
+            step = await self._container.resolve(step_type)
 
-        # Log step start
-        await self._state_manager.log_step(
-            step_name,
-            "act",
-            SagaStepStatus.STARTED,
-        )
+            # Log step start
+            await self._state_manager.log_step(
+                step_name,
+                "act",
+                SagaStepStatus.STARTED,
+            )
 
-        # Execute step
-        step_result = await step.act(self._context)
+            # Execute step
+            step_result = await step.act(self._context)
 
-        # Update context and log completion
-        await self._state_manager.update_context(self._context)
-        await self._state_manager.log_step(
-            step_name,
-            "act",
-            SagaStepStatus.COMPLETED,
-        )
+            # Update context and log completion
+            await self._state_manager.update_context(self._context)
+            await self._state_manager.log_step(
+                step_name,
+                "act",
+                SagaStepStatus.COMPLETED,
+            )
 
-        return step_result
+            return step_result, step
 
 
 class FallbackStepExecutor(typing.Generic[ContextT]):
@@ -212,6 +234,7 @@ class FallbackStepExecutor(typing.Generic[ContextT]):
         context: ContextT,
         container: Container,
         state_manager: SagaStateManager,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         """
         Initialize fallback step executor.
@@ -220,10 +243,12 @@ class FallbackStepExecutor(typing.Generic[ContextT]):
             context: Saga context
             container: DI container for resolving step handlers
             state_manager: State manager for logging and updates
+            scope_strategy: When HANDLER, opens a DI scope per step
         """
         self._context = context
         self._container = container
         self._state_manager = state_manager
+        self._scope_strategy = scope_strategy
 
     async def execute_fallback_step(
         self,
@@ -259,110 +284,101 @@ class FallbackStepExecutor(typing.Generic[ContextT]):
             )
             return None, None
 
-        # Resolve step handlers
-        primary_step = await self._container.resolve(fallback_wrapper.step)
-        fallback_step = await self._container.resolve(fallback_wrapper.fallback)
-
-        # Create context snapshot before executing primary step
         context_snapshot = copy.deepcopy(self._context.to_dict())
 
-        # Try to execute primary step
-        try:
-            await self._state_manager.log_step(
-                primary_step_name,
-                "act",
-                SagaStepStatus.STARTED,
-            )
-
-            # Execute primary step with circuit breaker if present
-            if fallback_wrapper.circuit_breaker is not None:
-                step_result = await fallback_wrapper.circuit_breaker.call(
-                    fallback_wrapper.step,
-                    primary_step.act,
-                    self._context,
-                )
-            else:
-                step_result = await primary_step.act(self._context)
-
-            # Primary step succeeded
-            await self._state_manager.update_context(self._context)
-            await self._state_manager.log_step(
-                primary_step_name,
-                "act",
-                SagaStepStatus.COMPLETED,
-            )
-            return step_result, primary_step
-
-        except Exception as primary_error:
-            should_fallback = False
-
-            # 1. Check Circuit Breaker
-            if (
-                fallback_wrapper.circuit_breaker is not None
-                and fallback_wrapper.circuit_breaker.is_circuit_breaker_error(
-                    primary_error,
-                )
-            ):
-                logger.warning(
-                    f"Circuit breaker open for step '{primary_step_name}'. "
-                    f"Switching to fallback '{fallback_step_name}'.",
-                )
-                should_fallback = True
-
-            # 2. Check failure_exceptions if defined
-            elif fallback_wrapper.failure_exceptions:
-                if isinstance(primary_error, fallback_wrapper.failure_exceptions):
-                    should_fallback = True
-
-            # 3. If no specific exceptions defined, catch all
-            else:
-                should_fallback = True
-
-            if should_fallback:
-                # Log warning but DO NOT log FAILED status for primary step
-                logger.warning(
-                    f"Primary step '{primary_step_name}' failed: {primary_error}. "
-                    f"Switching to fallback '{fallback_step_name}'.",
+        async def primary() -> tuple[SagaStepResult[ContextT, typing.Any], SagaStepHandler]:
+            primary_step = await self._container.resolve(fallback_wrapper.step)
+            try:
+                await self._state_manager.log_step(
+                    primary_step_name,
+                    "act",
+                    SagaStepStatus.STARTED,
                 )
 
-                # Restore context from snapshot
-                restored_context = self._context.__class__.from_dict(context_snapshot)
-                # Copy all fields from restored context to the existing one
-                for field in dataclasses.fields(self._context):
-                    setattr(
+                # Execute primary step with circuit breaker if present
+                if fallback_wrapper.circuit_breaker is not None:
+                    step_result = await fallback_wrapper.circuit_breaker.call(
+                        fallback_wrapper.step,
+                        primary_step.act,
                         self._context,
-                        field.name,
-                        getattr(restored_context, field.name),
                     )
+                else:
+                    step_result = await primary_step.act(self._context)
 
-                # Execute fallback step
-                try:
-                    await self._state_manager.log_step(
-                        fallback_step_name,
-                        "act",
-                        SagaStepStatus.STARTED,
+                # Primary step succeeded
+                await self._state_manager.update_context(self._context)
+                await self._state_manager.log_step(
+                    primary_step_name,
+                    "act",
+                    SagaStepStatus.COMPLETED,
+                )
+                return step_result, primary_step
+
+            except Exception as primary_error:
+                if not should_use_fallback(
+                    primary_error,
+                    fallback_wrapper.circuit_breaker,
+                    fallback_wrapper.failure_exceptions,
+                ):
+                    raise primary_error
+
+                if (
+                    fallback_wrapper.circuit_breaker is not None
+                    and fallback_wrapper.circuit_breaker.is_circuit_breaker_error(
+                        primary_error,
                     )
-
-                    step_result = await fallback_step.act(self._context)
-
-                    # Fallback succeeded
-                    await self._state_manager.update_context(self._context)
-                    await self._state_manager.log_step(
-                        fallback_step_name,
-                        "act",
-                        SagaStepStatus.COMPLETED,
+                ):
+                    logger.warning(
+                        f"Circuit breaker open for step '{primary_step_name}'. "
+                        f"Switching to fallback '{fallback_step_name}'.",
                     )
-                    return step_result, fallback_step
-
-                except Exception as fallback_error:
-                    # Fallback also failed - saga fails
-                    await self._state_manager.log_step(
-                        fallback_step_name,
-                        "act",
-                        SagaStepStatus.FAILED,
-                        str(fallback_error),
+                else:
+                    logger.warning(
+                        f"Primary step '{primary_step_name}' failed: {primary_error}. "
+                        f"Switching to fallback '{fallback_step_name}'.",
                     )
-                    raise fallback_error
-            else:
-                # Should not fallback, re-raise original error
-                raise primary_error
+                raise _Fallback(primary_error) from primary_error
+
+        async def fallback() -> tuple[SagaStepResult[ContextT, typing.Any], SagaStepHandler]:
+            restored_context = self._context.__class__.from_dict(context_snapshot)
+            for field in dataclasses.fields(self._context):
+                setattr(
+                    self._context,
+                    field.name,
+                    getattr(restored_context, field.name),
+                )
+
+            fallback_step = await self._container.resolve(fallback_wrapper.fallback)
+            try:
+                await self._state_manager.log_step(
+                    fallback_step_name,
+                    "act",
+                    SagaStepStatus.STARTED,
+                )
+
+                step_result = await fallback_step.act(self._context)
+
+                # Fallback succeeded
+                await self._state_manager.update_context(self._context)
+                await self._state_manager.log_step(
+                    fallback_step_name,
+                    "act",
+                    SagaStepStatus.COMPLETED,
+                )
+                return step_result, fallback_step
+
+            except Exception as fallback_error:
+                await self._state_manager.log_step(
+                    fallback_step_name,
+                    "act",
+                    SagaStepStatus.FAILED,
+                    str(fallback_error),
+                )
+                raise fallback_error
+
+        return await _run_with_fallback_scope(
+            self._container,
+            self._scope_strategy,
+            primary,
+            fallback,
+        )

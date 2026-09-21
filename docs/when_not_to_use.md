@@ -50,4 +50,4 @@ Related:
 
 - [Transactional Outbox](https://mkdocs.python-cqrs.dev/outbox/) — store events with the business write, publish later
 - [Saga Pattern](https://mkdocs.python-cqrs.dev/saga/) — orchestrate steps with automatic compensation and recovery
-- [FastAPI + Outbox example](../examples/fastapi_outbox.py) — one command, one transaction, publisher stub
+- [FastAPI + Outbox example](../examples/outbox/fastapi_outbox.py) — one command, one transaction, publisher stub

@@ -50,6 +50,7 @@
 - [Request Handlers](#request-handlers)
 - [Mapping](#mapping)
 - [DI container](#di-container)
+- [Scoped dependencies](#scoped-dependencies)
 - [Bootstrap](#bootstrap)
 - [Saga Pattern](#saga-pattern)
 - [Producing Notification Events](#producing-notification-events)
@@ -197,7 +198,7 @@ class CustomResponse(cqrs.IResponse):
         return cls(result=kwargs["result"], status=kwargs["status"])
 ```
 
-A complete example can be found in [request_response_types.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/request_response_types.py)
+A complete example can be found in [request_response_types.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_response_types.py)
 
 ## Request Handlers
 
@@ -230,7 +231,7 @@ class JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py)
 
 ### Query handler
 
@@ -260,7 +261,7 @@ class ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryR
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py)
 
 ### Streaming Request Handler
 
@@ -296,7 +297,7 @@ class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand, Fi
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming_handler_parallel_events.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming/streaming_handler_parallel_events.py)
 
 ### Chain of Responsibility Request Handler
 
@@ -359,7 +360,7 @@ def payment_mapper(mapper: cqrs.RequestMap) -> None:
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor_request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor/cor_request_handler.py)
 
 #### Mermaid Diagram Generation
 
@@ -379,7 +380,7 @@ sequence_diagram = generator.sequence()
 class_diagram = generator.class_diagram()
 ```
 
-Complete example: [CoR Mermaid Diagrams](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor_mermaid.py)
+Complete example: [CoR Mermaid Diagrams](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor/cor_mermaid.py)
 
 ## Mapping
 
@@ -440,7 +441,11 @@ def saga_mapper(mapper: cqrs.SagaMap) -> None:
 Use the following example to set up dependency injection in your command, query and event handlers. This will make
 dependency management simpler.
 
-The package supports two DI container libraries:
+The package supports three DI container libraries:
+
+- [`di`](#di-library) (default)
+- [`dependency-injector`](#dependency-injector-library)
+- [dishka](https://github.com/reagento/dishka) via `DishkaCQRSContainer` (`pip install python-cqrs[dishka]`)
 
 ### di library
 
@@ -469,7 +474,7 @@ def setup_di() -> di.Container:
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/dependency_injection.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/di/di_basic.py)
 
 ### dependency-injector library
 
@@ -485,7 +490,8 @@ class ApplicationContainer(containers.DeclarativeContainer):
     service = providers.Factory(ServiceImplementation)
 
 # Create CQRS container adapter
-cqrs_container = DependencyInjectorCQRSContainer(ApplicationContainer())
+cqrs_container = DependencyInjectorCQRSContainer()
+cqrs_container.attach_external_container(ApplicationContainer())
 
 # Use with bootstrap
 mediator = bootstrap.bootstrap(
@@ -496,8 +502,51 @@ mediator = bootstrap.bootstrap(
 ```
 
 Complete examples can be found in:
-- [Simple example](https://github.com/vadikko2/python-cqrs/blob/master/examples/dependency_injector_integration_simple_example.py)
-- [Practical example with FastAPI](https://github.com/vadikko2/python-cqrs/blob/master/examples/dependency_injector_integration_practical_example.py)
+- [Simple example](https://github.com/vadikko2/python-cqrs/blob/master/examples/di/dependency_injector_simple.py)
+- [Practical example with FastAPI](https://github.com/vadikko2/python-cqrs/blob/master/examples/di/dependency_injector_practical.py)
+
+### Scoped dependencies
+
+With `scope_strategy=ScopeStrategy.SEND`, generator providers (UoW / DB sessions) stay alive until the CQRS scope exits — inject `IUoW` directly instead of a factory:
+
+```python
+# Before: factory in the handler
+class CancelTaskHandler(cqrs.RequestHandler[CancelTask, None]):
+    def __init__(self, uow_factory: Callable[..., AbstractAsyncContextManager[IUoW]]) -> None:
+        self._uow_factory = uow_factory
+
+    async def handle(self, command: CancelTask) -> None:
+        async with self._uow_factory() as uow:
+            await uow.tasks.cancel(command.task_id)
+
+# After: live dependency; cleanup on scope exit
+class CancelTaskHandler(cqrs.RequestHandler[CancelTask, None]):
+    def __init__(self, uow: IUoW) -> None:
+        self._uow = uow
+
+    async def handle(self, command: CancelTask) -> None:
+        await self._uow.tasks.cancel(command.task_id)
+```
+
+Configure the boundary with `scope_strategy=` on bootstrap:
+
+```python
+mediator = bootstrap.bootstrap(
+    di_container=container,
+    commands_mapper=...,
+    scope_strategy=cqrs.ScopeStrategy.SEND,
+)
+```
+
+The default is `ScopeStrategy.NONE` (no framework scopes, same behaviour as before scoped dependencies were introduced), so scopes are an explicit opt-in: pass `SEND` for one scope per `send()` / `stream()` including domain events, or `HANDLER` for a fresh scope per resolve+handle. You can also override the boundary ad hoc with `async with cqrs.enter_scope(container):` / `cqrs.bind_scope(...)`.
+
+**Fallback × strategy:** under `SEND`, fallback runs in the same UoW as the primary handler (and domain events). After a DB error the session may need `rollback()` / a savepoint, or use `HANDLER`. Under `HANDLER`, the primary scope is closed with **rollback**, then fallback runs in a new scope — primary writes are not visible. `NONE` stays one-shot. Yields already sent to a streaming client are not undone.
+
+**`SEND` implies sequential events:** `concurrent_event_handle_enable=None` becomes `False`. Passing `True` with `SEND` raises `ValueError`; use `HANDLER` or `NONE` for parallel events.
+
+Long streams under `SEND` hold the UoW for the whole lifetime — exhaust the iterator or `aclose()` / `async with aclosing(...)`. An abandoned SEND stream keeps the UoW until GC. For sagas with scoped dependencies prefer `SEND`: it keeps one UoW for the whole saga including compensation. Under `HANDLER` each step gets its own scope and compensation re-resolves the step in a fresh scope, so state kept on the step instance during `act` is not visible in `compensate`. `recover_saga` / `saga.transaction` take the same `scope_strategy` as the original run; a plain container is enough (no manual `ScopeAwareContainer`).
+
+Docs: [Scoped Dependencies](https://mkdocs.python-cqrs.dev/scoped_dependencies/). Examples: [`examples/di/`](https://github.com/vadikko2/python-cqrs/tree/master/examples/di) (`scoped_dependencies_*.py`).
 
 ## Bootstrap
 
@@ -662,6 +711,7 @@ await recover_saga(
     context_builder=OrderContext,
     container=di_container,  # Same container used in bootstrap
     storage=storage,
+    scope_strategy=cqrs.ScopeStrategy.SEND,  # Match the original run
 )
 
 # Access execution history (SagaLog) for monitoring and debugging
@@ -694,7 +744,7 @@ sequence_diagram = generator.sequence()
 class_diagram = generator.class_diagram()
 ```
 
-Complete example: [Saga Mermaid Diagrams](https://github.com/vadikko2/python-cqrs/blob/master/examples/saga_mermaid.py)
+Complete example: [Saga Mermaid Diagrams](https://github.com/vadikko2/python-cqrs/blob/master/examples/saga/saga_mermaid.py)
 
 ## Producing Notification Events
 
@@ -734,7 +784,7 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/event_producing.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/event_producing.py)
 
 After processing the command/request, if there are any Notification/ECST events,
 the EventEmitter is invoked to produce the events via the message broker.
@@ -805,10 +855,10 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/save_events_into_outbox.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/save_events_into_outbox.py)
 
 A runnable FastAPI flow (route → command → transactional outbox → publisher stub) is in
-[fastapi_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/fastapi_outbox.py)
+[fastapi_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/fastapi_outbox.py)
 
 > [!TIP]
 > The Outbox table is named `outbox` by default. To rename it, or to attach the model to your own declarative
@@ -821,9 +871,13 @@ A runnable FastAPI flow (route → command → transactional outbox → publishe
 > [Database Support](https://mkdocs.python-cqrs.dev/outbox/databases/) docs for the DDL, the Alembic recipe and
 > how to register a native type for your own database.
 > [!TIP]
-> If you use the protobuf events you should specify `OutboxedEventRepository`
-> by [protobuf serialize](https://github.com/vadikko2/python-cqrs/blob/master/src/cqrs/serializers/protobuf.py). A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/save_proto_events_into_outbox.py)
+> For Protobuf events, implement `proto()` / `from_proto()` on the notification
+> event (see [Protobuf messaging](#protobuf-messaging) and the schema assets in
+> [examples/proto/](https://github.com/vadikko2/python-cqrs/tree/master/examples/proto)).
+> Outbox persistence is unchanged — use
+> [save_events_into_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/save_events_into_outbox.py);
+> Protobuf applies when producing to the broker. Full guide:
+> [Protobuf Integration](https://mkdocs.python-cqrs.dev/protobuf/).
 
 ## Producing Events from Outbox to Kafka
 
@@ -862,7 +916,7 @@ async with session_factory() as session:
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/kafka_outboxed_event_producing.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/kafka_outboxed_event_producing.py)
 
 ## Transaction log tailing
 
@@ -905,7 +959,7 @@ class UserJoinedEventHandler(cqrs.EventHandler[UserJoined]):
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/domain_event_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/domain_event_handler.py)
 
 ### Parallel Event Processing
 
@@ -936,6 +990,7 @@ mediator = bootstrap.bootstrap_streaming(
 > - Set `max_concurrent_event_handlers` to limit the number of simultaneously running event handlers
 > - Set `concurrent_event_handle_enable=False` to disable parallel processing and process events sequentially
 > - The default value for `max_concurrent_event_handlers` is `10` for `StreamingRequestMediator` and `1` for `RequestMediator`
+> - `ScopeStrategy.SEND` always uses sequential events (`concurrent=None` → `False`). Passing `concurrent_event_handle_enable=True` with `SEND` raises `ValueError`; use `HANDLER` or `NONE` for parallel events.
 
 ## Integration with presentation layers
 
@@ -973,10 +1028,10 @@ async def join_metting(
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/fastapi_integration.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/fastapi_integration.py)
 
 End-to-end command + outbox sample (business row and outbox event in one transaction, plus a publisher stub):
-[fastapi_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/fastapi_outbox.py)
+[fastapi_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/fastapi_outbox.py)
 
 ### Kafka events consuming
 
@@ -1024,7 +1079,7 @@ async def hello_world_event_handler(
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/kafka_event_consuming.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/kafka_event_consuming.py)
 
 ### FastAPI SSE Streaming
 
@@ -1045,7 +1100,7 @@ def streaming_mediator_factory() -> cqrs.StreamingRequestMediator:
         domain_events_mapper=domain_events_mapper,
         message_broker=broker,
         max_concurrent_event_handlers=3,
-        concurrent_event_handle_enable=True,
+        concurrent_event_handle_enable=True,  # HANDLER/NONE only; SEND forbids this
     )
 
 @app.post("/process-files")
@@ -1072,7 +1127,9 @@ async def process_files_stream(
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/fastapi_sse_streaming.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming/fastapi_sse_streaming.py)
+
+If the client disconnects, close the iterator (`aclose()` / `async with aclosing(...)`) so a `SEND` UoW is not held until GC.
 
 ## Protobuf messaging
 

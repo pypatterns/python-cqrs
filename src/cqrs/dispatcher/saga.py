@@ -3,6 +3,7 @@ import typing
 import uuid
 
 from cqrs.container.protocol import Container
+from cqrs.container.scope import ScopeStrategy
 from cqrs.dispatcher.exceptions import SagaDoesNotExist
 from cqrs.dispatcher.models import SagaDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
@@ -32,6 +33,7 @@ class SagaDispatcher:
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
     ) -> None:
         """
         Initialize saga dispatcher.
@@ -44,6 +46,7 @@ class SagaDispatcher:
             compensation_retry_count: Number of retry attempts for compensation (default: 3)
             compensation_retry_delay: Initial delay between retries in seconds (default: 1.0)
             compensation_retry_backoff: Backoff multiplier for exponential delay (default: 2.0)
+            scope_strategy: DI scope boundary strategy (HANDLER opens a scope per saga step)
         """
         self._saga_map = saga_map
         self._container = container
@@ -52,6 +55,7 @@ class SagaDispatcher:
         self._compensation_retry_count = compensation_retry_count
         self._compensation_retry_delay = compensation_retry_delay
         self._compensation_retry_backoff = compensation_retry_backoff
+        self._scope_strategy = scope_strategy
 
     def dispatch(
         self,
@@ -103,6 +107,7 @@ class SagaDispatcher:
             compensation_retry_count=self._compensation_retry_count,
             compensation_retry_delay=self._compensation_retry_delay,
             compensation_retry_backoff=self._compensation_retry_backoff,
+            scope_strategy=self._scope_strategy,
         )
 
         # Execute saga transaction
@@ -115,10 +120,9 @@ class SagaDispatcher:
                     # It should be the last one in completed_steps
                     if transaction.completed_steps:
                         step_instance = transaction.completed_steps[-1]
-                        if hasattr(step_instance, "events"):
-                            step_events_list = step_instance.events
-                            if isinstance(step_events_list, list):
-                                step_events.extend(step_events_list)
+                        step_events_list = getattr(step_instance, "events", None)
+                        if isinstance(step_events_list, list):
+                            step_events.extend(step_events_list)
                 except Exception as e:
                     logger.warning(
                         f"Failed to collect events from step {step_result.step_type.__name__}: {e}",

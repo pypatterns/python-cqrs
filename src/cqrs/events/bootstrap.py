@@ -8,6 +8,7 @@ from cqrs import events
 from cqrs.container import di as di_container_impl
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.container.protocol import Container as CQRSContainer
+from cqrs.container.scope import ScopeStrategy
 
 
 @overload
@@ -15,6 +16,7 @@ def setup_mediator(
     container: di_container_impl.DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator: ...
 
 
@@ -23,6 +25,7 @@ def setup_mediator(
     container: CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator: ...
 
 
@@ -30,6 +33,7 @@ def setup_mediator(
     container: di_container_impl.DIContainer | CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator:
     """
     Create an event mediator with the given container and middlewares.
@@ -69,6 +73,7 @@ def setup_mediator(
         event_map=_events_mapper,
         container=container,
         middleware_chain=middleware_chain,
+        scope_strategy=scope_strategy,
     )
 
 
@@ -78,6 +83,7 @@ def bootstrap(
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator: ...
 
 
@@ -87,6 +93,7 @@ def bootstrap(
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator: ...
 
 
@@ -95,6 +102,7 @@ def bootstrap(
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.EventMediator:
     """
     Bootstrap an event mediator with optional middlewares and event bindings.
@@ -149,4 +157,5 @@ def bootstrap(
         container,
         events_mapper=events_mapper,
         middlewares=middlewares_list,
+        scope_strategy=scope_strategy,
     )
