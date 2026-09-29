@@ -1,7 +1,14 @@
+import logging
 import typing
 import uuid
 
 from cqrs.container.protocol import Container
+from cqrs.container.scope import (
+    ScopeStrategy,
+    enter_scope,
+    resolve_concurrent_event_handling,
+    wrap_container,
+)
 from cqrs.dispatcher.event import EventDispatcher
 from cqrs.dispatcher.request import RequestDispatcher
 from cqrs.dispatcher.saga import SagaDispatcher
@@ -19,7 +26,29 @@ from cqrs.saga.step import SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 from cqrs.saga.storage.protocol import ISagaStorage
 
+logger = logging.getLogger("cqrs")
+
 _ResponseT = typing.TypeVar("_ResponseT", IResponse, None, covariant=True)
+
+
+def _warn_on_emitter_strategy_mismatch(
+    event_emitter: EventEmitter | None,
+    scope_strategy: ScopeStrategy,
+) -> None:
+    """Warn when a hand-built emitter scopes differently than the mediator."""
+    if event_emitter is None:
+        return
+    emitter_strategy = getattr(event_emitter, "_scope_strategy", None)
+    if emitter_strategy is None or emitter_strategy == scope_strategy:
+        return
+    logger.warning(
+        "EventEmitter scope_strategy (%s) differs from mediator scope_strategy (%s). "
+        "Command and event handlers may resolve different scoped instances "
+        "(e.g. separate units of work). Pass the same strategy to both, or build "
+        "the mediator via cqrs.bootstrap.",
+        getattr(emitter_strategy, "value", emitter_strategy),
+        getattr(scope_strategy, "value", scope_strategy),
+    )
 
 
 class RequestMediator:
@@ -65,10 +94,18 @@ class RequestMediator:
         middleware_chain: MiddlewareChain | None = None,
         event_map: EventMap | None = None,
         max_concurrent_event_handlers: int = 1,
-        concurrent_event_handle_enable: bool = True,
+        concurrent_event_handle_enable: bool | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
         *,
         dispatcher_type: typing.Type[RequestDispatcher] = RequestDispatcher,
     ) -> None:
+        concurrent_event_handle_enable = resolve_concurrent_event_handling(
+            scope_strategy,
+            concurrent_event_handle_enable,
+        )
+        self._container = wrap_container(container)
+        self._scope_strategy = scope_strategy
+        _warn_on_emitter_strategy_mismatch(event_emitter, scope_strategy)
         self._event_processor = EventProcessor(
             event_map=event_map or EventMap(),
             event_emitter=event_emitter,
@@ -77,8 +114,9 @@ class RequestMediator:
         )
         self._dispatcher = dispatcher_type(
             request_map=request_map,  # type: ignore
-            container=container,  # type: ignore
+            container=self._container,  # type: ignore
             middleware_chain=middleware_chain,  # type: ignore
+            scope_strategy=scope_strategy,  # type: ignore
         )
 
     async def send(self, request: IRequest) -> _ResponseT:
@@ -91,6 +129,12 @@ class RequestMediator:
 
         Note: TypeVar usage here is intentional for type inference purposes.
         """
+        if self._scope_strategy == ScopeStrategy.SEND:
+            async with enter_scope(self._container):
+                return await self._send_impl(request)
+        return await self._send_impl(request)
+
+    async def _send_impl(self, request: IRequest) -> _ResponseT:
         dispatch_result = await self._dispatcher.dispatch(request)
         await self._event_processor.emit_events(dispatch_result.events)
         return dispatch_result.response
@@ -117,16 +161,24 @@ class EventMediator:
         event_map: EventMap,
         container: Container,
         middleware_chain: MiddlewareChain | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
         *,
         dispatcher_type: typing.Type[EventDispatcher] = EventDispatcher,
     ):
+        self._container = wrap_container(container)
+        self._scope_strategy = scope_strategy
         self._dispatcher = dispatcher_type(
             event_map=event_map,  # type: ignore
-            container=container,  # type: ignore
+            container=self._container,  # type: ignore
             middleware_chain=middleware_chain,  # type: ignore
+            scope_strategy=scope_strategy,  # type: ignore
         )
 
     async def send(self, event: IEvent) -> None:
+        if self._scope_strategy == ScopeStrategy.SEND:
+            async with enter_scope(self._container):
+                await self._dispatcher.dispatch(event)
+                return
         await self._dispatcher.dispatch(event)
 
 
@@ -170,10 +222,18 @@ class StreamingRequestMediator:
         middleware_chain: MiddlewareChain | None = None,
         event_map: EventMap | None = None,
         max_concurrent_event_handlers: int = 1,
-        concurrent_event_handle_enable: bool = True,
+        concurrent_event_handle_enable: bool | None = None,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
         *,
         dispatcher_type: typing.Type[StreamingRequestDispatcher] = StreamingRequestDispatcher,
     ) -> None:
+        concurrent_event_handle_enable = resolve_concurrent_event_handling(
+            scope_strategy,
+            concurrent_event_handle_enable,
+        )
+        self._container = wrap_container(container)
+        self._scope_strategy = scope_strategy
+        _warn_on_emitter_strategy_mismatch(event_emitter, scope_strategy)
         self._event_processor = EventProcessor(
             event_map=event_map or EventMap(),
             event_emitter=event_emitter,
@@ -182,14 +242,15 @@ class StreamingRequestMediator:
         )
         self._dispatcher = dispatcher_type(
             request_map=request_map,  # type: ignore
-            container=container,  # type: ignore
+            container=self._container,  # type: ignore
             middleware_chain=middleware_chain,  # type: ignore
+            scope_strategy=scope_strategy,  # type: ignore
         )
 
     def stream(
         self,
         request: IRequest,
-    ) -> typing.AsyncIterator[IResponse | None]:
+    ) -> typing.AsyncGenerator[IResponse | None, None]:
         """
         Stream results from a generator-based handler.
 
@@ -201,16 +262,33 @@ class StreamingRequestMediator:
         3. The response is yielded to the client
 
         The generator continues until StopIteration is raised.
+
+        The consumer must exhaust the iterator or call ``aclose()`` /
+        ``async with contextlib.aclosing(...)``. An abandoned SEND stream keeps
+        the UoW alive until the generator is garbage-collected.
         """
         return self._stream_impl(request)
 
     async def _stream_impl(
         self,
         request: IRequest,
-    ) -> typing.AsyncIterator[IResponse | None]:
+    ) -> typing.AsyncGenerator[IResponse | None, None]:
+        # Scope must live inside the generator body so exit/finalization runs
+        # when the generator is exhausted or aclosed (not when stream() returns).
+        if self._scope_strategy == ScopeStrategy.SEND:
+            async with enter_scope(self._container):
+                async for response in self._iterate_stream(request):
+                    yield response
+            return
+        async for response in self._iterate_stream(request):
+            yield response
+
+    async def _iterate_stream(
+        self,
+        request: IRequest,
+    ) -> typing.AsyncGenerator[IResponse | None, None]:
         async for dispatch_result in self._dispatcher.dispatch(request):
             await self._event_processor.emit_events(dispatch_result.events)
-
             yield dispatch_result.response
 
 
@@ -255,14 +333,22 @@ class SagaMediator:
         middleware_chain: MiddlewareChain | None = None,
         event_map: EventMap | None = None,
         max_concurrent_event_handlers: int = 1,
-        concurrent_event_handle_enable: bool = True,
+        concurrent_event_handle_enable: bool | None = None,
         storage: ISagaStorage | None = None,
         compensation_retry_count: int = 3,
         compensation_retry_delay: float = 1.0,
         compensation_retry_backoff: float = 2.0,
+        scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
         *,
         dispatcher_type: typing.Type[SagaDispatcher] = SagaDispatcher,
     ) -> None:
+        concurrent_event_handle_enable = resolve_concurrent_event_handling(
+            scope_strategy,
+            concurrent_event_handle_enable,
+        )
+        self._container = wrap_container(container)
+        self._scope_strategy = scope_strategy
+        _warn_on_emitter_strategy_mismatch(event_emitter, scope_strategy)
         self._event_processor = EventProcessor(
             event_map=event_map or EventMap(),
             event_emitter=event_emitter,
@@ -271,12 +357,13 @@ class SagaMediator:
         )
         self._dispatcher = dispatcher_type(
             saga_map=saga_map,  # type: ignore
-            container=container,  # type: ignore
+            container=self._container,  # type: ignore
             storage=storage or MemorySagaStorage(),  # type: ignore
             middleware_chain=middleware_chain,  # type: ignore
             compensation_retry_count=compensation_retry_count,  # type: ignore
             compensation_retry_delay=compensation_retry_delay,  # type: ignore
             compensation_retry_backoff=compensation_retry_backoff,  # type: ignore
+            scope_strategy=scope_strategy,  # type: ignore
         )
 
     def stream(
@@ -303,10 +390,27 @@ class SagaMediator:
 
         Yields:
             SagaStepResult
+
+        The consumer must exhaust the iterator or call ``aclose()`` /
+        ``async with contextlib.aclosing(...)``. An abandoned SEND stream keeps
+        the UoW alive until the generator is garbage-collected.
         """
         return self._stream_impl(context, saga_id=saga_id)
 
     async def _stream_impl(
+        self,
+        context: SagaContext,
+        saga_id: uuid.UUID | None = None,
+    ) -> typing.AsyncIterator[SagaStepResult]:
+        if self._scope_strategy == ScopeStrategy.SEND:
+            async with enter_scope(self._container):
+                async for result in self._iterate_saga(context, saga_id=saga_id):
+                    yield result
+            return
+        async for result in self._iterate_saga(context, saga_id=saga_id):
+            yield result
+
+    async def _iterate_saga(
         self,
         context: SagaContext,
         saga_id: uuid.UUID | None = None,

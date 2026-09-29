@@ -1,8 +1,10 @@
+import contextlib
 import logging
 import typing
 import uuid
 
 from cqrs.container.protocol import Container
+from cqrs.container.scope import ScopeStrategy, enter_scope
 from cqrs.saga.models import ContextT
 from cqrs.saga.saga import Saga
 from cqrs.saga.storage.enums import SagaStatus
@@ -20,6 +22,7 @@ async def recover_saga(
     ],
     container: Container,
     storage: ISagaStorage,
+    scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> None:
     """
     Recover and complete a potentially interrupted saga.
@@ -47,6 +50,12 @@ async def recover_saga(
                             - MyClass (if __init__ accepts **kwargs)
         container: DI container for resolving step handlers.
         storage: Saga storage implementation.
+        scope_strategy: Same strategy as the original run. Pass ``SEND`` or
+            ``HANDLER`` so recovery re-opens the matching DI boundary; with
+            ``SEND`` this function opens the scope itself. A plain container
+            is enough (no manual ``ScopeAwareContainer``). Do not call
+            ``recover_saga`` from inside an already-open ``send()`` SEND scope
+            unless you intend to join that UoW.
     """
     # 1. Load state
     try:
@@ -88,17 +97,27 @@ async def recover_saga(
 
     # 3. Resume execution
     # The transaction logic handles skipping completed steps and resuming compensation.
+    @contextlib.asynccontextmanager
+    async def _recovery_scope() -> typing.AsyncIterator[None]:
+        if scope_strategy == ScopeStrategy.SEND:
+            async with enter_scope(container):
+                yield
+            return
+        yield
+
     try:
-        async with saga.transaction(
-            context=typing.cast(ContextT, context),
-            container=container,
-            storage=storage,
-            saga_id=saga_id,
-        ) as transaction:
-            async for step_result in transaction:
-                logger.info(
-                    f"Recovered/Executed step: {step_result.step_type.__name__}",
-                )
+        async with _recovery_scope():
+            async with saga.transaction(
+                context=typing.cast(ContextT, context),
+                container=container,
+                storage=storage,
+                saga_id=saga_id,
+                scope_strategy=scope_strategy,
+            ) as transaction:
+                async for step_result in transaction:
+                    logger.info(
+                        f"Recovered/Executed step: {step_result.step_type.__name__}",
+                    )
 
         logger.info(f"Saga {saga_id} recovery completed successfully.")
 

@@ -91,7 +91,7 @@ class TestSetupSagaMediator:
         # Assert
         assert isinstance(mediator, cqrs.SagaMediator)
         assert mediator._dispatcher is not None
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
         assert mediator._dispatcher._saga_map is not None
 
     def test_setup_saga_mediator_with_sagas_mapper_registers_sagas(self) -> None:
@@ -198,7 +198,7 @@ class TestSetupSagaMediator:
 
         # Assert
         assert isinstance(mediator, cqrs.SagaMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
 
 # ---------------------------------------------------------------------------
@@ -236,7 +236,7 @@ class TestBootstrapSaga:
 
         # Assert
         assert isinstance(mediator, cqrs.SagaMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     @pytest.mark.asyncio
     async def test_bootstrap_calls_on_startup_callables(self) -> None:

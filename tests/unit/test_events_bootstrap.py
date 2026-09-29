@@ -72,7 +72,7 @@ class TestSetupMediatorEvents:
         # Assert
         assert isinstance(mediator, cqrs.EventMediator)
         assert mediator._dispatcher is not None
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
         assert mediator._dispatcher._event_map is not None
 
     def test_setup_mediator_with_events_mapper_registers_handlers(self) -> None:
@@ -110,7 +110,7 @@ class TestSetupMediatorEvents:
 
         # Assert
         assert isinstance(mediator, cqrs.EventMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     def test_setup_mediator_without_events_mapper_uses_empty_map(self) -> None:
         # Arrange
@@ -156,7 +156,7 @@ class TestBootstrapEvents:
 
         # Assert
         assert isinstance(mediator, cqrs.EventMediator)
-        assert mediator._dispatcher._container is container
+        assert getattr(mediator._dispatcher._container, "root") is container
 
     def test_bootstrap_calls_on_startup_callables(self) -> None:
         # Arrange
