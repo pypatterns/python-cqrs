@@ -11,6 +11,7 @@ from cqrs.container.scope import ScopeStrategy
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.requests.map import RequestMap
+from cqrs.serializers.protocol import EventSerializer
 
 DEFAULT_MESSAGE_BROKER = devnull.DevnullMessageBroker()
 
@@ -21,6 +22,8 @@ def setup_event_emitter(
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     message_broker: protocol.MessageBroker | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> events.EventEmitter: ...
 
 
@@ -30,6 +33,8 @@ def setup_event_emitter(
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     message_broker: protocol.MessageBroker | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ): ...
 
 
@@ -38,6 +43,8 @@ def setup_event_emitter(
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     message_broker: protocol.MessageBroker | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> events.EventEmitter:
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
@@ -51,6 +58,7 @@ def setup_event_emitter(
         container=container,
         message_broker=message_broker,
         scope_strategy=scope_strategy,
+        serializer=serializer,
     )
 
 
@@ -132,6 +140,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.RequestMediator: ...
 
 
@@ -147,6 +157,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.RequestMediator: ...
 
 
@@ -161,6 +173,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.RequestMediator:
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
@@ -185,6 +199,7 @@ def bootstrap(
         domain_events_mapper,
         message_broker,
         scope_strategy=scope_strategy,
+        serializer=serializer,
     )
     middlewares_list: typing.List[mediator_middlewares.Middleware] = list(
         middlewares or [],
@@ -282,6 +297,8 @@ def bootstrap_streaming(
     max_concurrent_event_handlers: int = 10,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.StreamingRequestMediator: ...
 
 
@@ -297,6 +314,8 @@ def bootstrap_streaming(
     max_concurrent_event_handlers: int = 10,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.StreamingRequestMediator: ...
 
 
@@ -311,6 +330,8 @@ def bootstrap_streaming(
     max_concurrent_event_handlers: int = 10,
     concurrent_event_handle_enable: bool = False,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.StreamingRequestMediator:
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
@@ -335,6 +356,7 @@ def bootstrap_streaming(
         domain_events_mapper,
         message_broker,
         scope_strategy=scope_strategy,
+        serializer=serializer,
     )
     middlewares_list: typing.List[mediator_middlewares.Middleware] = list(
         middlewares or [],

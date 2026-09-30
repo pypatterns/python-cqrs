@@ -3,11 +3,12 @@ import logging
 import typing
 
 import dotenv
-import orjson
 import cqrs
 import uuid
 from cqrs import compressors
 from cqrs.outbox import map, repository
+from cqrs.serializers.json import JsonEventSerializer
+from cqrs.serializers.protocol import EventCodec
 
 try:
     import sqlalchemy
@@ -168,15 +169,23 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         self,
         session: sql_session.AsyncSession,
         compressor: compressors.Compressor | None = None,
+        *,
+        serializer: EventCodec | None = None,
+        event_map: map.OutboxedEventMap | None = None,
     ):
         self.session = session
         self._compressor = compressor
+        self._serializer = serializer or JsonEventSerializer()
+        self._event_map = event_map if event_map is not None else map.OutboxedEventMap
+
+    def _resolve_codec(self, event_name: str) -> EventCodec:
+        return self._event_map.get_serializer(event_name) or self._serializer
 
     def add(
         self,
         event: cqrs.INotificationEvent,
     ) -> None:
-        registered_event = map.OutboxedEventMap.get(event.event_name)
+        registered_event = self._event_map.get(event.event_name)
         if registered_event is None:
             raise TypeError(f"Unknown event name for {event.event_name}")
 
@@ -185,7 +194,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
                 f"Event type {type(event)} does not match registered event type {registered_event}",
             )
 
-        bytes_payload = orjson.dumps(event.to_dict())
+        bytes_payload = self._resolve_codec(event.event_name).serialize(event)
         if self._compressor is not None:
             bytes_payload = self._compressor.compress(bytes_payload)
 
@@ -202,22 +211,36 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
 
     def _process_events(self, model: OutboxModel) -> repository.OutboxedEvent | None:
         event_dict = model.row_to_dict()
+        event_name = event_dict["event_name"]
 
-        event_model = map.OutboxedEventMap.get(event_dict["event_name"])
+        event_model = self._event_map.get(event_name)
         if event_model is None:
+            logger.warning(f"Unknown event name for {event_name}")
             return None
 
-        if self._compressor is not None:
-            event_dict["payload"] = self._compressor.decompress(event_dict["payload"])
-        event_payload_dict = orjson.loads(event_dict["payload"])
+        codec = self._resolve_codec(event_name)
+        payload = event_dict["payload"]
+        try:
+            if self._compressor is not None:
+                payload = self._compressor.decompress(payload)
+            event = codec.deserialize(payload, event_model)
+        except Exception as error:
+            logger.warning(
+                "Failed to deserialize outbox event %s (id=%s, codec=%s): %s",
+                event_name,
+                event_dict["id"],
+                type(codec).__name__,
+                error,
+            )
+            return None
 
-        # Use from_dict interface method for validation and type conversion
-        # This works through the interface without exposing implementation details
         return repository.OutboxedEvent(
             id=event_dict["id"],
             topic=event_dict["topic"],
             status=event_dict["event_status"],
-            event=event_model.from_dict(**event_payload_dict),
+            event=event,
+            payload_bytes=payload,
+            content_type=codec.content_type_for(event),
         )
 
     async def get_many(
@@ -233,7 +256,12 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         for event in events:
             outboxed_event = self._process_events(event)
             if outboxed_event is None:
-                logger.warning(f"Unknown event name for {event.event_name}")
+                # Same budget as broker publish failures: after MAX_FLUSH_COUNTER_VALUE
+                # the row leaves the selectable set and stops filling the batch.
+                await self.update_status(
+                    event.id,
+                    repository.EventStatus.NOT_PRODUCED,
+                )
                 continue
             result.append(outboxed_event)
 

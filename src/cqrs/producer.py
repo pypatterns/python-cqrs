@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import session as sql_session
 
 from cqrs.message_brokers import protocol as broker_protocol
 from cqrs.outbox import repository as repository_protocol
+from cqrs.serializers.default import headers_for_content_type
 
 logger = logging.getLogger("cqrs")
 logger.setLevel(logging.DEBUG)
@@ -32,12 +33,19 @@ class EventProducer:
     async def send_message(self, event: repository_protocol.OutboxedEvent):
         try:
             logger.debug(f"Send event {event.event.event_id} into topic {event.topic}")
+            content_type, headers = headers_for_content_type(
+                event.content_type,
+                event.event,
+            )
             await self.message_broker.send_message(
                 broker_protocol.Message(
                     message_name=event.event.event_name,
                     message_id=event.event.event_id,
                     topic=event.topic,
                     payload=event.event.to_dict(),
+                    payload_bytes=event.payload_bytes,
+                    content_type=content_type,
+                    headers=headers,
                 ),
             )
         except Exception as error:

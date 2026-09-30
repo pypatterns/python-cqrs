@@ -13,6 +13,7 @@ from cqrs.middlewares import base as mediator_middlewares, logging as logging_mi
 from cqrs.requests.bootstrap import setup_event_emitter
 from cqrs.requests.map import SagaMap
 from cqrs.saga.storage.protocol import ISagaStorage
+from cqrs.serializers.protocol import EventSerializer
 
 DEFAULT_MESSAGE_BROKER = devnull.DevnullMessageBroker()
 
@@ -116,6 +117,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -131,6 +134,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.SagaMediator: ...
 
 
@@ -145,6 +150,8 @@ def bootstrap(
     max_concurrent_event_handlers: int = 1,
     concurrent_event_handle_enable: bool | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+    *,
+    serializer: EventSerializer | None = None,
 ) -> cqrs.SagaMediator:
     """
     Bootstrap SagaMediator with all necessary dependencies.
@@ -230,6 +237,7 @@ def bootstrap(
         domain_events_mapper,
         message_broker,
         scope_strategy=scope_strategy,
+        serializer=serializer,
     )
 
     middlewares_list: typing.List[mediator_middlewares.Middleware] = list(

@@ -40,6 +40,8 @@ class OutboxedEvent:
         event: The notification event being stored
         topic: Message broker topic where the event should be published
         status: Current processing status of the event
+        payload_bytes: Optional codec wire-bytes for publish without re-serializing
+        content_type: Optional MIME type from the codec used at write time
 
     Example::
 
@@ -55,6 +57,8 @@ class OutboxedEvent:
     event: cqrs.INotificationEvent
     topic: str
     status: EventStatus
+    payload_bytes: bytes | None = None
+    content_type: str | None = None
 
 
 class OutboxedEventRepository(abc.ABC):

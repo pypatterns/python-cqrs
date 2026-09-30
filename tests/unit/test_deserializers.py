@@ -119,3 +119,52 @@ def test_json_deserializer_empty_json_object_negative():
     assert result.error_message is not None
     assert result.error_type is not None
     assert result.message_data == "{}"
+
+
+def test_protobuf_deserializer_round_trip():
+    from cqrs.deserializers.protobuf import ProtobufDeserializer
+    from tests.fixtures.proto_fixtures import (
+        UserJoinedNotificationEvent,
+        load_user_joined_pb2,
+        make_user_joined_event,
+    )
+
+    event = make_user_joined_event()
+    deserializer = ProtobufDeserializer(
+        UserJoinedNotificationEvent,
+        load_user_joined_pb2().UserJoinedNotification,
+    )
+
+    restored = deserializer(event.proto().SerializeToString())
+
+    assert isinstance(restored, UserJoinedNotificationEvent)
+    assert restored.event_id == event.event_id
+    assert restored.payload.user_id == event.payload.user_id
+
+
+def test_protobuf_deserializer_from_none():
+    from cqrs.deserializers.protobuf import ProtobufDeserializer
+    from tests.fixtures.proto_fixtures import UserJoinedNotificationEvent, load_user_joined_pb2
+
+    deserializer = ProtobufDeserializer(
+        UserJoinedNotificationEvent,
+        load_user_joined_pb2().UserJoinedNotification,
+    )
+
+    assert deserializer(None) is None
+
+
+def test_protobuf_deserializer_invalid_bytes():
+    from cqrs.deserializers import DeserializeProtobufError
+    from cqrs.deserializers.protobuf import ProtobufDeserializer
+    from tests.fixtures.proto_fixtures import UserJoinedNotificationEvent, load_user_joined_pb2
+
+    deserializer = ProtobufDeserializer(
+        UserJoinedNotificationEvent,
+        load_user_joined_pb2().UserJoinedNotification,
+    )
+
+    result = deserializer(b"not-protobuf")
+
+    assert isinstance(result, DeserializeProtobufError)
+    assert result.message_data == b"not-protobuf"
