@@ -15,8 +15,26 @@ class KafkaMessageBroker(protocol.MessageBroker):
         self._producer = producer
         logging.getLogger("aiokafka").setLevel(aiokafka_log_level)
 
+    def _produce_value(self, message: protocol.Message) -> typing.Any:
+        """
+        Choose the value passed to ``KafkaProducer.produce``.
+
+        When a legacy ``value_serializer`` was configured on the producer and the
+        message has no codec wire bytes, forward ``message.payload`` so that
+        serializer can run. Otherwise prefer ``payload_bytes`` / encoded payload
+        so Outbox and EventSerializer bytes are not discarded.
+        """
+        legacy_value_serializer = getattr(
+            self._producer,
+            "legacy_value_serializer",
+            False,
+        )
+        if legacy_value_serializer and message.payload_bytes is None and message.content_type is None:
+            return message.payload
+        return message_wire_bytes(message)
+
     async def send_message(self, message: protocol.Message) -> None:
-        payload = message_wire_bytes(message)
+        payload = self._produce_value(message)
         if message.headers is None:
             await self._producer.produce(message.topic, payload)
         else:

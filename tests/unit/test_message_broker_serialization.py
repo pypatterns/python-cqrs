@@ -230,6 +230,69 @@ async def test_kafka_broker_json_sends_bytes_without_headers():
     producer.produce.assert_awaited_once_with(event.topic, payload_bytes)
 
 
+async def test_kafka_broker_legacy_value_serializer_forwards_payload_dict():
+    producer = mock.AsyncMock()
+    producer.produce = mock.AsyncMock()
+    producer.legacy_value_serializer = True
+    broker = kafka.KafkaMessageBroker(producer)
+    event = _json_event()
+    payload = event.to_dict()
+    message = Message(
+        message_name=type(event).__name__,
+        topic=event.topic,
+        payload=payload,
+    )
+
+    await broker.send_message(message)
+
+    producer.produce.assert_awaited_once_with(event.topic, payload)
+
+
+async def test_kafka_broker_legacy_value_serializer_keeps_outbox_bytes():
+    producer = mock.AsyncMock()
+    producer.produce = mock.AsyncMock()
+    producer.legacy_value_serializer = True
+    broker = kafka.KafkaMessageBroker(producer)
+    event = _json_event()
+    payload_bytes = JsonEventSerializer().serialize(event)
+    message = Message(
+        message_name=type(event).__name__,
+        topic=event.topic,
+        payload=event.to_dict(),
+        payload_bytes=payload_bytes,
+    )
+
+    await broker.send_message(message)
+
+    producer.produce.assert_awaited_once_with(event.topic, payload_bytes)
+
+
+async def test_kafka_broker_legacy_value_serializer_keeps_protobuf_bytes():
+    producer = mock.AsyncMock()
+    producer.produce = mock.AsyncMock()
+    producer.legacy_value_serializer = True
+    broker = kafka.KafkaMessageBroker(producer)
+    event = make_user_joined_event()
+    payload_bytes = make_protobuf_codec().serialize(event)
+    headers = {"event_name": event.event_name, "message_id": str(event.event_id)}
+    message = Message(
+        message_name=type(event).__name__,
+        topic=event.topic,
+        payload=event.to_dict(),
+        payload_bytes=payload_bytes,
+        content_type="application/x-protobuf",
+        headers=headers,
+    )
+
+    await broker.send_message(message)
+
+    producer.produce.assert_awaited_once_with(
+        event.topic,
+        payload_bytes,
+        headers=headers,
+    )
+
+
 async def test_kafka_broker_protobuf_passes_headers():
     producer = mock.AsyncMock()
     producer.produce = mock.AsyncMock()

@@ -5,6 +5,12 @@ if typing.TYPE_CHECKING:
 
 
 class KafkaProducer(typing.Protocol):
+    """
+    ``legacy_value_serializer`` (optional attribute, default False) is set by
+    ``kafka_producer_factory`` when an explicit ``value_serializer`` is passed.
+    ``KafkaMessageBroker`` uses it to decide whether to forward ``message.payload``.
+    """
+
     async def produce(
         self,
         topic: typing.Text,

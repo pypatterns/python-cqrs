@@ -53,10 +53,14 @@ class KafkaProducer(protocol.KafkaProducer):
         producer: aiokafka.AIOKafkaProducer,
         retry_count: int = 3,
         retry_delay: int = 1,
+        legacy_value_serializer: bool = False,
     ):
         self._producer = producer
         self._retry_count = retry_count
         self._retry_delay = retry_delay
+        # True when kafka_producer_factory got an explicit value_serializer so
+        # KafkaMessageBroker can pass message.payload (dict) on the non-codec path.
+        self.legacy_value_serializer = legacy_value_serializer
 
     async def _check_connection(self):
         node_id = self._producer.client.get_random_node()
@@ -123,4 +127,5 @@ def kafka_producer_factory(
         producer=producer,
         retry_count=retry_count,
         retry_delay=retry_delay,
+        legacy_value_serializer=value_serializer is not None,
     )
