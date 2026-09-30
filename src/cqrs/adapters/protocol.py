@@ -9,6 +9,7 @@ class KafkaProducer(typing.Protocol):
         self,
         topic: typing.Text,
         message: typing.Any,
+        headers: dict[str, str] | None = None,
     ) -> None: ...
 
 

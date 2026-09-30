@@ -5,7 +5,7 @@ import ssl
 import typing
 
 from cqrs.adapters import protocol
-from cqrs.serializers import default
+from cqrs.serializers.default import passthrough_value_serializer
 
 import aiokafka
 import retry_async
@@ -63,12 +63,27 @@ class KafkaProducer(protocol.KafkaProducer):
         if not await self._producer.client.ready(node_id=node_id):
             await self._producer.start()
 
-    async def _produce(self, topic: typing.Text, message: typing.Any):
+    async def _produce(
+        self,
+        topic: typing.Text,
+        message: typing.Any,
+        headers: dict[str, str] | None = None,
+    ):
         await self._check_connection()
         logger.debug(f"produce message {message} to topic {topic}")
-        await self._producer.send_and_wait(topic, value=message)
+        produce_kwargs: dict[str, typing.Any] = {"value": message}
+        if headers is not None:
+            produce_kwargs["headers"] = [
+                (key, value.encode("utf-8") if isinstance(value, str) else value) for key, value in headers.items()
+            ]
+        await self._producer.send_and_wait(topic, **produce_kwargs)
 
-    async def produce(self, topic: typing.Text, message: typing.Any):
+    async def produce(
+        self,
+        topic: typing.Text,
+        message: typing.Any,
+        headers: dict[str, str] | None = None,
+    ):
         """
         Produces event to kafka broker.
         Tries to reconnect if connect has been lost or has not been opened.
@@ -76,6 +91,7 @@ class KafkaProducer(protocol.KafkaProducer):
         await _retry(tries=self._retry_count, delay=self._retry_delay)(self._produce)(
             topic,
             message,
+            headers,
         )
 
 
@@ -95,7 +111,7 @@ def kafka_producer_factory(
 
     producer = aiokafka.AIOKafkaProducer(
         bootstrap_servers=dsn,
-        value_serializer=value_serializer or default.default_serializer,
+        value_serializer=passthrough_value_serializer(value_serializer),
         security_protocol=security_protocol,
         sasl_mechanism=sasl_mechanism,
         sasl_plain_username=user,

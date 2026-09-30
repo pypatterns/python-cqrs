@@ -852,12 +852,9 @@ A runnable FastAPI flow (route → command → transactional outbox → publishe
 > [Database Support](https://mkdocs.python-cqrs.dev/outbox/databases/) docs for the DDL, the Alembic recipe and
 > how to register a native type for your own database.
 > [!TIP]
-> For Protobuf events, implement `proto()` / `from_proto()` on the notification
-> event (see [Protobuf messaging](#protobuf-messaging) and the schema assets in
-> [examples/proto/](https://github.com/vadikko2/python-cqrs/tree/master/examples/proto)).
-> Outbox persistence is unchanged — use
-> [save_events_into_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/save_events_into_outbox.py);
-> Protobuf applies when producing to the broker. Full guide:
+> For Protobuf events, implement `proto()` / `from_proto()` and register a
+> `ProtobufEventSerializer` on an `OutboxedEventMap`. JSON stays the default —
+> see [Protobuf messaging](#protobuf-messaging) and the full guide:
 > [Protobuf Integration](https://mkdocs.python-cqrs.dev/protobuf/).
 
 ## Producing Events from Outbox to Kafka
@@ -1159,6 +1156,14 @@ class UserJoinedNotificationEvent(cqrs.NotificationEvent[UserJoinedPayload]):
             ),
         )
 ```
+
+JSON remains the default. Opt-in Protobuf wiring (`ProtobufEventSerializer` on an
+`OutboxedEventMap`, `Message.payload_bytes`, consume via `ProtobufDeserializer`) is
+documented in the full guide:
+[Protobuf Integration](https://mkdocs.python-cqrs.dev/protobuf/).
+Runnable example:
+[protobuf_outbox.py](https://github.com/vadikko2/python-cqrs/blob/master/examples/outbox/protobuf_outbox.py)
+(`pip install "python-cqrs[protobuf]"`).
 
 ## Contributing
 

@@ -328,6 +328,7 @@ async def publish_outbox() -> dict[str, int]:
 
 @api_router.get("/published")
 async def list_published() -> list[dict[str, typing.Any]]:
+    # JSON default: payload stays a dict; payload_bytes/content_type/headers are omitted.
     return [message.to_dict() for message in STUB_BROKER.published]
 
 

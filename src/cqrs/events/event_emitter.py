@@ -15,6 +15,9 @@ from cqrs.container.scope import (
 from cqrs.events.event import IDomainEvent, IEvent, INotificationEvent
 from cqrs.events import event_handler, map
 from cqrs.events.fallback import EventHandlerFallback
+from cqrs.serializers.default import headers_for_content_type
+from cqrs.serializers.json import JsonEventSerializer
+from cqrs.serializers.protocol import EventSerializer
 
 logger = logging.getLogger("cqrs")
 
@@ -38,6 +41,8 @@ class EventEmitter:
         container: di_container.Container,
         message_broker: message_brokers.MessageBroker | None = None,
         scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
+        *,
+        serializer: EventSerializer | None = None,
     ) -> None:
         """
         Initialize the event emitter.
@@ -48,6 +53,7 @@ class EventEmitter:
             message_broker: Optional broker for notification events; required
                 when emitting :class:`~cqrs.events.event.INotificationEvent`.
             scope_strategy: DI scope boundary; HANDLER opens a scope per handler.
+            serializer: Codec used to fill ``Message.payload_bytes``. Defaults to JSON.
 
         Example::
 
@@ -64,6 +70,7 @@ class EventEmitter:
         self._container = wrap_container(container)
         self._message_broker = message_broker
         self._scope_strategy = scope_strategy
+        self._serializer = serializer or JsonEventSerializer()
 
     @functools.singledispatchmethod
     async def emit(self, event: IEvent) -> typing.Sequence[IEvent]:
@@ -108,11 +115,20 @@ class EventEmitter:
                 f"To send event {event}, message broker must be specified.",
             )
 
+        # payload (dict) and payload_bytes are both intentional: stub brokers /
+        # Message.to_dict() need the structured dict; transport uses wire bytes.
+        content_type, headers = headers_for_content_type(
+            self._serializer.content_type_for(event),
+            event,
+        )
         message = message_brokers.Message(
             message_name=type(event).__name__,
             message_id=event.event_id,
             topic=event.topic,
             payload=event.to_dict(),
+            payload_bytes=self._serializer.serialize(event),
+            content_type=content_type,
+            headers=headers,
         )
 
         logger.debug(

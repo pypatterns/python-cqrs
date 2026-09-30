@@ -44,6 +44,13 @@ from cqrs.outbox.sqlalchemy import (
     SqlAlchemyOutboxedEventRepository,
 )
 from cqrs.producer import EventProducer
+from cqrs.deserializers import DeserializeProtobufError, ProtobufDeserializer
+from cqrs.serializers import (
+    EventCodec,
+    EventSerializer,
+    JsonEventSerializer,
+    ProtobufEventSerializer,
+)
 from cqrs.requests.fallback import RequestHandlerFallback
 from cqrs.requests.map import RequestMap, SagaMap
 from cqrs.requests.mermaid import CoRMermaid
@@ -111,6 +118,12 @@ __all__ = (
     "OutboxedEventRepository",
     "SqlAlchemyOutboxedEventRepository",
     "EventProducer",
+    "EventSerializer",
+    "EventCodec",
+    "JsonEventSerializer",
+    "ProtobufEventSerializer",
+    "ProtobufDeserializer",
+    "DeserializeProtobufError",
     "Container",
     "SupportsScope",
     "DIContainer",

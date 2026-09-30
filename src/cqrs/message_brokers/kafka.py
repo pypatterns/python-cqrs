@@ -3,6 +3,7 @@ import typing
 
 from cqrs.adapters import protocol as adapters_protocol
 from cqrs.message_brokers import protocol
+from cqrs.serializers.default import message_wire_bytes
 
 
 class KafkaMessageBroker(protocol.MessageBroker):
@@ -15,4 +16,12 @@ class KafkaMessageBroker(protocol.MessageBroker):
         logging.getLogger("aiokafka").setLevel(aiokafka_log_level)
 
     async def send_message(self, message: protocol.Message) -> None:
-        await self._producer.produce(message.topic, message.payload)
+        payload = message_wire_bytes(message)
+        if message.headers is None:
+            await self._producer.produce(message.topic, payload)
+        else:
+            await self._producer.produce(
+                message.topic,
+                payload,
+                headers=message.headers,
+            )
