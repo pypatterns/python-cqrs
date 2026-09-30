@@ -256,6 +256,12 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         for event in events:
             outboxed_event = self._process_events(event)
             if outboxed_event is None:
+                # Same budget as broker publish failures: after MAX_FLUSH_COUNTER_VALUE
+                # the row leaves the selectable set and stops filling the batch.
+                await self.update_status(
+                    event.id,
+                    repository.EventStatus.NOT_PRODUCED,
+                )
                 continue
             result.append(outboxed_event)
 

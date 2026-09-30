@@ -170,6 +170,122 @@ def test_process_events_unknown_name_skips():
     assert repository._process_events(FakeRow()) is None  # type: ignore[arg-type]
 
 
+async def _get_many_with_rows(
+    repository: SqlAlchemyOutboxedEventRepository,
+    rows: list,
+) -> tuple[list[outbox_repository.OutboxedEvent], mock.AsyncMock]:
+    scalars_result = mock.Mock()
+    scalars_result.all.return_value = rows
+    execute_result = mock.Mock()
+    execute_result.scalars.return_value = scalars_result
+    repository.session.execute = mock.AsyncMock(return_value=execute_result)
+    update_status = mock.AsyncMock()
+    repository.update_status = update_status
+    result = await repository.get_many(batch_size=len(rows) or 1)
+    return result, update_status
+
+
+@pytest.mark.asyncio
+async def test_get_many_marks_undecodable_as_not_produced(caplog):
+    events = cqrs.OutboxedEventMap()
+    events.register(
+        "user_joined",
+        UserJoinedNotificationEvent,
+        serializer=make_protobuf_codec(),
+    )
+    repository = SqlAlchemyOutboxedEventRepository(
+        session=mock.Mock(),
+        event_map=events,
+    )
+    row = mock.Mock()
+    row.id = 42
+    row.row_to_dict.return_value = {
+        "id": 42,
+        "event_name": "user_joined",
+        "topic": "t",
+        "event_status": outbox_repository.EventStatus.NEW,
+        "payload": b"not-a-protobuf-payload",
+    }
+
+    with caplog.at_level(logging.WARNING):
+        result, update_status = await _get_many_with_rows(repository, [row])
+
+    assert result == []
+    update_status.assert_awaited_once_with(
+        42,
+        outbox_repository.EventStatus.NOT_PRODUCED,
+    )
+    assert "user_joined" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_many_marks_unknown_name_as_not_produced():
+    repository = SqlAlchemyOutboxedEventRepository(
+        session=mock.Mock(),
+        event_map=cqrs.OutboxedEventMap(),
+    )
+    row = mock.Mock()
+    row.id = 7
+    row.row_to_dict.return_value = {
+        "id": 7,
+        "event_name": "never_registered",
+        "topic": "t",
+        "event_status": outbox_repository.EventStatus.NEW,
+        "payload": b"{}",
+    }
+
+    result, update_status = await _get_many_with_rows(repository, [row])
+
+    assert result == []
+    update_status.assert_awaited_once_with(
+        7,
+        outbox_repository.EventStatus.NOT_PRODUCED,
+    )
+
+
+@pytest.mark.asyncio
+async def test_get_many_keeps_decodable_and_marks_only_failures():
+    events = cqrs.OutboxedEventMap()
+    proto = make_protobuf_codec()
+    events.register("user_joined", UserJoinedNotificationEvent, serializer=proto)
+    events.register("json_mixed_event", JsonNotification)
+    repository = SqlAlchemyOutboxedEventRepository(
+        session=mock.Mock(),
+        event_map=events,
+    )
+    good_event = JsonNotification(
+        event_name="json_mixed_event",
+        payload=JsonPayload(foo="ok"),
+    )
+    good = mock.Mock()
+    good.id = 1
+    good.row_to_dict.return_value = {
+        "id": 1,
+        "event_name": "json_mixed_event",
+        "topic": good_event.topic,
+        "event_status": outbox_repository.EventStatus.NEW,
+        "payload": JsonEventSerializer().serialize(good_event),
+    }
+    bad = mock.Mock()
+    bad.id = 2
+    bad.row_to_dict.return_value = {
+        "id": 2,
+        "event_name": "user_joined",
+        "topic": "t",
+        "event_status": outbox_repository.EventStatus.NEW,
+        "payload": b"broken",
+    }
+
+    result, update_status = await _get_many_with_rows(repository, [good, bad])
+
+    assert len(result) == 1
+    assert result[0].id == 1
+    update_status.assert_awaited_once_with(
+        2,
+        outbox_repository.EventStatus.NOT_PRODUCED,
+    )
+
+
 def test_mock_repository_sets_payload_bytes():
     storage: dict = {}
     repository = MockOutboxedEventRepository(session_factory=lambda: storage)

@@ -1,4 +1,5 @@
 import typing
+import uuid
 
 import pydantic
 import sqlalchemy as sqla
@@ -210,6 +211,30 @@ class TestOutbox:
         produce_candidates = await repository.get_many(batch_size=1)
 
         assert not len(produce_candidates)
+
+    async def test_undecodable_payload_bumps_flush_counter(self, session):
+        """Decode failures spend the same flush budget as broker publish failures."""
+        repository = sqlalchemy.SqlAlchemyOutboxedEventRepository(session)
+        event_id = uuid.uuid4()
+        session.add(
+            sqlalchemy.OutboxModel(
+                event_id=event_id,
+                event_id_bin=event_id.bytes,
+                event_name=OutboxRequestHandler.__name__,
+                payload=b"not-valid-json{{{",
+                topic="",
+            ),
+        )
+        await session.commit()
+
+        for _ in range(sqlalchemy.MAX_FLUSH_COUNTER_VALUE):
+            assert await repository.get_many(1) == []
+            await session.commit()
+
+        assert await repository.get_many(1) == []
+        flush_counter = (await session.execute(sqla.select(sqlalchemy.OutboxModel.flush_counter))).scalar_one()
+        await session.commit()
+        assert flush_counter == sqlalchemy.MAX_FLUSH_COUNTER_VALUE
 
 
 async def test_rebind_outbox_model_positive(init_orm, session):
