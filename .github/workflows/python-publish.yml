@@ -3,6 +3,12 @@ name: Python CQRS
 on:
   release:
     types: [ published ]
+  push:
+    tags:
+      - "4.*"
+      - "5.*"
+      - "v4.*"
+      - "v5.*"
 
 permissions:
   contents: read
@@ -28,6 +34,6 @@ jobs:
       - name: Build package
         run: python -m build
       - name: Publish package
-        if: success() && github.event_name == 'release' && matrix.python-version == '3.13'
+        if: success() && matrix.python-version == '3.13' && (github.event_name == 'release' || startsWith(github.ref, 'refs/tags/'))
         run: |
           twine upload dist/* --username __token__ --password ${{ secrets.PYPI_API_TOKEN }}
