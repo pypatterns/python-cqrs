@@ -14,9 +14,9 @@ from cqrs.dispatcher.exceptions import RequestHandlerDoesNotExist
 from cqrs.dispatcher.models import RequestDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
 from cqrs.requests.fallback import RequestHandlerFallback
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import IRequest
-from cqrs.requests.request_handler import StreamingRequestHandler
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import IRequest
+from cqrs.handlers.request import StreamingRequestHandler
 
 logger = logging.getLogger("cqrs")
 

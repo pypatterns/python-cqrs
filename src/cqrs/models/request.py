@@ -6,7 +6,7 @@ import typing
 from typing_extensions import dataclass_transform
 
 from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error
-from cqrs.response import IResponse
+from cqrs.models.response import IResponse
 
 if sys.version_info >= (3, 11):
     from typing import Self  # novm
@@ -65,7 +65,7 @@ class DCRequest(IRequest):
 Request = DCRequest
 
 try:
-    from cqrs.requests.pydantic import PydanticRequest  # noqa: E402
+    from cqrs.models.pydantic import PydanticRequest  # noqa: E402
 except ImportError:  # pragma: no cover
     PydanticRequest = None  # type: ignore[misc, assignment]
 

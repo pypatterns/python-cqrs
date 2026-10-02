@@ -2,8 +2,8 @@ import logging
 
 from cqrs.middlewares import base
 from cqrs.middlewares.base import HandleType
-from cqrs.requests.request import IRequest
-from cqrs.response import IResponse
+from cqrs.models.request import IRequest
+from cqrs.models.response import IResponse
 
 logger = logging.getLogger("cqrs")
 

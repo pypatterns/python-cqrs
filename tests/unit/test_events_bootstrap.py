@@ -12,7 +12,7 @@ import cqrs
 from cqrs import events
 from cqrs.container import di as di_container_impl
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
-from cqrs.events import bootstrap
+from cqrs.bootstrap import events as bootstrap
 
 
 # ---------------------------------------------------------------------------

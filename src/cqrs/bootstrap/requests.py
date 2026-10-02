@@ -10,7 +10,7 @@ from cqrs.container.protocol import Container as CQRSContainer
 from cqrs.container.scope import ScopeStrategy
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
-from cqrs.requests.map import RequestMap
+from cqrs.mapping.requests import RequestMap
 from cqrs.serializers.protocol import EventSerializer
 
 DEFAULT_MESSAGE_BROKER = devnull.DevnullMessageBroker()

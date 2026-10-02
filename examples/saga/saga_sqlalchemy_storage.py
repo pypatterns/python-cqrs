@@ -28,11 +28,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncEngine, create_async
 
 import cqrs
 from cqrs import Event
-from cqrs.response import Response
-from cqrs.saga import bootstrap
+from cqrs.models.response import Response
+from cqrs.bootstrap import saga as bootstrap
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.sqlalchemy import Base, SqlAlchemySagaStorage
 
 # Set up logging
@@ -187,7 +187,7 @@ async def main() -> None:
 
         print(f"Starting saga {saga_id}...")
 
-        async for result in mediator.stream(context, saga_id=saga_id):
+        async for result in mediator.execute(context, saga_id=saga_id):
             print(f"Step completed: {result.step_type.__name__}")
 
         # 9. Verify persistence by reloading from new storage instance

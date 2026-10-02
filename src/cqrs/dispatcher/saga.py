@@ -7,7 +7,7 @@ from cqrs.container.scope import ScopeStrategy
 from cqrs.dispatcher.exceptions import SagaDoesNotExist
 from cqrs.dispatcher.models import SagaDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
-from cqrs.requests.map import SagaMap
+from cqrs.mapping.requests import SagaMap
 from cqrs.saga.execution import SagaStepRef
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import SagaTransaction

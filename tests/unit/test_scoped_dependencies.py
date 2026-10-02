@@ -22,12 +22,12 @@ from cqrs.container.scope import (
     current_container,
     enter_scope,
 )
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 from cqrs.saga.execution import SagaStepRef
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.models import SagaContext
 from cqrs.saga.recovery import recover_saga
-from cqrs.saga.step import SagaStepResult
+from cqrs.handlers.saga import SagaStepResult
 from cqrs.saga.storage.enums import SagaStatus, SagaStepStatus
 from cqrs.saga.storage.memory import MemorySagaStorage
 
@@ -1511,7 +1511,7 @@ def test_saga_mediator_send_rejects_explicit_concurrent() -> None:
 
 
 def test_saga_bootstrap_send_defaults_are_sequential() -> None:
-    from cqrs.saga import bootstrap as saga_bootstrap
+    from cqrs.bootstrap import saga as saga_bootstrap
 
     mediator = saga_bootstrap.bootstrap(
         di_container=di.Container(),

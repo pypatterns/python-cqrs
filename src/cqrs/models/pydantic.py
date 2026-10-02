@@ -1,4 +1,4 @@
-"""Pydantic-based event models (optional ``python-cqrs[pydantic]`` extra)."""
+"""Pydantic model implementations (optional ``python-cqrs[pydantic]`` extra)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,15 @@ import uuid
 
 import pydantic
 
-from cqrs.events.event import (
+from cqrs.models.event import (
     DEFAULT_OUTPUT_TOPIC,
     IDomainEvent,
     IEvent,
     INotificationEvent,
     PayloadT,
 )
+from cqrs.models.request import IRequest
+from cqrs.models.response import IResponse
 
 if sys.version_info >= (3, 11):
     from typing import Self  # novm
@@ -79,4 +81,50 @@ __all__ = (
     "PydanticEvent",
     "PydanticDomainEvent",
     "PydanticNotificationEvent",
+)
+
+
+class PydanticRequest(pydantic.BaseModel, IRequest):
+    """
+    Pydantic-based request implementation.
+
+    Requires ``pip install python-cqrs[pydantic]``. The default ``Request``
+    alias points at ``DCRequest``.
+    """
+
+    @classmethod
+    def from_dict(cls, **kwargs) -> Self:
+        return cls.model_validate(kwargs)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="python")
+
+
+__all__ = ("PydanticRequest",)
+
+
+class PydanticResponse(pydantic.BaseModel, IResponse):
+    """
+    Pydantic-based response implementation.
+
+    Requires ``pip install python-cqrs[pydantic]``. The default ``Response``
+    alias points at ``DCResponse``.
+    """
+
+    @classmethod
+    def from_dict(cls, **kwargs) -> Self:
+        return cls.model_validate(kwargs)
+
+    def to_dict(self) -> dict:
+        return self.model_dump(mode="python")
+
+
+__all__ = ("PydanticResponse",)
+
+__all__ = (
+    "PydanticEvent",
+    "PydanticDomainEvent",
+    "PydanticNotificationEvent",
+    "PydanticRequest",
+    "PydanticResponse",
 )

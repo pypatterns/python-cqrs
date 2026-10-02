@@ -1,13 +1,13 @@
 import typing
 
 if typing.TYPE_CHECKING:
-    from cqrs.events.pydantic import (
+    from cqrs.models.pydantic import (
         PydanticDomainEvent,
         PydanticEvent,
         PydanticNotificationEvent,
     )
-    from cqrs.requests.pydantic import PydanticRequest
-    from cqrs.pydantic_response import PydanticResponse
+    from cqrs.models.pydantic import PydanticRequest
+    from cqrs.models.pydantic import PydanticResponse
     from cqrs.outbox.sqlalchemy import (
         SqlAlchemyOutboxedEventRepository,
         rebind_outbox_model,
@@ -35,7 +35,7 @@ from cqrs.container.scope import (
 from cqrs.circuit_breaker import ICircuitBreaker
 from cqrs.events import EventMap
 from cqrs.events.fallback import EventHandlerFallback
-from cqrs.events.event import (
+from cqrs.models.event import (
     DCEvent,
     DCDomainEvent,
     DCNotificationEvent,
@@ -47,20 +47,20 @@ from cqrs.events.event import (
     NotificationEvent,
 )
 from cqrs.events.event_emitter import EventEmitter
-from cqrs.events.event_handler import EventHandler
-from cqrs.mediator import (
+from cqrs.handlers.event import EventHandler
+from cqrs.mediators import (
     EventMediator,
     RequestMediator,
     SagaMediator,
     StreamingRequestMediator,
 )
-from cqrs.outbox.map import OutboxedEventMap
+from cqrs.mapping.outbox import OutboxedEventMap
 from cqrs.outbox.repository import (
     EventStatus,
     OutboxedEvent,
     OutboxedEventRepository,
 )
-from cqrs.producer import EventProducer
+from cqrs.message_brokers.producer import EventProducer
 from cqrs.deserializers import DeserializeProtobufError, ProtobufDeserializer
 from cqrs.serializers import (
     EventCodec,
@@ -69,18 +69,18 @@ from cqrs.serializers import (
     ProtobufEventSerializer,
 )
 from cqrs.requests.fallback import RequestHandlerFallback
-from cqrs.requests.map import RequestMap, SagaMap
-from cqrs.requests.mermaid import CoRMermaid
-from cqrs.requests.request import DCRequest, IRequest, Request
-from cqrs.requests.request_handler import (
+from cqrs.mapping.requests import RequestMap, SagaMap
+from cqrs.mermaid.cor import CoRMermaid
+from cqrs.models.request import DCRequest, IRequest, Request
+from cqrs.handlers.request import (
     RequestHandler,
     StreamingRequestHandler,
 )
-from cqrs.response import DCResponse, IResponse, Response
-from cqrs.saga.mermaid import SagaMermaid
+from cqrs.models.response import DCResponse, IResponse, Response
+from cqrs.mermaid.saga import SagaMermaid
 from cqrs.saga.models import ContextT
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import (
+from cqrs.handlers.saga import (
     Resp,
     SagaStepHandler,
     SagaStepResult,
@@ -163,14 +163,14 @@ __all__ = (
 )
 
 _LAZY_PYDANTIC = {
-    "PydanticEvent": ("cqrs.events.pydantic", "PydanticEvent"),
-    "PydanticDomainEvent": ("cqrs.events.pydantic", "PydanticDomainEvent"),
+    "PydanticEvent": ("cqrs.models.pydantic", "PydanticEvent"),
+    "PydanticDomainEvent": ("cqrs.models.pydantic", "PydanticDomainEvent"),
     "PydanticNotificationEvent": (
-        "cqrs.events.pydantic",
+        "cqrs.models.pydantic",
         "PydanticNotificationEvent",
     ),
-    "PydanticRequest": ("cqrs.requests.pydantic", "PydanticRequest"),
-    "PydanticResponse": ("cqrs.pydantic_response", "PydanticResponse"),
+    "PydanticRequest": ("cqrs.models.pydantic", "PydanticRequest"),
+    "PydanticResponse": ("cqrs.models.pydantic", "PydanticResponse"),
 }
 
 _LAZY_SQLALCHEMY = {

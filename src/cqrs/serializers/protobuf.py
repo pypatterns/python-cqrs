@@ -1,6 +1,6 @@
 import typing
 
-from cqrs.events.event import INotificationEvent
+from cqrs.models.event import INotificationEvent
 
 
 class ProtobufEventSerializer:

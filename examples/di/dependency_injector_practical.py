@@ -93,7 +93,7 @@ from cqrs.container.dependency_injector import DependencyInjectorCQRSContainer
 
 # The container protocol from this package
 from cqrs.container.protocol import Container as CQRSContainer
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 logger = logging.getLogger(__name__)
 

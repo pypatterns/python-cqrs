@@ -15,7 +15,7 @@ from dishka import Provider, Scope, make_async_container, provide
 import cqrs
 from cqrs.container.dishka import DishkaCQRSContainer
 from cqrs.container.scope import ScopeStrategy
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 SEEN: list[int] = []
 

@@ -2,7 +2,7 @@ import functools
 import typing
 
 from cqrs.saga.models import SagaContext
-from cqrs.requests.request import ReqT, ResT
+from cqrs.models.request import ReqT, ResT
 
 HandleType = typing.Callable[[ReqT], typing.Awaitable[ResT] | ResT]
 

@@ -153,11 +153,11 @@ import uvicorn
 from di import dependent
 
 import cqrs
-from cqrs.response import Response
-from cqrs.saga import bootstrap
+from cqrs.models.response import Response
+from cqrs.bootstrap import saga as bootstrap
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 
 logging.basicConfig(level=logging.INFO)
@@ -485,8 +485,8 @@ async def process_order(
             }
             yield f"data: {json.dumps(start_data)}\n\n"
 
-            # Execute saga with saga_id for persistence using mediator.stream()
-            async for step_result in mediator.stream(context, saga_id=saga_id):
+            # Execute saga with saga_id for persistence using mediator.execute()
+            async for step_result in mediator.execute(context, saga_id=saga_id):
                 completed_steps += 1
                 step_name = step_result.step_type.__name__
 

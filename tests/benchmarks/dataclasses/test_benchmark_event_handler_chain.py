@@ -6,7 +6,7 @@ import dataclasses
 import pytest
 
 from cqrs.events import DCDomainEvent, EventEmitter, EventHandler, EventMap
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.container.protocol import Container
 

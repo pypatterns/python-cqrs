@@ -47,7 +47,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
         context = OrderContext(order_id="123", user_id="user1", amount=100.0)
         saga_id = uuid.uuid4()
         step_results = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results.append(result)
         assert len(step_results) == 3
         assert isinstance(step_results[0].response, ReserveInventoryResponse)
@@ -67,7 +67,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
     ) -> None:
         context = OrderContext(order_id="456", user_id="user2", amount=200.0)
         step_results = []
-        async for result in saga_mediator.stream(context):
+        async for result in saga_mediator.execute(context):
             step_results.append(result)
         assert len(step_results) == 3
         inventory_handler = await container.resolve(InventoryReservedEventHandler)
@@ -83,7 +83,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
         container: _TestContainer,
     ) -> None:
         context = OrderContext(order_id="789", user_id="user3", amount=300.0)
-        async for result in saga_mediator.stream(context):
+        async for result in saga_mediator.execute(context):
             pass
         inventory_handler = await container.resolve(InventoryReservedEventHandler)
         payment_handler = await container.resolve(PaymentProcessedEventHandler)
@@ -119,7 +119,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
         saga_id = uuid.uuid4()
         step_results = []
         with pytest.raises(ValueError, match="Step failed for order fail_123"):
-            async for result in failing_mediator.stream(context, saga_id=saga_id):
+            async for result in failing_mediator.execute(context, saga_id=saga_id):
                 step_results.append(result)
         assert len(step_results) >= 1
         reserve_step = await container.resolve(ReserveInventoryStep)
@@ -137,7 +137,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
         context = OrderContext(order_id="recover_123", user_id="user5", amount=500.0)
         saga_id = uuid.uuid4()
         step_results_1 = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results_1.append(result)
             if len(step_results_1) == 1:
                 break
@@ -146,7 +146,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
         status, _, version = await storage.load_saga_state(saga_id)
         assert status == SagaStatus.RUNNING
         step_results_2 = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results_2.append(result)
         assert len(step_results_2) >= 2
         final_status, _, version = await storage.load_saga_state(saga_id)
@@ -180,7 +180,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
             storage=storage,
         )
         step_results_1 = []
-        async for result in mediator.stream(context, saga_id=saga_id):
+        async for result in mediator.execute(context, saga_id=saga_id):
             step_results_1.append(result)
             if len(step_results_1) == 1:
                 break
@@ -203,7 +203,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
 
         async def execute_saga(context: OrderContext, saga_id: uuid.UUID) -> list:
             results = []
-            async for result in saga_mediator.stream(context, saga_id=saga_id):
+            async for result in saga_mediator.execute(context, saga_id=saga_id):
                 results.append(result)
             return results
 
@@ -228,7 +228,7 @@ class TestSagaMediatorSqlAlchemyStorageMysql:
 
         async def execute_saga(context: OrderContext, saga_id: uuid.UUID) -> list:
             results = []
-            async for result in saga_mediator.stream(context, saga_id=saga_id):
+            async for result in saga_mediator.execute(context, saga_id=saga_id):
                 results.append(result)
             return results
 

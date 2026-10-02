@@ -7,8 +7,8 @@ import di
 import pydantic
 
 import cqrs
-from cqrs.events.event import IEvent
-from cqrs.requests import bootstrap
+from cqrs.models.event import IEvent
+from cqrs.bootstrap import requests as bootstrap
 
 PROCESSED_L1: list[cqrs.DomainEvent] = []
 PROCESSED_L2: list[cqrs.DomainEvent] = []

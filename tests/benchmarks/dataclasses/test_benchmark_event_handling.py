@@ -7,7 +7,7 @@ import typing
 import cqrs
 import di
 import pytest
-from cqrs.events import bootstrap
+from cqrs.bootstrap import events as bootstrap
 
 
 @dataclasses.dataclass(frozen=True)

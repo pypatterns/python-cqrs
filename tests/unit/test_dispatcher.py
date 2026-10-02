@@ -5,10 +5,10 @@ import pydantic
 from cqrs.dispatcher import RequestDispatcher
 from cqrs.events import Event
 from cqrs.middlewares import MiddlewareChain
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import RequestHandler
-from cqrs.response import Response
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import Request
+from cqrs.handlers.request import RequestHandler
+from cqrs.models.response import Response
 
 
 class ReadMeetingDetailsQuery(Request):

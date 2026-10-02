@@ -11,7 +11,7 @@ import typing
 
 import cqrs
 from cqrs.container.protocol import Container
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 T = typing.TypeVar("T")
 

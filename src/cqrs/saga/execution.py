@@ -15,7 +15,7 @@ from cqrs.container.scope import (
 )
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.models import ContextT, SagaContext
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.enums import SagaStepStatus
 from cqrs.saga.storage.protocol import ISagaStorage, SagaStorageRun
 

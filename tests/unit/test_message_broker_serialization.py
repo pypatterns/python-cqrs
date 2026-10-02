@@ -10,7 +10,7 @@ from cqrs.message_brokers import amqp, kafka
 from cqrs.message_brokers.protocol import Message, MessageBroker
 from cqrs.outbox import repository as outbox_repository
 from cqrs.outbox.mock import MockOutboxedEventRepository
-from cqrs.producer import EventProducer
+from cqrs.message_brokers.producer import EventProducer
 from cqrs.serializers.json import JsonEventSerializer
 from tests.fixtures.proto_fixtures import (
     make_protobuf_codec,

@@ -5,7 +5,7 @@ import types
 import typing
 
 from cqrs.saga.fallback import Fallback
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 logger = logging.getLogger("cqrs.saga")
 

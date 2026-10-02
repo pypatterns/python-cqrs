@@ -17,12 +17,12 @@ import cqrs
 import pydantic
 from cqrs.container.dependency_injector import DependencyInjectorCQRSContainer
 from cqrs.events import DomainEvent, Event, EventHandler
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.message_brokers import devnull
-from cqrs.requests import bootstrap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import StreamingRequestHandler
-from cqrs.response import Response
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.models.request import Request
+from cqrs.handlers.request import StreamingRequestHandler
+from cqrs.models.response import Response
 from dependency_injector import containers, providers
 
 

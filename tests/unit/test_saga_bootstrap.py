@@ -15,9 +15,9 @@ from cqrs import events
 from cqrs.container import di as di_container_impl
 from cqrs.message_brokers import devnull
 from cqrs.middlewares import logging as logging_middleware
-from cqrs.requests import bootstrap as requests_bootstrap
-from cqrs.requests.map import SagaMap
-from cqrs.saga import bootstrap
+from cqrs.bootstrap import requests as requests_bootstrap
+from cqrs.mapping.requests import SagaMap
+from cqrs.bootstrap import saga as bootstrap
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
 from cqrs.saga.storage.memory import MemorySagaStorage

@@ -17,15 +17,15 @@ from cqrs.dispatcher.exceptions import (
 )
 from cqrs.dispatcher.models import RequestDispatchResult
 from cqrs.middlewares.base import MiddlewareChain
-from cqrs.requests.cor_request_handler import (
+from cqrs.handlers.cor import (
     CORRequestHandler,
     build_chain,
     CORRequestHandlerT as CORRequestHandlerType,
 )
 from cqrs.requests.fallback import RequestHandlerFallback
-from cqrs.requests.map import RequestMap, HandlerType
-from cqrs.requests.request import IRequest
-from cqrs.requests.request_handler import RequestHandler
+from cqrs.mapping.requests import RequestMap, HandlerType
+from cqrs.models.request import IRequest
+from cqrs.handlers.request import RequestHandler
 
 logger = logging.getLogger("cqrs")
 

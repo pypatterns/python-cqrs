@@ -76,7 +76,7 @@ def test_sqlalchemy_types_available_with_extra() -> None:
 
 
 def test_producer_module_has_no_sqlalchemy_import() -> None:
-    source = importlib.util.find_spec("cqrs.producer")
+    source = importlib.util.find_spec("cqrs.message_brokers.producer")
     assert source is not None and source.origin is not None
     text = open(source.origin, encoding="utf-8").read()
     assert "import sqlalchemy" not in text

@@ -12,7 +12,7 @@ from dependency_injector import containers, providers
 
 import cqrs
 from cqrs.container.dependency_injector import DependencyInjectorCQRSContainer
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 CREATED: list[str] = []
 

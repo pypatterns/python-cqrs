@@ -10,8 +10,8 @@ from cqrs.container.protocol import Container as CQRSContainer
 from cqrs.container.scope import ScopeStrategy
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
-from cqrs.requests.bootstrap import setup_event_emitter
-from cqrs.requests.map import SagaMap
+from cqrs.bootstrap.requests import setup_event_emitter
+from cqrs.mapping.requests import SagaMap
 from cqrs.saga.storage.protocol import ISagaStorage
 from cqrs.serializers.protocol import EventSerializer
 
@@ -170,7 +170,7 @@ def bootstrap(
         def events_mapper(mapper: cqrs.EventMap) -> None:
             mapper.bind(InventoryReservedEvent, InventoryReservedEventHandler)
 
-        mediator = cqrs.saga.bootstrap.bootstrap(
+        mediator = cqrs.bootstrap.saga.bootstrap(
             di_container=di.Container(),
             sagas_mapper=saga_mapper,
             domain_events_mapper=events_mapper,
@@ -178,7 +178,7 @@ def bootstrap(
         )
 
         # Execute saga (stream() returns AsyncIterator, consumed with async for)
-        async for result in mediator.stream(order_context):
+        async for result in mediator.execute(order_context):
             print(f"Step: {result.step_result.step_type.__name__}")
 
     Args:

@@ -5,10 +5,10 @@ import pytest
 
 import cqrs
 from cqrs.events import Event, EventEmitter, EventMap
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import PydanticRequest
-from cqrs.requests.request_handler import RequestHandler
-from cqrs.response import PydanticResponse
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.pydantic import PydanticRequest
+from cqrs.handlers.request import RequestHandler
+from cqrs.models.pydantic import PydanticResponse
 
 
 class CloseMeetingRoomCommand(PydanticRequest):

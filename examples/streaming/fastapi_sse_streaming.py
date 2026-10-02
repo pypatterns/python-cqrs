@@ -121,7 +121,7 @@ import uvicorn
 
 import cqrs
 from cqrs.message_brokers import devnull
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

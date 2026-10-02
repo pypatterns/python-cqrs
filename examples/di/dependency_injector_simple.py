@@ -9,7 +9,7 @@ import typing
 
 
 import cqrs
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 # The dependency-injector library
 from dependency_injector import containers, providers
