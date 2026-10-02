@@ -35,64 +35,56 @@ class NestedData:
 # ============================================================================
 
 
-@dataclasses.dataclass(frozen=True)
-class SimpleDomainEvent(DCDomainEvent):
+class SimpleDomainEvent(DCDomainEvent, frozen=True):
     """Simple domain event with basic types."""
 
     user_id: str
     username: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithUUID(DCDomainEvent):
+class DomainEventWithUUID(DCDomainEvent, frozen=True):
     """Domain event with UUID field."""
 
     event_id: uuid.UUID
     user_id: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithDatetime(DCDomainEvent):
+class DomainEventWithDatetime(DCDomainEvent, frozen=True):
     """Domain event with datetime field."""
 
     created_at: datetime.datetime
     user_id: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithNested(DCDomainEvent):
+class DomainEventWithNested(DCDomainEvent, frozen=True):
     """Domain event with nested DCEvent dataclass."""
 
     user_id: str
     nested: NestedData
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithList(DCDomainEvent):
+class DomainEventWithList(DCDomainEvent, frozen=True):
     """Domain event with list of UUIDs."""
 
     user_ids: typing.List[uuid.UUID]
     event_name: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithListOfNested(DCDomainEvent):
+class DomainEventWithListOfNested(DCDomainEvent, frozen=True):
     """Domain event with list of nested dataclasses."""
 
     items: typing.List[NestedData]
     event_name: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithDict(DCDomainEvent):
+class DomainEventWithDict(DCDomainEvent, frozen=True):
     """Domain event with dictionary containing UUID values."""
 
     metadata: typing.Dict[str, uuid.UUID]
     event_name: str
 
 
-@dataclasses.dataclass(frozen=True)
-class DomainEventWithComplexNested(DCDomainEvent):
+class DomainEventWithComplexNested(DCDomainEvent, frozen=True):
     """Domain event with complex nested structure."""
 
     event_id: uuid.UUID
@@ -108,48 +100,42 @@ class DomainEventWithComplexNested(DCDomainEvent):
 # ============================================================================
 
 
-@dataclasses.dataclass(frozen=True)
-class SimpleNotificationEvent(DCNotificationEvent[dict]):
+class SimpleNotificationEvent(DCNotificationEvent[dict], frozen=True):
     """Simple notification event with basic payload."""
 
     event_name: str
     payload: dict
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationEventWithUUIDPayload(DCNotificationEvent[dict]):
+class NotificationEventWithUUIDPayload(DCNotificationEvent[dict], frozen=True):
     """Notification event with UUID in payload."""
 
     event_name: str
     payload: dict
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationEventWithNestedPayload(DCNotificationEvent[dict]):
+class NotificationEventWithNestedPayload(DCNotificationEvent[dict], frozen=True):
     """Notification event with nested dataclass in payload."""
 
     event_name: str
     payload: dict
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationEventWithListPayload(DCNotificationEvent[dict]):
+class NotificationEventWithListPayload(DCNotificationEvent[dict], frozen=True):
     """Notification event with list in payload."""
 
     event_name: str
     payload: dict
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationEventWithComplexPayload(DCNotificationEvent[dict]):
+class NotificationEventWithComplexPayload(DCNotificationEvent[dict], frozen=True):
     """Notification event with complex nested payload."""
 
     event_name: str
     payload: dict
 
 
-@dataclasses.dataclass(frozen=True)
-class NotificationEventWithTypedPayload(DCNotificationEvent[NestedData]):
+class NotificationEventWithTypedPayload(DCNotificationEvent[NestedData], frozen=True):
     """Notification event with typed payload (dataclass)."""
 
     event_name: str

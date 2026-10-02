@@ -1,8 +1,6 @@
 import logging
 import typing
 
-from sqlalchemy.ext.asyncio import session as sql_session
-
 from cqrs.message_brokers import protocol as broker_protocol
 from cqrs.outbox import repository as repository_protocol
 from cqrs.serializers.default import headers_for_content_type
@@ -10,10 +8,15 @@ from cqrs.serializers.default import headers_for_content_type
 logger = logging.getLogger("cqrs")
 logger.setLevel(logging.DEBUG)
 
-SessionFactory: typing.TypeAlias = typing.Callable[[], sql_session.AsyncSession]
-
 
 class EventProducer:
+    """
+    Drains an outbox repository and publishes events through a message broker.
+
+    Does not depend on SQLAlchemy; any ``OutboxedEventRepository`` implementation
+    works (SQLAlchemy outbox requires ``python-cqrs[sqlalchemy]``).
+    """
+
     def __init__(
         self,
         message_broker: broker_protocol.MessageBroker,

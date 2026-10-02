@@ -5,23 +5,24 @@ import asyncio
 import pydantic
 import pytest
 
-from cqrs.events import DomainEvent, EventEmitter, EventHandler, EventMap
+from cqrs.events import EventEmitter, EventHandler, EventMap
 from cqrs.events.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.container.protocol import Container
+from cqrs.events.pydantic import PydanticDomainEvent
 
 
-class _EventL1(DomainEvent, frozen=True):
+class _EventL1(PydanticDomainEvent, frozen=True):
     id_: str = pydantic.Field(alias="id")
     model_config = pydantic.ConfigDict(populate_by_name=True)
 
 
-class _EventL2(DomainEvent, frozen=True):
+class _EventL2(PydanticDomainEvent, frozen=True):
     id_: str = pydantic.Field(alias="id")
     model_config = pydantic.ConfigDict(populate_by_name=True)
 
 
-class _EventL3(DomainEvent, frozen=True):
+class _EventL3(PydanticDomainEvent, frozen=True):
     id_: str = pydantic.Field(alias="id")
     model_config = pydantic.ConfigDict(populate_by_name=True)
 

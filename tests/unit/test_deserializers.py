@@ -18,19 +18,19 @@ class DeserializedModelPayload(pydantic.BaseModel):
 
 
 def test_json_deserializer_from_none_positive():
-    deserializer = json.JsonDeserializer[cqrs.NotificationEvent](
-        model=cqrs.NotificationEvent,
+    deserializer = json.JsonDeserializer[cqrs.PydanticNotificationEvent](
+        model=cqrs.PydanticNotificationEvent,
     )
 
     assert deserializer(None) is None
 
 
 def test_json_deserializer_from_bytes_positive():
-    deserializer = json.JsonDeserializer[cqrs.NotificationEvent](
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+    deserializer = json.JsonDeserializer[cqrs.PydanticNotificationEvent](
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
-    events = cqrs.NotificationEvent[DeserializedModelPayload](
+    events = cqrs.PydanticNotificationEvent[DeserializedModelPayload](
         event_name="empty_event",
         payload=DeserializedModelPayload(foo="foo", bar=1),
     )
@@ -40,10 +40,10 @@ def test_json_deserializer_from_bytes_positive():
 
 def test_json_deserializer_from_str_positive():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
-    events = cqrs.NotificationEvent[DeserializedModelPayload](
+    events = cqrs.PydanticNotificationEvent[DeserializedModelPayload](
         event_name="empty_event",
         payload=DeserializedModelPayload(foo="foo", bar=1),
     )
@@ -53,7 +53,7 @@ def test_json_deserializer_from_str_positive():
 
 def test_json_deserializer_invalid_json_negative():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
     result = deserializer("not json")
@@ -66,7 +66,7 @@ def test_json_deserializer_invalid_json_negative():
 
 def test_json_deserializer_invalid_structure_negative():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
     # JSON with missing required field 'event_name'
@@ -81,7 +81,7 @@ def test_json_deserializer_invalid_structure_negative():
 
 def test_json_deserializer_missing_required_fields_negative():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
     # JSON with payload that has wrong type for required field 'bar' (string instead of int)
@@ -97,7 +97,7 @@ def test_json_deserializer_missing_required_fields_negative():
 
 def test_json_deserializer_empty_string_negative():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
     result = deserializer("")
@@ -110,7 +110,7 @@ def test_json_deserializer_empty_string_negative():
 
 def test_json_deserializer_empty_json_object_negative():
     deserializer = json.JsonDeserializer(
-        model=cqrs.NotificationEvent[DeserializedModelPayload],
+        model=cqrs.PydanticNotificationEvent[DeserializedModelPayload],
     )
 
     result = deserializer("{}")

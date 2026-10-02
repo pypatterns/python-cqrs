@@ -12,18 +12,19 @@ import pydantic
 import pytest
 
 import cqrs
-from cqrs.events import DomainEvent, EventEmitter, EventHandler, EventMap
+from cqrs.events import EventEmitter, EventHandler, EventMap
 from cqrs.events.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.dispatcher.event import EventDispatcher
 from cqrs.container.protocol import Container
 from cqrs.requests import bootstrap
+from cqrs.events.pydantic import PydanticDomainEvent
 
 
 # ---- EventProcessor: 1 root -> 3 children (4 events total) ----
 
 
-class _FanEvent(DomainEvent, frozen=True):
+class _FanEvent(PydanticDomainEvent, frozen=True):
     id_: str = pydantic.Field(alias="id")
     model_config = pydantic.ConfigDict(populate_by_name=True)
 
@@ -100,15 +101,15 @@ async def test_event_processor_multi_level_all_events_processed(parallel: bool) 
 # ---- EventDispatcher: 3-level chain L1 -> L2 -> L3 (always sequential) ----
 
 
-class _EventL1(DomainEvent, frozen=True):
+class _EventL1(PydanticDomainEvent, frozen=True):
     name: str = pydantic.Field()
 
 
-class _EventL2(DomainEvent, frozen=True):
+class _EventL2(PydanticDomainEvent, frozen=True):
     name: str = pydantic.Field()
 
 
-class _EventL3(DomainEvent, frozen=True):
+class _EventL3(PydanticDomainEvent, frozen=True):
     name: str = pydantic.Field()
 
 
@@ -192,26 +193,26 @@ async def test_event_dispatcher_multi_level_all_events_processed(parallel: bool)
 
 # ---- RequestMediator (bootstrap): 3-level chain L1 -> L2 -> L3 ----
 
-_MEDIATOR_PROCESSED_L1: list[cqrs.DomainEvent] = []
-_MEDIATOR_PROCESSED_L2: list[cqrs.DomainEvent] = []
-_MEDIATOR_PROCESSED_L3: list[cqrs.DomainEvent] = []
+_MEDIATOR_PROCESSED_L1: list[cqrs.IDomainEvent] = []
+_MEDIATOR_PROCESSED_L2: list[cqrs.IDomainEvent] = []
+_MEDIATOR_PROCESSED_L3: list[cqrs.IDomainEvent] = []
 
 
-class _EmitL1Command(cqrs.Request):
+class _EmitL1Command(cqrs.PydanticRequest):
     seed: str = pydantic.Field()
 
 
-class _MediatorEventL1(cqrs.DomainEvent, frozen=True):
+class _MediatorEventL1(PydanticDomainEvent, frozen=True):
     level: int = 1
     seed: str = pydantic.Field()
 
 
-class _MediatorEventL2(cqrs.DomainEvent, frozen=True):
+class _MediatorEventL2(PydanticDomainEvent, frozen=True):
     level: int = 2
     seed: str = pydantic.Field()
 
 
-class _MediatorEventL3(cqrs.DomainEvent, frozen=True):
+class _MediatorEventL3(PydanticDomainEvent, frozen=True):
     level: int = 3
     seed: str = pydantic.Field()
 

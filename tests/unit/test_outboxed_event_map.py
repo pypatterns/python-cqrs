@@ -22,7 +22,7 @@ class JsonPayload(pydantic.BaseModel, frozen=True):
     foo: str
 
 
-class JsonNotification(cqrs.NotificationEvent[JsonPayload], frozen=True):
+class JsonNotification(cqrs.PydanticNotificationEvent[JsonPayload], frozen=True):
     event_name: str = "json_mixed_event"
 
 
@@ -289,7 +289,7 @@ async def test_get_many_keeps_decodable_and_marks_only_failures():
 def test_mock_repository_sets_payload_bytes():
     storage: dict = {}
     repository = MockOutboxedEventRepository(session_factory=lambda: storage)
-    event = cqrs.NotificationEvent[JsonPayload](
+    event = cqrs.PydanticNotificationEvent[JsonPayload](
         event_name="json_event",
         payload=JsonPayload(foo="bar"),
     )

@@ -25,7 +25,7 @@ class ECSTPayload(pydantic.BaseModel):
 
 cqrs.OutboxedEventMap.register(
     "OutboxRequestHandler",
-    events.NotificationEvent[ECSTPayload],
+    cqrs.PydanticNotificationEvent[ECSTPayload],
 )
 
 
@@ -42,7 +42,7 @@ class OutboxRequestHandler(RequestHandler[OutboxRequest, None]):
             map(
                 lambda e: self.repository.add(e),
                 [
-                    events.NotificationEvent[ECSTPayload](
+                    cqrs.PydanticNotificationEvent[ECSTPayload](
                         event_name=OutboxRequestHandler.__name__,
                         payload=ECSTPayload(message=request.message),
                     )

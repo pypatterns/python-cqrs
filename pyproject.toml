@@ -21,8 +21,6 @@ dependencies = [
   "di[anyio]==0.*",
   "dependency-injector>=4.0",
   "orjson==3.*",
-  "pydantic==2.*",
-  "sqlalchemy[asyncio]==2.0.*",
   "python-dotenv==1.*",
   "typing-extensions>=4.0",
 ]
@@ -31,10 +29,12 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "4.15.0"
+version = "5.0.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
+pydantic = ["pydantic==2.*"]
+sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
 dev = [
   # Develope tools
   "pycln==2.5.0",
@@ -61,6 +61,9 @@ dev = [
   "aiobreaker>=0.3.0", # from aiobreaker
   "dishka>=1.0",  # scoped-deps dishka adapter tests / examples
   "protobuf>=4.25.8",  # protobuf codec / deserializer unit tests
+  # Full suite extras
+  "pydantic==2.*",
+  "sqlalchemy[asyncio]==2.0.*",
 ]
 examples = [
   "fastapi==0.109.*",
@@ -71,11 +74,12 @@ examples = [
   "protobuf>=4.25.8",
   "aiosqlite>=0.20.0",
   "dishka>=1.0",
+  "pydantic==2.*",
+  "sqlalchemy[asyncio]==2.0.*",
 ]
 kafka = ["aiokafka==0.10.0", "retry-async==0.1.*"]
 protobuf = ["protobuf>=4.25.8"]
 rabbit = ["aio-pika==9.3.0"]
-sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
 dishka = ["dishka>=1.0"]
 
 [project.urls]
@@ -88,6 +92,10 @@ addopts = "--junit-xml=report.xml"
 asyncio_mode = "auto"
 junit_family = "xunit1"
 testpaths = ["tests"]
+markers = [
+  "pydantic: tests that require the pydantic optional extra",
+  "sqlalchemy: tests that require the sqlalchemy optional extra",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

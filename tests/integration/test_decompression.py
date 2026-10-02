@@ -9,11 +9,11 @@ async def test_decompression_positive(session):
         session,
         cqrs.ZlibCompressor(),
     )
-    event = cqrs.NotificationEvent[typing.Dict](
+    event = cqrs.PydanticNotificationEvent[typing.Dict](
         event_name="TestEvent",
         payload={"foo": "bar"},
     )
-    cqrs.OutboxedEventMap.register("TestEvent", cqrs.NotificationEvent[typing.Dict])
+    cqrs.OutboxedEventMap.register("TestEvent", cqrs.PydanticNotificationEvent[typing.Dict])
 
     repository.add(event)
     await session.commit()

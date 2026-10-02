@@ -7,8 +7,11 @@ import typing
 import uuid
 
 import dotenv
-import pydantic
 from dataclass_wizard import asdict, fromdict
+
+from typing_extensions import dataclass_transform
+
+from cqrs._dataclass_utils import ensure_dataclass
 
 if sys.version_info >= (3, 11):
     from typing import Self  # novm
@@ -60,101 +63,43 @@ class IEvent(abc.ABC):
         raise NotImplementedError
 
 
+_LIBRARY_EVENT_BASES = frozenset(
+    {"DCEvent", "DCDomainEvent", "DCNotificationEvent"},
+)
+
+
+@dataclass_transform(frozen_default=True)
 @dataclasses.dataclass(frozen=True)
 class DCEvent(IEvent):
     """
     Dataclass-based implementation of the event interface.
 
-    This class provides an event implementation using Python's frozen dataclasses.
-    Events are immutable (frozen=True) to ensure they cannot be modified after creation.
-    It's useful when you want to avoid pydantic dependency or prefer dataclasses
-    for event definitions.
+    Subclasses may omit ``@dataclass``; ``__init_subclass__`` applies it.
+    Pass ``frozen=True`` (default) for immutable subclasses::
 
-    Example::
-
-        @dataclasses.dataclass(frozen=True)
-        class UserCreatedEvent(DCEvent):
+        class UserCreatedEvent(DCEvent, frozen=True):
             user_id: str
             username: str
-
-        event = UserCreatedEvent(user_id="123", username="john")
-        data = event.to_dict()  # {"user_id": "123", "username": "john"}
-        restored = UserCreatedEvent.from_dict(**data)
     """
+
+    def __init_subclass__(
+        cls,
+        frozen: bool = True,
+        kw_only: bool = False,
+        **kwargs: typing.Any,
+    ) -> None:
+        super().__init_subclass__(**kwargs)
+        # Intermediate library bases are wrapped by their own @dataclass decorator.
+        if cls.__name__ in _LIBRARY_EVENT_BASES:
+            return
+        ensure_dataclass(cls, frozen=frozen, kw_only=kw_only)
 
     @classmethod
     def from_dict(cls, **kwargs) -> Self:
-        """
-        Create an event instance from keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments matching the dataclass fields.
-
-        Returns:
-            A new instance of the event class.
-        """
         return fromdict(cls, kwargs)
 
     def to_dict(self) -> dict:
-        """
-        Convert the event instance to a dictionary representation.
-
-        Returns:
-            A dictionary containing all fields of the dataclass instance.
-        """
         return asdict(self)
-
-
-class PydanticEvent(pydantic.BaseModel, IEvent, frozen=True):
-    """
-    Pydantic-based implementation of the event interface.
-
-    This class provides an event implementation using Pydantic models with
-    frozen=True to ensure immutability. It offers data validation, serialization,
-    and other Pydantic features. This is the default event implementation used
-    by the library.
-
-    Events are immutable to ensure they cannot be modified after creation,
-    which is important for event sourcing and event-driven architectures.
-
-    Example::
-
-        class UserCreatedEvent(PydanticEvent):
-            user_id: str
-            username: str
-
-        event = UserCreatedEvent(user_id="123", username="john")
-        data = event.to_dict()  # {"user_id": "123", "username": "john"}
-        restored = UserCreatedEvent.from_dict(**data)
-    """
-
-    @classmethod
-    def from_dict(cls, **kwargs) -> Self:
-        """
-        Create an event instance from keyword arguments.
-
-        Validates and converts types (UUID strings to UUID objects,
-        datetime strings to datetime objects, nested objects like payload).
-
-        Args:
-            **kwargs: Keyword arguments matching the event fields.
-
-        Returns:
-            A new instance of the event class.
-        """
-        return cls.model_validate(kwargs)
-
-    def to_dict(self) -> dict:
-        """
-        Convert the event instance to a dictionary representation.
-
-        Returns:
-            A dictionary containing all fields of the event instance.
-        """
-        return self.model_dump(mode="python")
-
-
-Event = PydanticEvent
 
 
 class IDomainEvent(IEvent):
@@ -164,54 +109,21 @@ class IDomainEvent(IEvent):
     Domain events represent something that happened in the domain that domain experts
     care about. They are typically used for in-process event handling within the
     same bounded context.
-
-    This interface extends IEvent and is implemented by DCDomainEvent and
-    PydanticDomainEvent.
     """
 
 
+@dataclass_transform(frozen_default=True)
 @dataclasses.dataclass(frozen=True)
 class DCDomainEvent(DCEvent, IDomainEvent):
     """
     Dataclass-based implementation of domain events.
 
-    Domain events represent something that happened in the domain that domain experts
-    care about. They are typically used for in-process event handling within the
-    same bounded context.
-
-    This is the dataclass implementation. For Pydantic-based implementation,
-    use PydanticDomainEvent.
-
-    Example::
-
-        @dataclasses.dataclass(frozen=True)
-        class OrderCreatedEvent(DCDomainEvent):
-            order_id: str
-            customer_id: str
-            total_amount: float
+    Default for the ``DomainEvent`` alias in 5.x. For Pydantic validation,
+    install ``python-cqrs[pydantic]`` and use ``PydanticDomainEvent``.
     """
 
-
-class PydanticDomainEvent(PydanticEvent, IDomainEvent, frozen=True):
-    """
-    Pydantic-based implementation of domain events.
-
-    Domain events represent something that happened in the domain that domain experts
-    care about. They are typically used for in-process event handling within the
-    same bounded context.
-
-    This is the default domain event implementation used by the library.
-
-    Example::
-
-        class OrderCreatedEvent(PydanticDomainEvent):
-            order_id: str
-            customer_id: str
-            total_amount: float
-    """
-
-
-DomainEvent = PydanticDomainEvent
+    def __init_subclass__(cls, frozen: bool = True, **kwargs: typing.Any) -> None:
+        super().__init_subclass__(frozen=frozen, **kwargs)
 
 
 class INotificationEvent(IEvent, typing.Generic[PayloadT]):
@@ -219,29 +131,9 @@ class INotificationEvent(IEvent, typing.Generic[PayloadT]):
     Interface for notification event objects.
 
     Notification events are used for cross-service communication and are typically
-    published to message brokers (Kafka, RabbitMQ, etc.). They include metadata
-    like event_id, event_timestamp, event_name, and topic for routing.
-
-    This interface extends IEvent and is implemented by DCNotificationEvent and
-    PydanticNotificationEvent. It requires specific attributes that notification
-    events must have.
-
-    All notification event implementations must provide the following attributes:
-    - `event_id`: uuid.UUID - Unique identifier for the event
-    - `event_timestamp`: datetime.datetime - Timestamp when the event occurred
-    - `event_name`: str - Name of the event type
-    - `topic`: str - Message broker topic where the event should be published
-    - `payload`: PayloadT - Generic payload data of type PayloadT
+    published to message brokers (Kafka, RabbitMQ, etc.).
     """
 
-    # These attributes must be implemented by subclasses:
-    # - event_id: uuid.UUID - Unique identifier for the event
-    # - event_timestamp: datetime.datetime - Timestamp when the event occurred
-    # - event_name: str - Name of the event type
-    # - topic: str - Message broker topic where the event should be published
-    # - payload: PayloadT - Generic payload data of type PayloadT
-    #
-    # Type stubs for type checkers:
     if typing.TYPE_CHECKING:
         event_id: uuid.UUID
         event_timestamp: datetime.datetime
@@ -249,13 +141,14 @@ class INotificationEvent(IEvent, typing.Generic[PayloadT]):
         topic: str
         payload: PayloadT
 
-        def proto(self) -> typing.Any: ...  # Method for protobuf representation
+        def proto(self) -> typing.Any: ...
 
         @classmethod
         def from_proto(cls, proto: typing.Any) -> Self: ...
 
 
-@dataclasses.dataclass(frozen=True)
+@dataclass_transform(frozen_default=True, kw_only_default=True)
+@dataclasses.dataclass(frozen=True, kw_only=True)
 class DCNotificationEvent(
     DCEvent,
     INotificationEvent[PayloadT],
@@ -264,26 +157,10 @@ class DCNotificationEvent(
     """
     Dataclass-based implementation of notification events.
 
-    Notification events are used for cross-service communication and are typically
-    published to message brokers (Kafka, RabbitMQ, etc.). They include metadata
-    like event_id, event_timestamp, event_name, and topic for routing.
-
-    This is the dataclass implementation. For Pydantic-based implementation,
-    use PydanticNotificationEvent.
-
-    Args:
-        event_id: Unique identifier for the event (auto-generated if not provided)
-        event_timestamp: Timestamp when the event occurred (auto-generated if not provided)
-        event_name: Name of the event type
-        topic: Message broker topic where the event should be published
-        payload: Generic payload data of type PayloadT
-
-    Example::
-
-        @dataclasses.dataclass(frozen=True)
-        class UserRegisteredEvent(DCNotificationEvent[dict]):
-            event_name: str = "user.registered"
-            payload: dict = dataclasses.field(default_factory=lambda: {"user_id": "123"})
+    Default for the ``NotificationEvent`` alias in 5.x. Fields are keyword-only
+    so subclasses may override ``event_name`` with a default without breaking
+    field ordering. For Pydantic validation, install ``python-cqrs[pydantic]``
+    and use ``PydanticNotificationEvent``.
     """
 
     event_name: str
@@ -295,99 +172,37 @@ class DCNotificationEvent(
     )
     topic: str = dataclasses.field(default=DEFAULT_OUTPUT_TOPIC)
 
-    def proto(self) -> typing.Any:
-        """
-        Return protobuf representation of the event.
+    def __init_subclass__(cls, frozen: bool = True, **kwargs: typing.Any) -> None:
+        super().__init_subclass__(frozen=frozen, kw_only=True, **kwargs)
 
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses
-                that need protobuf serialization.
-        """
+    def proto(self) -> typing.Any:
         raise NotImplementedError("Method not implemented")
 
     @classmethod
     def from_proto(cls, proto: typing.Any) -> Self:
-        """
-        Constructs event from proto event object
-
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses
-                that need protobuf deserialization.
-        """
         raise NotImplementedError("Method not implemented")
 
     def __hash__(self) -> int:
-        """
-        Return the hash of the event based on its event_id.
-
-        Returns:
-            Hash value of the event_id.
-        """
         return hash(self.event_id)
 
 
-class PydanticNotificationEvent(
-    PydanticEvent,
-    INotificationEvent[PayloadT],
-    typing.Generic[PayloadT],
-    frozen=True,
-):
-    """
-    Pydantic-based implementation of notification events.
-
-    Notification events are used for cross-service communication and are typically
-    published to message brokers (Kafka, RabbitMQ, etc.). They include metadata
-    like event_id, event_timestamp, event_name, and topic for routing.
-
-    This is the default notification event implementation used by the library.
-
-    Example::
-
-        class UserRegisteredEvent(PydanticNotificationEvent[dict]):
-            event_name: str = "user.registered"
-            payload: dict = pydantic.Field(default_factory=lambda: {"user_id": "123"})
-    """
-
-    payload: PayloadT
-
-    event_id: uuid.UUID = pydantic.Field(default_factory=uuid.uuid4)
-    event_timestamp: datetime.datetime = pydantic.Field(
-        default_factory=datetime.datetime.now,
-    )
-    event_name: typing.Text
-    topic: typing.Text = pydantic.Field(default=DEFAULT_OUTPUT_TOPIC)
-
-    model_config = pydantic.ConfigDict(from_attributes=True)
-
-    def proto(self) -> typing.Any:
-        """
-        Return protobuf representation of the event.
-
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses
-                that need protobuf serialization.
-        """
-        raise NotImplementedError("Method not implemented")
-
-    @classmethod
-    def from_proto(cls, proto: typing.Any) -> Self:
-        """
-        Constructs event from proto event object
-
-        Raises:
-            NotImplementedError: This method must be implemented by subclasses
-                that need protobuf deserialization.
-        """
-        raise NotImplementedError("Method not implemented")
-
-    def __hash__(self) -> int:
-        """
-        Return the hash of the event based on its event_id.
-
-        Returns:
-            Hash value of the event_id.
-        """
-        return hash(self.event_id)
+# Defaults are dataclass-based (no pydantic required).
+# Pydantic* types live in cqrs.events.pydantic (optional extra).
+Event = DCEvent
+DomainEvent = DCDomainEvent
+NotificationEvent = DCNotificationEvent
 
 
-NotificationEvent = PydanticNotificationEvent
+__all__ = (
+    "IEvent",
+    "IDomainEvent",
+    "INotificationEvent",
+    "DCEvent",
+    "DCDomainEvent",
+    "DCNotificationEvent",
+    "Event",
+    "DomainEvent",
+    "NotificationEvent",
+    "PayloadT",
+    "DEFAULT_OUTPUT_TOPIC",
+)

@@ -6,12 +6,12 @@ import pytest
 import cqrs
 from cqrs.events import Event, EventEmitter, EventMap
 from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
+from cqrs.requests.request import PydanticRequest
 from cqrs.requests.request_handler import RequestHandler
-from cqrs.response import Response
+from cqrs.response import PydanticResponse
 
 
-class CloseMeetingRoomCommand(Request):
+class CloseMeetingRoomCommand(PydanticRequest):
     meeting_room_id: UUID = pydantic.Field()
 
 
@@ -28,11 +28,11 @@ class CloseMeetingRoomCommandHandler(RequestHandler[CloseMeetingRoomCommand, Non
         self.called = True
 
 
-class ReadMeetingDetailsQuery(Request):
+class ReadMeetingDetailsQuery(PydanticRequest):
     meeting_room_id: UUID = pydantic.Field()
 
 
-class ReadMeetingDetailsQueryResult(Response):
+class ReadMeetingDetailsQueryResult(PydanticResponse):
     meeting_room_id: UUID = pydantic.Field()
 
 

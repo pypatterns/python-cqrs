@@ -189,9 +189,20 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         if registered_event is None:
             raise TypeError(f"Unknown event name for {event.event_name}")
 
-        if type(event) is not registered_event:
+        event_type = type(event)
+        registered_origin = typing.get_origin(registered_event) or registered_event
+        # Pydantic Model[T] creates a distinct class; dataclass generics do not.
+        # Accept exact match, or origin match when registered is a GenericAlias and
+        # the instance type is exactly that origin (DCNotificationEvent[T] case).
+        if event_type is registered_event:
+            pass
+        elif typing.get_origin(registered_event) is not None and event_type is registered_origin:
+            pass
+        elif isinstance(registered_event, type) and issubclass(event_type, registered_event):
+            pass
+        else:
             raise TypeError(
-                f"Event type {type(event)} does not match registered event type {registered_event}",
+                f"Event type {event_type} does not match registered event type {registered_event}",
             )
 
         bytes_payload = self._resolve_codec(event.event_name).serialize(event)

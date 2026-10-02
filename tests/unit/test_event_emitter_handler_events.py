@@ -5,7 +5,8 @@ import typing
 
 import pydantic
 
-from cqrs.events import DomainEvent, EventEmitter, EventHandler, EventMap
+from cqrs.events import EventEmitter, EventHandler, EventMap
+from cqrs.events.pydantic import PydanticDomainEvent as DomainEvent
 from cqrs.events.event import IEvent
 
 
