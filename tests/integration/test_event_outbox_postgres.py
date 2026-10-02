@@ -13,7 +13,6 @@ import sqlalchemy as sqla
 from sqlalchemy.exc import IntegrityError
 
 import cqrs
-from cqrs import events
 from cqrs.outbox import (
     repository as outbox_repository,
     sqlalchemy,
@@ -26,12 +25,12 @@ class PostgresECSTPayload(pydantic.BaseModel):
 
 cqrs.OutboxedEventMap.register(
     "PostgresOutboxEvent",
-    events.NotificationEvent[PostgresECSTPayload],
+    cqrs.PydanticNotificationEvent[PostgresECSTPayload],
 )
 
 
-def make_event(message: typing.Text) -> events.NotificationEvent:
-    return events.NotificationEvent[PostgresECSTPayload](
+def make_event(message: typing.Text) -> cqrs.PydanticNotificationEvent:
+    return cqrs.PydanticNotificationEvent[PostgresECSTPayload](
         event_name="PostgresOutboxEvent",
         topic="postgres_outbox_topic",
         payload=PostgresECSTPayload(message=message),

@@ -23,8 +23,8 @@ class JsonPayload(pydantic.BaseModel, frozen=True):
     foo: str
 
 
-def _json_event() -> cqrs.NotificationEvent[JsonPayload]:
-    return cqrs.NotificationEvent[JsonPayload](
+def _json_event() -> cqrs.PydanticNotificationEvent[JsonPayload]:
+    return cqrs.PydanticNotificationEvent[JsonPayload](
         event_name="json_event",
         topic="json_topic",
         payload=JsonPayload(foo="bar"),

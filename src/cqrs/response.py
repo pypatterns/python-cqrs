@@ -1,8 +1,11 @@
 import abc
 import dataclasses
 import sys
+import typing
 
-import pydantic
+from typing_extensions import dataclass_transform
+
+from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error
 
 if sys.version_info >= (3, 11):
     from typing import Self  # novm
@@ -17,130 +20,55 @@ class IResponse(abc.ABC):
     This abstract base class defines the contract that all response implementations
     must follow. Responses are result objects returned by request handlers and are
     typically used for defining the result of queries in the CQRS pattern.
-
-    All response implementations must provide:
-    - `to_dict()`: Convert the response instance to a dictionary representation
-    - `from_dict()`: Create a response instance from a dictionary
     """
 
     @abc.abstractmethod
     def to_dict(self) -> dict:
-        """
-        Convert the response instance to a dictionary representation.
-
-        Returns:
-            A dictionary containing all fields of the response instance.
-        """
         raise NotImplementedError
 
     @classmethod
     @abc.abstractmethod
     def from_dict(cls, **kwargs) -> Self:
-        """
-        Create a response instance from keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments matching the response fields.
-
-        Returns:
-            A new instance of the response class.
-        """
         raise NotImplementedError
 
 
+@dataclass_transform()
 @dataclasses.dataclass
 class DCResponse(IResponse):
     """
     Dataclass-based implementation of the response interface.
 
-    This class provides a response implementation using Python's dataclasses.
-    It's useful when you want to avoid pydantic dependency or prefer dataclasses
-    for response definitions.
-
-    Example::
-
-        @dataclasses.dataclass
-        class UserResponse(DCResponse):
-            user_id: str
-            username: str
-            email: str
-
-        response = UserResponse(user_id="123", username="john", email="john@example.com")
-        data = response.to_dict()  # {"user_id": "123", "username": "john", "email": "john@example.com"}
-        restored = UserResponse.from_dict(**data)
+    Default for the ``Response`` alias in 5.x. Subclasses may omit ``@dataclass``.
+    For Pydantic validation, install ``python-cqrs[pydantic]`` and use
+    ``PydanticResponse``.
     """
+
+    def __init_subclass__(cls, **kwargs: typing.Any) -> None:
+        super().__init_subclass__(**kwargs)
+        ensure_dataclass(cls, frozen=False)
 
     @classmethod
     def from_dict(cls, **kwargs) -> Self:
-        """
-        Create a response instance from keyword arguments.
-
-        Args:
-            **kwargs: Keyword arguments matching the dataclass fields.
-
-        Returns:
-            A new instance of the response class.
-        """
         return cls(**kwargs)
 
     def to_dict(self) -> dict:
-        """
-        Convert the response instance to a dictionary representation.
-
-        Returns:
-            A dictionary containing all fields of the dataclass instance.
-        """
         return dataclasses.asdict(self)
 
 
-class PydanticResponse(pydantic.BaseModel, IResponse):
-    """
-    Pydantic-based implementation of the response interface.
+Response = DCResponse
 
-    This class provides a response implementation using Pydantic models.
-    It offers data validation, serialization, and other Pydantic features.
-    This is the default response implementation used by the library.
-
-    The response is a result of the request handling, which is held by RequestHandler.
-    Often the response is used for defining the result of the query.
-
-    Example::
-
-        class UserResponse(PydanticResponse):
-            user_id: str
-            username: str
-            email: str
-
-        response = UserResponse(user_id="123", username="john", email="john@example.com")
-        data = response.to_dict()  # {"user_id": "123", "username": "john", "email": "john@example.com"}
-        restored = UserResponse.from_dict(**data)
-    """
-
-    @classmethod
-    def from_dict(cls, **kwargs) -> Self:
-        """
-        Create a response instance from keyword arguments.
-
-        Validates and converts types, ensuring required fields are present.
-
-        Args:
-            **kwargs: Keyword arguments matching the response fields.
-
-        Returns:
-            A new instance of the response class.
-        """
-        return cls.model_validate(kwargs)
-
-    def to_dict(self) -> dict:
-        """
-        Convert the response instance to a dictionary representation.
-
-        Returns:
-            A dictionary containing all fields of the response instance.
-        """
-        return self.model_dump(mode="python")
+try:
+    from cqrs.pydantic_response import PydanticResponse  # noqa: E402
+except ImportError:  # pragma: no cover
+    PydanticResponse = None  # type: ignore[misc, assignment]
 
 
-Response = PydanticResponse
+def __getattr__(name: str) -> typing.Any:
+    if name == "PydanticResponse":
+        if PydanticResponse is not None:
+            return PydanticResponse
+        raise pydantic_extra_error(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = ("Response", "IResponse", "DCResponse", "PydanticResponse")

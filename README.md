@@ -111,13 +111,19 @@ Do not add a Saga for a single `UPDATE` in one service, and do not use a Saga as
 pip install python-cqrs
 ```
 
-Optional dependencies (see [pyproject.toml](https://github.com/vadikko2/python-cqrs/blob/master/pyproject.toml) for full list):
+Optional extras (5.0+ — pydantic and SQLAlchemy are no longer core dependencies):
 
 ```bash
-pip install python-cqrs[kafka]      # Kafka broker (aiokafka)
-pip install python-cqrs[examples]    # FastAPI, FastStream, uvicorn, etc.
-pip install python-cqrs[aiobreaker]  # Circuit breaker for saga fallbacks
+pip install "python-cqrs[pydantic]"     # PydanticRequest / Pydantic* events
+pip install "python-cqrs[sqlalchemy]"   # Outbox / Saga SQLAlchemy storage
+pip install "python-cqrs[kafka]"        # Kafka broker (aiokafka)
+pip install "python-cqrs[examples]"     # FastAPI, FastStream, uvicorn, etc.
+pip install "python-cqrs[aiobreaker]"   # Circuit breaker for saga fallbacks
 ```
+
+Default `Request` / `Response` / `Event` / `DomainEvent` / `NotificationEvent` aliases
+are dataclass-based (`DC*`). Use `Pydantic*` types with the pydantic extra when you
+need validation.
 
 ## Version Support
 

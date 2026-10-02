@@ -20,7 +20,7 @@ class RegisteredTestPayload(pydantic.BaseModel):
 
 cqrs.OutboxedEventMap.register(
     "empty_event",
-    cqrs.NotificationEvent[RegisteredTestPayload],
+    cqrs.PydanticNotificationEvent[RegisteredTestPayload],
 )
 
 
@@ -39,21 +39,21 @@ async def test_read_event_from_mock_outbox_positive():
         session_factory=functools.partial(lambda: mock_storage),
     )
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
         ),
     )
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
         ),
     )
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
@@ -69,21 +69,21 @@ async def test_read_event_from_mock_outbox_positive():
 async def test_read_event_from_sqlalchemy_outbox_positive(session):
     repository = sqlalchemy.SqlAlchemyOutboxedEventRepository(session)
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
         ),
     )
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
         ),
     )
     repository.add(
-        cqrs.NotificationEvent[RegisteredTestPayload](
+        cqrs.PydanticNotificationEvent[RegisteredTestPayload](
             event_name="empty_event",
             topic="empty_topic",
             payload=RegisteredTestPayload(),
@@ -102,7 +102,7 @@ async def test_add_unregistered_event_negative(session):
 
     with pytest.raises(TypeError, match="Unknown event name for not_registered_event"):
         repository.add(
-            cqrs.NotificationEvent[NotRegisteredTestPayload](
+            cqrs.PydanticNotificationEvent[NotRegisteredTestPayload](
                 event_name="not_registered_event",
                 topic="empty_topic",
                 payload=NotRegisteredTestPayload(),
@@ -115,7 +115,7 @@ async def test_add_registered_event_name_negative(session):
 
     with pytest.raises(TypeError):
         repository.add(
-            cqrs.NotificationEvent[NotRegisteredTestPayload](
+            cqrs.PydanticNotificationEvent[NotRegisteredTestPayload](
                 event_name="empty_event",
                 topic="empty_topic",
                 payload=NotRegisteredTestPayload(),

@@ -32,7 +32,7 @@ class UserJoinedPayload(pydantic.BaseModel, frozen=True):
     meeting_id: str
 
 
-class UserJoinedNotificationEvent(cqrs.NotificationEvent[UserJoinedPayload], frozen=True):
+class UserJoinedNotificationEvent(cqrs.PydanticNotificationEvent[UserJoinedPayload], frozen=True):
     event_name: str = "user_joined"
 
     def proto(self):

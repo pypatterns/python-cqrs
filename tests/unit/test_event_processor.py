@@ -3,17 +3,16 @@ from unittest import mock
 
 import pydantic
 
-from cqrs import Event
 from cqrs.events import (
-    DomainEvent,
     EventEmitter,
     EventHandler,
     EventMap,
 )
 from cqrs.events.event_processor import EventProcessor
+from cqrs.events.pydantic import PydanticDomainEvent
 
 
-class _TestDomainEvent(DomainEvent, frozen=True):
+class _TestDomainEvent(PydanticDomainEvent, frozen=True):
     """Test domain event."""
 
     item_id: str = pydantic.Field()
@@ -62,7 +61,7 @@ async def test_event_processor_processes_events_parallel() -> None:
         concurrent_event_handle_enable=True,
     )
 
-    events: list[Event] = [
+    events: list = [
         _TestDomainEvent(item_id="1"),
         _TestDomainEvent(item_id="2"),
         _TestDomainEvent(item_id="3"),
@@ -95,7 +94,7 @@ async def test_event_processor_processes_events_sequentially() -> None:
         concurrent_event_handle_enable=False,
     )
 
-    events: list[Event] = [
+    events: list = [
         _TestDomainEvent(item_id="1"),
         _TestDomainEvent(item_id="2"),
         _TestDomainEvent(item_id="3"),
@@ -265,7 +264,7 @@ async def test_event_processor_respects_semaphore_limit() -> None:
 async def test_event_processor_follow_ups_sequential_bfs() -> None:
     """Arrange: handler that returns follow-up events. Act: emit_events sequential. Assert: follow-ups processed (BFS)."""
 
-    class _ChainedEvent(DomainEvent, frozen=True):
+    class _ChainedEvent(PydanticDomainEvent, frozen=True):
         level: int = pydantic.Field()
         seq: int = pydantic.Field()
 
@@ -303,7 +302,7 @@ async def test_event_processor_follow_ups_sequential_bfs() -> None:
 async def test_event_processor_follow_ups_parallel_under_semaphore() -> None:
     """Arrange: handler returns 3 follow-ups, semaphore 2. Act: emit one event. Assert: all 4 processed, max concurrent <= 2."""
 
-    class _FanEvent(DomainEvent, frozen=True):
+    class _FanEvent(PydanticDomainEvent, frozen=True):
         id_: str = pydantic.Field(alias="id")
         model_config = pydantic.ConfigDict(populate_by_name=True)
 
