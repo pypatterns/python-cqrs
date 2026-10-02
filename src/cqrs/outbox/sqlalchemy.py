@@ -6,7 +6,8 @@ import dotenv
 import cqrs
 import uuid
 from cqrs import compressors
-from cqrs.outbox import map, repository
+from cqrs.mapping import outbox as map
+from cqrs.outbox import repository
 from cqrs.serializers.json import JsonEventSerializer
 from cqrs.serializers.protocol import EventCodec
 

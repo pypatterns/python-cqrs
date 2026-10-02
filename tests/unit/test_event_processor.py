@@ -9,7 +9,7 @@ from cqrs.events import (
     EventMap,
 )
 from cqrs.events.event_processor import EventProcessor
-from cqrs.events.pydantic import PydanticDomainEvent
+from cqrs.models.pydantic import PydanticDomainEvent
 
 
 class _TestDomainEvent(PydanticDomainEvent, frozen=True):

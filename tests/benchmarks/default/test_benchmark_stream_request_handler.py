@@ -6,9 +6,9 @@ import typing
 import cqrs
 import di
 import pytest
-from cqrs.events.event import IEvent
-from cqrs.requests import bootstrap
-from cqrs.requests.request_handler import StreamingRequestHandler
+from cqrs.models.event import IEvent
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.handlers.request import StreamingRequestHandler
 
 
 class ProcessItemsCommand(cqrs.Request):

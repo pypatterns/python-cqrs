@@ -7,11 +7,11 @@ import pytest
 from cqrs import RequestHandlerFallback
 from cqrs.container.protocol import Container
 from cqrs.dispatcher import RequestDispatcher
-from cqrs.events.event import IEvent
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import RequestHandler
-from cqrs.response import Response
+from cqrs.models.event import IEvent
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import Request
+from cqrs.handlers.request import RequestHandler
+from cqrs.models.response import Response
 
 T = TypeVar("T")
 
@@ -188,8 +188,8 @@ def test_request_fallback_validation_same_request_and_response_types_accepts() -
 
 def test_request_fallback_validation_different_request_type_raises() -> None:
     """Different request types raise TypeError."""
-    from cqrs.requests.request import Request
-    from cqrs.response import Response
+    from cqrs.models.request import Request
+    from cqrs.models.response import Response
 
     class OtherCommand(Request):
         value: int
@@ -207,7 +207,7 @@ def test_request_fallback_validation_different_request_type_raises() -> None:
 
 def test_request_fallback_validation_different_response_type_raises() -> None:
     """Different response types raise TypeError."""
-    from cqrs.response import Response
+    from cqrs.models.response import Response
 
     class OtherResult(Response):
         value: int
@@ -222,7 +222,7 @@ def test_request_fallback_validation_different_response_type_raises() -> None:
 
 def test_request_fallback_validation_same_types_with_none_response_accepts() -> None:
     """Both request and response (None) matching is accepted."""
-    from cqrs.requests.request import Request
+    from cqrs.models.request import Request
 
     class NoResultCommand(Request):
         x: str
@@ -248,7 +248,7 @@ def test_request_fallback_validation_not_classes_raises() -> None:
 
 def test_request_fallback_validation_mixed_handler_base_raises() -> None:
     """Mixing RequestHandler and StreamingRequestHandler raises TypeError."""
-    from cqrs.requests.request_handler import StreamingRequestHandler
+    from cqrs.handlers.request import StreamingRequestHandler
 
     class StreamingPrimary(StreamingRequestHandler[SimpleCommand, SimpleResult]):
         async def handle(self, request: SimpleCommand):

@@ -9,10 +9,10 @@ from cqrs.container.scope import (
     _run_with_fallback_scope,
     handler_scope,
 )
-from cqrs.events.event import IEvent
-from cqrs.events.event_handler import EventHandler
+from cqrs.models.event import IEvent
+from cqrs.handlers.event import EventHandler
 from cqrs.events.fallback import EventHandlerFallback
-from cqrs.events.map import EventMap
+from cqrs.mapping.events import EventMap
 from cqrs.middlewares.base import MiddlewareChain
 
 _EventHandler: typing.TypeAlias = EventHandler

@@ -1,7 +1,7 @@
 import functools
 import typing
 
-from cqrs.events.event import INotificationEvent
+from cqrs.models.event import INotificationEvent
 from cqrs.serializers.json import JsonEventSerializer
 from cqrs.serializers.protocol import EventCodec, EventSerializer
 

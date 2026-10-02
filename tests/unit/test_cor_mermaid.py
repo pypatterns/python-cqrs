@@ -3,8 +3,8 @@
 import typing
 
 import cqrs
-from cqrs.requests.cor_request_handler import CORRequestHandler
-from cqrs.requests.mermaid import CoRMermaid
+from cqrs.handlers.cor import CORRequestHandler
+from cqrs.mermaid.cor import CoRMermaid
 
 
 class ProcessPaymentCommand(cqrs.Request):

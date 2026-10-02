@@ -2,9 +2,9 @@ import dataclasses
 import logging
 import typing
 
-from cqrs.events.event import IEvent
-from cqrs.response import IResponse
-from cqrs.saga.step import SagaStepResult
+from cqrs.models.event import IEvent
+from cqrs.models.response import IResponse
+from cqrs.handlers.saga import SagaStepResult
 
 logger = logging.getLogger("cqrs")
 

@@ -12,13 +12,13 @@ from cqrs.events import (
     EventMap,
     NotificationEvent,
 )
-from cqrs.events.event import IEvent
-from cqrs.mediator import StreamingRequestMediator
+from cqrs.models.event import IEvent
+from cqrs.mediators import StreamingRequestMediator
 from cqrs.message_brokers import devnull
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import StreamingRequestHandler
-from cqrs.response import Response
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import Request
+from cqrs.handlers.request import StreamingRequestHandler
+from cqrs.models.response import Response
 
 
 class ProcessItemsCommand(Request):

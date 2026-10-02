@@ -1,9 +1,9 @@
 import typing
 
-from cqrs.requests.cor_request_handler import CORRequestHandler
+from cqrs.handlers.cor import CORRequestHandler
 from cqrs.requests.fallback import RequestHandlerFallback
-from cqrs.requests.request import IRequest
-from cqrs.requests.request_handler import (
+from cqrs.models.request import IRequest
+from cqrs.handlers.request import (
     RequestHandler,
     StreamingRequestHandler,
 )

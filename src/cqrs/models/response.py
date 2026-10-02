@@ -58,7 +58,7 @@ class DCResponse(IResponse):
 Response = DCResponse
 
 try:
-    from cqrs.pydantic_response import PydanticResponse  # noqa: E402
+    from cqrs.models.pydantic import PydanticResponse  # noqa: E402
 except ImportError:  # pragma: no cover
     PydanticResponse = None  # type: ignore[misc, assignment]
 

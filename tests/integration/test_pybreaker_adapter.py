@@ -6,7 +6,7 @@ import pytest
 from aiobreaker import CircuitBreakerError
 
 from cqrs.adapters.circuit_breaker import AioBreakerAdapter
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 
 # Test exceptions

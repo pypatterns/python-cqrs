@@ -12,8 +12,9 @@ from cqrs.container.scope import (
     handler_scope,
     wrap_container,
 )
-from cqrs.events.event import IDomainEvent, IEvent, INotificationEvent
-from cqrs.events import event_handler, map
+from cqrs.models.event import IDomainEvent, IEvent, INotificationEvent
+from cqrs.handlers import event as event_handler
+from cqrs.mapping import events as map
 from cqrs.events.fallback import EventHandlerFallback
 from cqrs.serializers.default import headers_for_content_type
 from cqrs.serializers.json import JsonEventSerializer

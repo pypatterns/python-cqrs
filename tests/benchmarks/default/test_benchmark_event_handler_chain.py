@@ -6,10 +6,10 @@ import pydantic
 import pytest
 
 from cqrs.events import EventEmitter, EventHandler, EventMap
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.container.protocol import Container
-from cqrs.events.pydantic import PydanticDomainEvent
+from cqrs.models.pydantic import PydanticDomainEvent
 
 
 class _EventL1(PydanticDomainEvent, frozen=True):

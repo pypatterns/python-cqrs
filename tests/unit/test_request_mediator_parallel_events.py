@@ -11,10 +11,10 @@ from cqrs.events import (
     EventHandler,
     EventMap,
 )
-from cqrs.mediator import RequestMediator
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import RequestHandler
+from cqrs.mediators import RequestMediator
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import Request
+from cqrs.handlers.request import RequestHandler
 
 
 class ProcessItemsCommand(Request):

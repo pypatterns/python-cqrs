@@ -2,7 +2,7 @@ import abc
 from collections.abc import Sequence
 import typing
 
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 
 E = typing.TypeVar("E", bound=IEvent, contravariant=True)
 

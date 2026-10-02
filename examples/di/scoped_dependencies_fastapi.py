@@ -21,7 +21,7 @@ from di import dependent
 import cqrs
 from cqrs.container.di import DIContainer
 from cqrs.container.scope import ScopeStrategy, bind_scope, enter_scope
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 UOW_IDS: list[int] = []
 

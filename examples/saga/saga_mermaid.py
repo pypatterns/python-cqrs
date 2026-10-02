@@ -59,13 +59,13 @@ Online Mermaid Editor:
 import typing
 
 from cqrs import container as cqrs_container
-from cqrs.events.event import Event
-from cqrs.response import Response
+from cqrs.models.event import Event
+from cqrs.models.response import Response
 from cqrs.saga.fallback import Fallback
-from cqrs.saga.mermaid import SagaMermaid
+from cqrs.mermaid.saga import SagaMermaid
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 
 # Import types and step handlers from saga.py example
 # In a real scenario, these would be imported from your domain modules

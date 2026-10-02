@@ -1,6 +1,6 @@
 import orjson
 
-from cqrs.events.event import INotificationEvent
+from cqrs.models.event import INotificationEvent
 
 
 class JsonEventSerializer:

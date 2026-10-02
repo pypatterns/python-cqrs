@@ -9,7 +9,7 @@ from cqrs.container.protocol import Container
 from cqrs.container.scope import ScopeStrategy, handler_scope
 from cqrs.saga.execution import SagaStepRef
 from cqrs.saga.models import ContextT
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 from cqrs.saga.storage.enums import SagaStepStatus, SagaStatus
 from cqrs.saga.storage.protocol import ISagaStorage, SagaStorageRun
 

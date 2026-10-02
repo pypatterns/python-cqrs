@@ -5,8 +5,8 @@ import dataclasses
 import typing
 import uuid
 
-from cqrs.events.event import IEvent
-from cqrs.response import IResponse
+from cqrs.models.event import IEvent
+from cqrs.models.response import IResponse
 from cqrs.saga.models import ContextT
 
 Resp = typing.TypeVar("Resp", bound=IResponse | None, covariant=True)

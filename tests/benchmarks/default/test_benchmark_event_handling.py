@@ -7,7 +7,7 @@ import di
 import pytest
 
 import cqrs
-from cqrs.events import bootstrap
+from cqrs.bootstrap import events as bootstrap
 
 
 class UserJoinedEvent(cqrs.Event, frozen=True):

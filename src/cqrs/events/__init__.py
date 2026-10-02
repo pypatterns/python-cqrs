@@ -1,24 +1,15 @@
-"""Event types, handlers, emitter, and event map for the CQRS events layer.
-
-Public API:
-- Event types: :class:`Event`, :class:`DomainEvent`, :class:`NotificationEvent`,
-  and their interfaces/base classes.
-- :class:`EventHandler` — handler interface; implement :meth:`EventHandler.handle`
-  and optionally :attr:`EventHandler.events` for follow-up events.
-- :class:`EventEmitter` — sends domain events to handlers and notification events
-  to a message broker.
-- :class:`EventMap` — registry of event type -> handler types; use :meth:`EventMap.bind`.
-- :class:`EventHandlerFallback` — fallback wrapper for event handlers with optional circuit breaker.
-
-Pydantic event classes require ``python-cqrs[pydantic]`` and are loaded when available.
-"""
+"""Event handlers, emitter, and map for the CQRS events layer."""
 
 import typing
 
 from cqrs._dataclass_utils import pydantic_extra_error
-from cqrs.events.event import (
-    DCEvent,
+from cqrs.events.event_emitter import EventEmitter
+from cqrs.events.fallback import EventHandlerFallback
+from cqrs.handlers.event import EventHandler
+from cqrs.mapping.events import EventMap
+from cqrs.models.event import (
     DCDomainEvent,
+    DCEvent,
     DCNotificationEvent,
     DomainEvent,
     Event,
@@ -27,13 +18,9 @@ from cqrs.events.event import (
     INotificationEvent,
     NotificationEvent,
 )
-from cqrs.events.event_emitter import EventEmitter
-from cqrs.events.event_handler import EventHandler
-from cqrs.events.fallback import EventHandlerFallback
-from cqrs.events.map import EventMap
 
 try:
-    from cqrs.events.pydantic import (
+    from cqrs.models.pydantic import (
         PydanticDomainEvent,
         PydanticEvent,
         PydanticNotificationEvent,

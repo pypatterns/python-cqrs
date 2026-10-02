@@ -2,7 +2,7 @@
 
 import typing
 
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 
 class ISagaStepCircuitBreaker(typing.Protocol):

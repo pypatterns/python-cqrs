@@ -2,7 +2,7 @@ import typing
 
 import orjson
 
-from cqrs.events.event import INotificationEvent
+from cqrs.models.event import INotificationEvent
 
 if typing.TYPE_CHECKING:
     from cqrs.message_brokers.protocol import Message

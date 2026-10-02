@@ -77,13 +77,13 @@ from di import dependent
 
 import cqrs
 from cqrs.adapters.circuit_breaker import AioBreakerAdapter
-from cqrs.events.event import Event
-from cqrs.response import Response
-from cqrs.saga import bootstrap
+from cqrs.models.event import Event
+from cqrs.models.response import Response
+from cqrs.bootstrap import saga as bootstrap
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 
 logging.basicConfig(level=logging.INFO)
@@ -242,7 +242,7 @@ async def run_saga(
 
     try:
         step_results = []
-        async for step_result in mediator.stream(context, saga_id=saga_id):
+        async for step_result in mediator.execute(context, saga_id=saga_id):
             step_results.append(step_result)
             step_name = step_result.step_type.__name__
             if hasattr(step_result.response, "source"):

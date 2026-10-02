@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from cqrs.events.pydantic import PydanticNotificationEvent
+from cqrs.models.pydantic import PydanticNotificationEvent
 
 
 class SimplePydanticNotificationEvent(PydanticNotificationEvent[dict], frozen=True):

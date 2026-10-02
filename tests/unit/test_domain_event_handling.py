@@ -5,7 +5,7 @@ from collections import defaultdict
 import di
 
 import cqrs
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 STORAGE = defaultdict[str, typing.List[str]](lambda: [])
 HANDLED_EVENTS = set[cqrs.DomainEvent]()
