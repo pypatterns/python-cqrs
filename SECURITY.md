@@ -7,7 +7,7 @@
 | `master` / 5.x | `5.x.y` | Active development (features + breaking)    |
 | `4.x`          | `4.15.x`, … | Bug fixes and security only                 |
 
-After **python-cqrs 5.0.0** is released, the **4.x** line remains supported for approximately **12 months** for bug fixes and security patches. New features land only on 5.x.
+After **python-cqrs 5.0.0** is released, the **4.x** line remains supported for approximately **12 months** for bug fixes and security patches. New features land only on 5.x. How to contribute fixes on that line: [CONTRIBUTING.md — Maintaining / fixing 4.x](CONTRIBUTING.md#8-maintaining--fixing-4x).
 
 Clients who are not ready to migrate should pin:
 
