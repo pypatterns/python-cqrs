@@ -5,7 +5,7 @@ import typing
 
 from typing_extensions import dataclass_transform
 
-from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error
+from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error, to_plain_dict
 from cqrs.models.response import IResponse
 
 if sys.version_info >= (3, 11):
@@ -59,7 +59,7 @@ class DCRequest(IRequest):
         return cls(**kwargs)
 
     def to_dict(self) -> dict:
-        return dataclasses.asdict(self)
+        return to_plain_dict(self)
 
 
 Request = DCRequest
