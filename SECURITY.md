@@ -17,9 +17,9 @@ pip install "python-cqrs>=4,<5"
 
 ## EOL migration notice (after 5.0.0)
 
-A package-level `DeprecationWarning` (and optional log) that nudges users toward 5.x will be added on the **first 4.x patch release after 5.0.0** (for example `4.15.1`). It is **not** present on 4.15.0 and will not be added before 5.0.0 ships (so migration docs URLs exist first).
+Starting with **4.15.1**, importing `cqrs` emits a package-level `DeprecationWarning` (and an optional log) that nudges users toward 5.x. It is **not** present on 4.15.0.
 
-Suppress the optional log in noisy CI with `CQRS_SUPPRESS_V4_EOL_WARNING=1` once that release exists.
+Suppress the optional log in noisy CI with `CQRS_SUPPRESS_V4_EOL_WARNING=1` (`1` / `true` / `yes`). The `DeprecationWarning` is still emitted and can be filtered with standard Python warning filters.
 
 ## Reporting a Vulnerability
 

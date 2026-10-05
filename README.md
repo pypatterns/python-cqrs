@@ -126,7 +126,7 @@ pip install "python-cqrs>=4,<5"
 
 Docs: [4.x](https://mkdocs.python-cqrs.dev/4.0/) and [5.x / latest](https://mkdocs.python-cqrs.dev/latest/) (version switcher after mike deploy). See [SECURITY.md](SECURITY.md) for the support window and vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md#8-maintaining--fixing-4x) for how to contribute 4.x bugfixes.
 
-A package-level EOL `DeprecationWarning` toward 5.x will be added on the **first 4.x patch after 5.0.0** — not before.
+Starting with **4.15.1**, importing `cqrs` emits a package-level EOL `DeprecationWarning` toward 5.x (plus an optional log). Suppress the log with `CQRS_SUPPRESS_V4_EOL_WARNING=1`.
 
 ## Quick Start
 
