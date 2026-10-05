@@ -20,9 +20,6 @@
     <a href="https://codecov.io/gh/vadikko2/python-cqrs">
       <img src="https://img.shields.io/codecov/c/github/vadikko2/python-cqrs?logo=codecov&logoColor=white" alt="Coverage">
     </a>
-    <a href="https://codspeed.io/vadikko2/python-cqrs?utm_source=badge">
-      <img src="https://img.shields.io/endpoint?url=https://codspeed.io/badge.json" alt="CodSpeed">
-    </a>
     <a href="https://mkdocs.python-cqrs.dev/">
       <img src="https://img.shields.io/badge/docs-mkdocs-blue?logo=readthedocs" alt="Documentation">
     </a>
@@ -34,11 +31,6 @@
     </a>
   </p>
 </div>
-
-> [!WARNING]
-> **Breaking Changes in v5.0.0**
->
-> Starting with version 5.0.0, Pydantic support will become optional. The default implementations of `Request`, `Response`, `DomainEvent`, and `NotificationEvent` will be migrated to dataclasses-based implementations.
 
 ## Table of Contents
 
