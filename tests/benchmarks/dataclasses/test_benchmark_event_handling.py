@@ -1,7 +1,6 @@
 """Benchmarks for event handling performance (dataclass DCEvent)."""
 
 import asyncio
-import dataclasses
 import typing
 
 import cqrs
@@ -10,7 +9,6 @@ import pytest
 from cqrs.bootstrap import events as bootstrap
 
 
-@dataclasses.dataclass(frozen=True)
 class UserJoinedEvent(cqrs.DCEvent):
     user_id: str
     meeting_id: str
