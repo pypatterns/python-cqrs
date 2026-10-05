@@ -1,3 +1,4 @@
+from cqrs._eol import emit_v4_eol_warning
 from cqrs.compressors import Compressor, ZlibCompressor
 from cqrs.container.di import DIContainer
 from cqrs.container.protocol import Container, SupportsScope
@@ -149,3 +150,5 @@ __all__ = (
     "JSONType",
     "PayloadBinary",
 )
+
+emit_v4_eol_warning()

@@ -110,6 +110,7 @@ pip install python-cqrs[examples]    # FastAPI, FastStream, uvicorn, etc.
 pip install python-cqrs[aiobreaker]  # Circuit breaker for saga fallbacks
 ```
 
+Starting with **4.15.1**, importing `cqrs` emits a package-level EOL `DeprecationWarning` toward 5.x (plus an optional log). Suppress the log with `CQRS_SUPPRESS_V4_EOL_WARNING=1`. See [SECURITY.md](SECURITY.md) for the 4.x support window and pin guidance.
 
 ## Quick Start
 
