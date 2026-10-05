@@ -3,7 +3,7 @@
 import dataclasses
 
 from cqrs.circuit_breaker import ICircuitBreaker
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 
 @dataclasses.dataclass(frozen=True)

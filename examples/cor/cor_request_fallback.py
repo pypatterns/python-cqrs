@@ -60,8 +60,8 @@ import di
 from di import dependent
 
 import cqrs
-from cqrs.requests import bootstrap
-from cqrs.requests.cor_request_handler import (
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.handlers.cor import (
     CORRequestHandler,
     build_chain,
 )

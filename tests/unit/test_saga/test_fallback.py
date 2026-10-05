@@ -5,10 +5,10 @@ import typing
 import pytest
 
 from cqrs.adapters.circuit_breaker import AioBreakerAdapter
-from cqrs.events.event import Event
+from cqrs.models.event import Event
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.enums import SagaStatus, SagaStepStatus
 from cqrs.saga.storage.memory import MemorySagaStorage
 from .conftest import (

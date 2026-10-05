@@ -5,7 +5,7 @@ import typing
 
 from typing_extensions import dataclass_transform
 
-from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error
+from cqrs._dataclass_utils import ensure_dataclass, pydantic_extra_error, to_plain_dict
 
 if sys.version_info >= (3, 11):
     from typing import Self  # novm
@@ -52,13 +52,13 @@ class DCResponse(IResponse):
         return cls(**kwargs)
 
     def to_dict(self) -> dict:
-        return dataclasses.asdict(self)
+        return to_plain_dict(self)
 
 
 Response = DCResponse
 
 try:
-    from cqrs.pydantic_response import PydanticResponse  # noqa: E402
+    from cqrs.models.pydantic import PydanticResponse  # noqa: E402
 except ImportError:  # pragma: no cover
     PydanticResponse = None  # type: ignore[misc, assignment]
 

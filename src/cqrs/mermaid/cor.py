@@ -3,7 +3,7 @@
 import inspect
 import typing
 
-from cqrs.requests.cor_request_handler import CORRequestHandler
+from cqrs.handlers.cor import CORRequestHandler
 
 
 class CoRMermaid:

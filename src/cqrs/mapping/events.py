@@ -1,7 +1,7 @@
 import typing
 
-from cqrs.events.event import IEvent
-from cqrs.events import event_handler
+from cqrs.models.event import IEvent
+from cqrs.handlers import event as event_handler
 from cqrs.events.fallback import EventHandlerFallback
 
 _KT = typing.TypeVar("_KT", bound=typing.Type[IEvent])

@@ -9,11 +9,11 @@ import dataclasses
 import typing
 
 import pytest
-from cqrs.events.event import Event
-from cqrs.response import DCResponse
+from cqrs.models.event import Event
+from cqrs.models.response import DCResponse
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 
 from ..conftest import MemorySagaStorageLegacy

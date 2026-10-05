@@ -3,7 +3,7 @@
 import pydantic
 
 from cqrs.events import DomainEvent, EventHandler
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 
 
 class _TestEvent(DomainEvent, frozen=True):

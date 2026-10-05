@@ -5,7 +5,7 @@ import typing
 
 from cqrs.circuit_breaker import ICircuitBreaker
 from cqrs.generic_utils import get_generic_args_for_origin
-from cqrs.requests.request_handler import RequestHandler, StreamingRequestHandler
+from cqrs.handlers.request import RequestHandler, StreamingRequestHandler
 
 RequestHandlerT = type[RequestHandler] | type[StreamingRequestHandler]
 

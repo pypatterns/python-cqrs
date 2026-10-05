@@ -65,7 +65,7 @@ from collections import defaultdict
 import di
 
 import cqrs
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 logging.basicConfig(level=logging.DEBUG)
 

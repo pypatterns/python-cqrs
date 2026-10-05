@@ -7,10 +7,10 @@ import pytest
 import cqrs
 from cqrs.dispatcher import StreamingRequestDispatcher
 from cqrs.events import Event, NotificationEvent
-from cqrs.requests.map import RequestMap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import StreamingRequestHandler
-from cqrs.response import Response
+from cqrs.mapping.requests import RequestMap
+from cqrs.models.request import Request
+from cqrs.handlers.request import StreamingRequestHandler
+from cqrs.models.response import Response
 
 
 class ProcessItemsCommand(Request):

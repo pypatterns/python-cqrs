@@ -125,6 +125,21 @@ Default `Request` / `Response` / `Event` / `DomainEvent` / `NotificationEvent` a
 are dataclass-based (`DC*`). Use `Pydantic*` types with the pydantic extra when you
 need validation.
 
+### Import paths (5.0+)
+
+| Area | Import |
+|------|--------|
+| Bootstrap | `from cqrs.bootstrap import requests, events, saga` |
+| Mediators | `from cqrs.mediators import RequestMediator, SagaMediator, …` |
+| Handlers | `from cqrs.handlers import RequestHandler, EventHandler, …` |
+| Models | `from cqrs.models import Request, Event, …` / `cqrs.models.pydantic` |
+| Maps | `from cqrs.mapping import RequestMap, EventMap, OutboxedEventMap` |
+| Mermaid | `from cqrs.mermaid import CoRMermaid, SagaMermaid` |
+| Outbox producer | `from cqrs.message_brokers.producer import EventProducer` |
+
+`SagaMediator.execute(...)` replaces the former `SagaMediator.stream(...)`
+(StreamingRequestMediator.stream is unchanged).
+
 ## Version Support
 
 | Line | Git branch | What changes |
@@ -149,7 +164,7 @@ Define a command, a handler, bind them, and run via the mediator:
 ```python
 import di
 import cqrs
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 class CreateOrderCommand(cqrs.Request):
     order_id: str
@@ -237,8 +252,8 @@ As a result of executing the command, an event may be produced to the broker.
 > By default, the command handler does not return any result, but it is not mandatory.
 
 ```python
-from cqrs.requests.request_handler import RequestHandler
-from cqrs.events.event import Event
+from cqrs.handlers.request import RequestHandler
+from cqrs.models.event import Event
 
 class JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):
 
@@ -265,8 +280,8 @@ the [read model](https://radekmaziarka.pl/2018/01/08/cqrs-third-step-simple-read
 > The read model can be constructed based on domain events produced by the `Command Handler`.
 
 ```python
-from cqrs.requests.request_handler import RequestHandler
-from cqrs.events.event import Event
+from cqrs.handlers.request import RequestHandler
+from cqrs.models.event import Event
 
 class ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryResult]):
 
@@ -297,8 +312,8 @@ real-time progress updates.
 
 ```python
 import typing
-from cqrs.requests.request_handler import StreamingRequestHandler
-from cqrs.events.event import Event
+from cqrs.handlers.request import StreamingRequestHandler
+from cqrs.models.event import Event
 
 class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand, FileProcessedResult]):
     def __init__(self):
@@ -334,8 +349,8 @@ when a handler successfully processes the request or when all handlers have been
 
 ```python
 import typing
-from cqrs.requests.cor_request_handler import CORRequestHandler
-from cqrs.events.event import Event
+from cqrs.handlers.cor import CORRequestHandler
+from cqrs.models.event import Event
 
 class CreditCardPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
     def __init__(self, payment_service: PaymentServiceProtocol) -> None:
@@ -391,7 +406,7 @@ the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples
 The package includes built-in support for generating Mermaid diagrams from Chain of Responsibility handler chains.
 
 ```python
-from cqrs.requests.mermaid import CoRMermaid
+from cqrs.mermaid.cor import CoRMermaid
 
 # Create Mermaid generator from handler chain
 handlers = [CreditCardHandler, PayPalHandler, DefaultHandler]
@@ -561,8 +576,8 @@ application.
 ```python
 import functools
 
-from cqrs.events import bootstrap as event_bootstrap
-from cqrs.requests import bootstrap as request_bootstrap
+from cqrs.bootstrap import events as event_bootstrap
+from cqrs.bootstrap import requests as bootstrap as request_bootstrap
 
 from app import dependencies, mapping, orm
 
@@ -618,7 +633,7 @@ import dataclasses
 import uuid
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 @dataclasses.dataclass
 class OrderContext(SagaContext):
@@ -640,7 +655,7 @@ class OrderSaga(Saga[OrderContext]):
 context = OrderContext(order_id="123", user_id="user_1", items=["item_1"], total_amount=100.0)
 saga_id = uuid.uuid4()
 
-async for step_result in mediator.stream(context, saga_id=saga_id):
+async for step_result in mediator.execute(context, saga_id=saga_id):
     print(f"Step completed: {step_result.step_type.__name__}")
     # If any step fails, compensation happens automatically
 ```
@@ -653,7 +668,7 @@ The saga pattern supports fallback steps that execute automatically when primary
 from cqrs.saga.fallback import Fallback
 from cqrs.adapters.circuit_breaker import AioBreakerAdapter
 from cqrs.response import Response
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 
 class ReserveInventoryResponse(Response):
     reservation_id: str
@@ -736,7 +751,7 @@ The recovery mechanism ensures eventual consistency by:
 The package includes built-in support for generating Mermaid diagrams from Saga instances.
 
 ```python
-from cqrs.saga.mermaid import SagaMermaid
+from cqrs.mermaid.saga import SagaMermaid
 
 # Create Mermaid generator from saga class
 saga = OrderSaga()
@@ -976,7 +991,7 @@ This feature is especially useful when:
 **Configuration:**
 
 ```python
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 mediator = bootstrap.bootstrap_streaming(
     di_container=container,
@@ -1093,7 +1108,7 @@ This allows you to stream results to clients in real-time as they are processed.
 ```python
 import fastapi
 import json
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 def streaming_mediator_factory() -> cqrs.StreamingRequestMediator:
     return bootstrap.bootstrap_streaming(

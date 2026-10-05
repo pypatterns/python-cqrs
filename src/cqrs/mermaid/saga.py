@@ -5,7 +5,7 @@ import typing
 
 from cqrs.saga.fallback import Fallback
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 
 class SagaMermaid:

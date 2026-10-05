@@ -98,7 +98,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 import cqrs
 from cqrs.message_brokers import protocol as broker_protocol
 from cqrs.outbox.sqlalchemy import Base as OutboxBase
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("fastapi_outbox")

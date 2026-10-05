@@ -4,10 +4,10 @@ import typing
 
 from cqrs.dispatcher.saga import SagaDispatcher
 from cqrs.events import DomainEvent
-from cqrs.events.event import IEvent
-from cqrs.requests.map import SagaMap
+from cqrs.models.event import IEvent
+from cqrs.mapping.requests import SagaMap
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 
 from .conftest import OrderContext, ReserveInventoryResponse, SagaContainer

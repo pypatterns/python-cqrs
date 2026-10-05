@@ -7,10 +7,10 @@ import pytest
 
 from cqrs import EventHandlerFallback
 from cqrs.container.protocol import Container
-from cqrs.events.event import DomainEvent, IEvent
+from cqrs.models.event import DomainEvent, IEvent
 from cqrs.events.event_emitter import EventEmitter
-from cqrs.events.event_handler import EventHandler
-from cqrs.events.map import EventMap
+from cqrs.handlers.event import EventHandler
+from cqrs.mapping.events import EventMap
 
 T = TypeVar("T")
 
@@ -140,7 +140,7 @@ def test_event_fallback_validation_same_event_type_accepts() -> None:
 
 def test_event_fallback_validation_different_event_type_raises() -> None:
     """Different event types raise TypeError."""
-    from cqrs.events.event import DomainEvent
+    from cqrs.models.event import DomainEvent
 
     class OtherEvent(DomainEvent, frozen=True):
         num: int
@@ -163,9 +163,9 @@ def test_event_fallback_validation_not_classes_raises() -> None:
 
 def test_event_fallback_validation_primary_not_event_handler_raises() -> None:
     """Primary that is not EventHandler subclass raises TypeError."""
-    from cqrs.requests.request import Request
-    from cqrs.requests.request_handler import RequestHandler
-    from cqrs.response import Response
+    from cqrs.models.request import Request
+    from cqrs.handlers.request import RequestHandler
+    from cqrs.models.response import Response
 
     class NotAnEventHandler:
         pass

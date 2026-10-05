@@ -9,7 +9,7 @@ from di import dependent
 
 import cqrs
 from cqrs.outbox import mock
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 OUTBOX_STORAGE = defaultdict[
     uuid.UUID,

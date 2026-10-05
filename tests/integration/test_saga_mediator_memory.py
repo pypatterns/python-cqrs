@@ -10,13 +10,13 @@ import pytest
 
 import cqrs
 from cqrs import events
-from cqrs.events.event import DomainEvent, Event
-from cqrs.events.event_handler import EventHandler
-from cqrs.response import Response
-from cqrs.requests.map import SagaMap
+from cqrs.models.event import DomainEvent, Event
+from cqrs.handlers.event import EventHandler
+from cqrs.models.response import Response
+from cqrs.mapping.requests import SagaMap
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.enums import SagaStatus
 from cqrs.saga.storage.memory import MemorySagaStorage
 
@@ -352,12 +352,12 @@ class TestSagaMediatorMemoryStorage:
         saga_mediator: cqrs.SagaMediator,
     ) -> None:
         """
-        Contract: mediator.stream(context) is called without await
+        Contract: mediator.execute(context) is called without await
         and returns an AsyncIterator that is consumed with async for.
         """
         context = OrderContext(order_id="contract", user_id="user1", amount=50.0)
         # stream() is called (no await) and returns async iterator
-        async_gen = saga_mediator.stream(context)
+        async_gen = saga_mediator.execute(context)
         step_results = []
         async for result in async_gen:
             step_results.append(result)
@@ -376,7 +376,7 @@ class TestSagaMediatorMemoryStorage:
         saga_id = uuid.uuid4()
 
         step_results = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results.append(result)
 
         # Verify all steps were executed
@@ -413,7 +413,7 @@ class TestSagaMediatorMemoryStorage:
         context = OrderContext(order_id="456", user_id="user2", amount=200.0)
 
         step_results = []
-        async for result in saga_mediator.stream(context):
+        async for result in saga_mediator.execute(context):
             step_results.append(result)
 
         # Wait for background tasks to complete
@@ -445,7 +445,7 @@ class TestSagaMediatorMemoryStorage:
         context = OrderContext(order_id="789", user_id="user3", amount=300.0)
 
         step_results = []
-        async for result in saga_mediator.stream(context):
+        async for result in saga_mediator.execute(context):
             step_results.append(result)
 
         # Wait for background tasks to complete
@@ -496,7 +496,7 @@ class TestSagaMediatorMemoryStorage:
 
         step_results = []
         with pytest.raises(ValueError, match="Step failed for order fail_123"):
-            async for result in failing_mediator.stream(context, saga_id=saga_id):
+            async for result in failing_mediator.execute(context, saga_id=saga_id):
                 step_results.append(result)
 
         # Verify that some steps were executed before failure
@@ -523,7 +523,7 @@ class TestSagaMediatorMemoryStorage:
 
         # Execute first part of saga
         step_results_1 = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results_1.append(result)
             # Simulate interruption after first step
             if len(step_results_1) == 1:
@@ -540,7 +540,7 @@ class TestSagaMediatorMemoryStorage:
 
         # Resume saga execution with same saga_id
         step_results_2 = []
-        async for result in saga_mediator.stream(context, saga_id=saga_id):
+        async for result in saga_mediator.execute(context, saga_id=saga_id):
             step_results_2.append(result)
 
         # Verify remaining steps were executed

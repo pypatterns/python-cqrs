@@ -6,8 +6,8 @@ import typing
 import cqrs
 import di
 import pytest
-from cqrs.requests import bootstrap
-from cqrs.requests.cor_request_handler import CORRequestHandler
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.handlers.cor import CORRequestHandler
 
 
 class TRequest(cqrs.Request):

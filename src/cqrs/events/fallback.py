@@ -4,7 +4,7 @@ import dataclasses
 import typing
 
 from cqrs.circuit_breaker import ICircuitBreaker
-from cqrs.events import event_handler
+from cqrs.handlers import event as event_handler
 from cqrs.generic_utils import get_generic_args_for_origin
 
 EventHandlerT = typing.Type[event_handler.EventHandler]

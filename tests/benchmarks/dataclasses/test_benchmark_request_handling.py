@@ -8,7 +8,7 @@ from collections import defaultdict
 import cqrs
 import di
 import pytest
-from cqrs.requests import bootstrap
+from cqrs.bootstrap import requests as bootstrap
 
 STORAGE = defaultdict[str, typing.List[str]](lambda: [])
 

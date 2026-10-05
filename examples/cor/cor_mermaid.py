@@ -59,9 +59,9 @@ Online Mermaid Editor:
 import typing
 
 import cqrs
-from cqrs.events.event import Event
-from cqrs.requests.cor_request_handler import CORRequestHandler
-from cqrs.requests.mermaid import CoRMermaid
+from cqrs.models.event import Event
+from cqrs.handlers.cor import CORRequestHandler
+from cqrs.mermaid.cor import CoRMermaid
 
 
 # ============================================================================

@@ -99,7 +99,7 @@ from faststream import kafka, types
 
 import cqrs
 from cqrs import deserializers
-from cqrs.events import bootstrap
+from cqrs.bootstrap import events as bootstrap
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("aiokafka").setLevel(logging.ERROR)

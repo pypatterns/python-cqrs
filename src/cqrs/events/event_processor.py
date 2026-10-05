@@ -2,9 +2,9 @@ import asyncio
 import typing
 from collections import deque
 
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.events.event_emitter import EventEmitter
-from cqrs.events.map import EventMap
+from cqrs.mapping.events import EventMap
 
 
 class EventProcessor:

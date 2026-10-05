@@ -13,12 +13,12 @@ import pytest
 
 import cqrs
 from cqrs.events import EventEmitter, EventHandler, EventMap
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.dispatcher.event import EventDispatcher
 from cqrs.container.protocol import Container
-from cqrs.requests import bootstrap
-from cqrs.events.pydantic import PydanticDomainEvent
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.models.pydantic import PydanticDomainEvent
 
 
 # ---- EventProcessor: 1 root -> 3 children (4 events total) ----

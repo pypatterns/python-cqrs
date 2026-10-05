@@ -1,27 +1,23 @@
 """Benchmarks: 3-level event chain, volume >> semaphore (parallel follow-ups). Dataclass events."""
 
 import asyncio
-import dataclasses
 
 import pytest
 
 from cqrs.events import DCDomainEvent, EventEmitter, EventHandler, EventMap
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.events.event_processor import EventProcessor
 from cqrs.container.protocol import Container
 
 
-@dataclasses.dataclass(frozen=True)
 class _EventL1(DCDomainEvent):
     id_: str
 
 
-@dataclasses.dataclass(frozen=True)
 class _EventL2(DCDomainEvent):
     id_: str
 
 
-@dataclasses.dataclass(frozen=True)
 class _EventL3(DCDomainEvent):
     id_: str
 

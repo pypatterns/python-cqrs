@@ -36,7 +36,7 @@ WHAT THIS EXAMPLE DEMONSTRATES
    - Define a saga context that holds shared state across all steps
    - Create step handlers that implement act() and compensate() methods
    - Create saga mediator using bootstrap.bootstrap() with SagaMap registration
-   - Execute steps sequentially using mediator.stream() with saga_id for persistence
+   - Execute steps sequentially using mediator.execute() with saga_id for persistence
    - Automatic compensation on failure
 
 2. Step Handler Definition:
@@ -48,7 +48,7 @@ WHAT THIS EXAMPLE DEMONSTRATES
 3. Saga Execution:
    - Create saga mediator using bootstrap.bootstrap()
    - Register sagas in SagaMap via sagas_mapper
-   - Use mediator.stream(context, saga_id) to execute saga
+   - Use mediator.execute(context, saga_id) to execute saga
    - Iterate over stream to execute steps sequentially
    - Each iteration yields SagaStepResult with step response
    - Saga state and step history are persisted to storage
@@ -92,12 +92,12 @@ import di
 from di import dependent
 
 import cqrs
-from cqrs.events.event import Event
-from cqrs.response import Response
-from cqrs.saga import bootstrap
+from cqrs.models.event import Event
+from cqrs.models.response import Response
+from cqrs.bootstrap import saga as bootstrap
 from cqrs.saga.models import SagaContext
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler, SagaStepResult
+from cqrs.handlers.saga import SagaStepHandler, SagaStepResult
 from cqrs.saga.storage.memory import MemorySagaStorage
 
 logging.basicConfig(level=logging.INFO)
@@ -575,12 +575,12 @@ async def run_successful_saga() -> None:
         shipping_address="123 Main St, City, Country",
     )
 
-    # Execute saga with saga_id for persistence using mediator.stream()
+    # Execute saga with saga_id for persistence using mediator.execute()
     print(f"\nProcessing order {context.order_id} (saga_id: {saga_id})...")
     step_results = []
 
     try:
-        async for step_result in mediator.stream(context, saga_id=saga_id):
+        async for step_result in mediator.execute(context, saga_id=saga_id):
             step_results.append(step_result)
             step_name = step_result.step_type.__name__
             print(f"\n✓ Step completed: {step_name}")
@@ -703,7 +703,7 @@ async def run_failing_saga() -> None:
     print("  (This will fail at payment step due to amount limit)")
 
     try:
-        async for step_result in mediator.stream(context, saga_id=saga_id):
+        async for step_result in mediator.execute(context, saga_id=saga_id):
             step_name = step_result.step_type.__name__
             print(f"\n✓ Step completed: {step_name}")
 

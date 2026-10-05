@@ -65,8 +65,8 @@ from collections import defaultdict
 import di
 
 import cqrs
-from cqrs.requests import bootstrap
-from cqrs.requests.cor_request_handler import CORRequestHandler
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.handlers.cor import CORRequestHandler
 
 logging.basicConfig(level=logging.DEBUG)
 

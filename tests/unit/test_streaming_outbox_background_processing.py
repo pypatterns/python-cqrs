@@ -23,13 +23,13 @@ import pydantic
 
 import cqrs
 from cqrs.events import DomainEvent, EventHandler, Event
-from cqrs.events.event import IEvent
+from cqrs.models.event import IEvent
 from cqrs.message_brokers import devnull
 from cqrs.outbox import mock
-from cqrs.requests import bootstrap
-from cqrs.requests.request import Request
-from cqrs.requests.request_handler import StreamingRequestHandler
-from cqrs.response import Response
+from cqrs.bootstrap import requests as bootstrap
+from cqrs.models.request import Request
+from cqrs.handlers.request import StreamingRequestHandler
+from cqrs.models.response import Response
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)

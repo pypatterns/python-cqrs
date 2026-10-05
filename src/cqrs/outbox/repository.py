@@ -5,7 +5,7 @@ import sys
 import typing
 
 import cqrs
-from cqrs.events.event import INotificationEvent
+from cqrs.models.event import INotificationEvent
 
 if sys.version_info >= (3, 11):
     StrEnum = enum.StrEnum  # novm

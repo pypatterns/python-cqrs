@@ -2,11 +2,11 @@
 
 import typing
 
-from cqrs.events.event import Event
+from cqrs.models.event import Event
 from cqrs.saga.fallback import Fallback
-from cqrs.saga.mermaid import SagaMermaid
+from cqrs.mermaid.saga import SagaMermaid
 from cqrs.saga.saga import Saga
-from cqrs.saga.step import SagaStepHandler
+from cqrs.handlers.saga import SagaStepHandler
 
 from .conftest import (
     OrderContext,

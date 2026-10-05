@@ -9,7 +9,7 @@ from unittest import mock
 
 import cqrs
 from cqrs import events
-from cqrs.requests.map import SagaMap
+from cqrs.mapping.requests import SagaMap
 from cqrs.saga.storage.sqlalchemy import SqlAlchemySagaStorage
 
 from tests.integration.test_saga_mediator_memory import (
