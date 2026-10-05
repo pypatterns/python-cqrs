@@ -184,7 +184,7 @@ If the same bug exists on 5.x, cherry-pick or port the fix to `master` after (or
 
 ### EOL migration warning (after 5.0.0)
 
-After **5.0.0**, the first **4.x** patch may emit a package-level EOL `DeprecationWarning` / optional log nudging users toward 5.x. To silence the optional log in noisy CI once that release exists:
+After **5.0.0**, the first **4.x** patch will emit a package-level EOL `DeprecationWarning` / optional log nudging users toward 5.x. To silence the optional log in noisy CI once that release exists:
 
 ```bash
 export CQRS_SUPPRESS_V4_EOL_WARNING=1
