@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to `python-cqrs`! We welcome contributions of all kinds: bug fixes, new features, documentation improvements, and performance enhancements.
 
+The default workflow below targets the **current major** (`master` / **5.x**). For bugfixes on the **4.x** maintenance line, see [Maintaining / fixing 4.x](#8-maintaining--fixing-4x).
+
 ---
 
 ## 1. Prerequisites
@@ -137,9 +139,57 @@ We use labels to categorize and track issues:
 - `bug`: A problem or unintended behavior in `python-cqrs`.
 - `enhancement`: New feature requests or architectural improvements.
 - `documentation`: Additions or improvements to guides, docstrings, or examples.
+- `4.x`: Bug or security work that should land on the **4.x** maintenance branch (see below).
 
 ---
 
 ## 7. Community & Conduct
 
 We are committed to providing a welcoming, inclusive, and respectful environment for everyone. Please be constructive and kind in discussions, code reviews, and issue reports.
+
+---
+
+## 8. Maintaining / fixing 4.x
+
+`master` is **5.x** (features and breaking changes). Branch **`4.x`** exists from **4.15.0** for **bug fixes and security patches only** — no new features. Support window and pin guidance: [README Version Support](README.md#version-support) and [SECURITY.md](SECURITY.md).
+
+### When to target `4.x` vs `master`
+
+| Change | Target |
+|--------|--------|
+| New feature, breaking change, or 5.x-only fix | `master` (default workflow above) |
+| Bugfix or security patch for users still on 4.x | `4.x` (this section) |
+| Same bug on both lines | Fix on `4.x` first, then forward-port to `master` |
+
+Label the issue with `4.x` when the fix belongs on the maintenance line.
+
+### Branch and PR workflow
+
+1. Check out the maintenance branch and create a fix branch from it:
+   ```bash
+   git fetch origin
+   git checkout -b fix/<short-description> origin/4.x
+   ```
+2. Open a pull request with **base = `4.x`** (not `master`).
+3. Keep the change focused on the bug or security issue; do not add features on `4.x`.
+
+### Version bumps and releases
+
+- Bump only the **patch** version (for example `4.15.0` → `4.15.1`). Do not introduce `4.16` or other minor/major bumps on this line for routine fixes.
+- Maintainers tag releases from the **`4.x`** branch for PyPI.
+
+### Forward-port to 5.x
+
+If the same bug exists on 5.x, cherry-pick or port the fix to `master` after (or alongside) the `4.x` PR. The port may need adaptation because of breaking API or package changes on 5.x.
+
+### EOL migration warning (after 5.0.0)
+
+After **5.0.0**, the first **4.x** patch will emit a package-level EOL `DeprecationWarning` / optional log nudging users toward 5.x. To silence the optional log in noisy CI once that release exists:
+
+```bash
+export CQRS_SUPPRESS_V4_EOL_WARNING=1
+```
+
+Details: [SECURITY.md](SECURITY.md#eol-migration-notice-after-500).
+
+> **Note for maintainers:** Keep this section in sync on both `master` and `4.x` so contributors checking out either branch see the same guidance.
