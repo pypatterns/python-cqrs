@@ -37,7 +37,6 @@
 - [Overview](#overview)
 - [When NOT to use python-cqrs](#when-not-to-use-python-cqrs)
 - [Installation](#installation)
-- [Version Support](#version-support)
 - [Quick Start](#quick-start)
 - [Request and Response Types](#request-and-response-types)
 - [Request Handlers](#request-handlers)
@@ -117,37 +116,6 @@ Default `Request` / `Response` / `Event` / `DomainEvent` / `NotificationEvent` a
 are dataclass-based (`DC*`). Use `Pydantic*` types with the pydantic extra when you
 need validation.
 
-### Import paths (5.0+)
-
-| Area | Import |
-|------|--------|
-| Bootstrap | `from cqrs.bootstrap import requests, events, saga` |
-| Mediators | `from cqrs.mediators import RequestMediator, SagaMediator, …` |
-| Handlers | `from cqrs.handlers import RequestHandler, EventHandler, …` |
-| Models | `from cqrs.models import Request, Event, …` / `cqrs.models.pydantic` |
-| Maps | `from cqrs.mapping import RequestMap, EventMap, OutboxedEventMap` |
-| Mermaid | `from cqrs.mermaid import CoRMermaid, SagaMermaid` |
-| Outbox producer | `from cqrs.message_brokers.producer import EventProducer` |
-
-`SagaMediator.execute(...)` replaces the former `SagaMediator.stream(...)`
-(StreamingRequestMediator.stream is unchanged).
-
-## Version Support
-
-| Line | Git branch | What changes |
-|------|------------|--------------|
-| **4.x** | `4.x` | Bug fixes and security only (~12 months after 5.0.0) |
-| **5.x** | `master` | Features and breaking changes |
-
-Stay on 4.x until you migrate:
-
-```bash
-pip install "python-cqrs>=4,<5"
-```
-
-Docs: [4.x](https://mkdocs.python-cqrs.dev/4.0/) and [5.x / latest](https://mkdocs.python-cqrs.dev/latest/) (version switcher after mike deploy). See [SECURITY.md](SECURITY.md) for the support window and vulnerability reporting, and [CONTRIBUTING.md](CONTRIBUTING.md#8-maintaining--fixing-4x) for how to contribute 4.x bugfixes.
-
-A package-level EOL `DeprecationWarning` toward 5.x will be added on the **first 4.x patch after 5.0.0** — not before.
 
 ## Quick Start
 
