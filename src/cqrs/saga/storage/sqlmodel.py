@@ -5,15 +5,15 @@ import datetime
 import typing
 import uuid
 
-from cqrs.saga.storage.sqlalchemy import (
-    DEFAULT_SAGA_EXECUTION_TABLE_NAME,
-    DEFAULT_SAGA_LOG_TABLE_NAME,
-    SAGA_EXECUTION_TABLE_NAME,
-    SAGA_LOG_TABLE_NAME,
-    SqlAlchemySagaStorage,
-)
-
 try:
+    from cqrs.saga.storage.sqlalchemy import (
+        DEFAULT_SAGA_EXECUTION_TABLE_NAME,
+        DEFAULT_SAGA_LOG_TABLE_NAME,
+        SAGA_EXECUTION_TABLE_NAME,
+        SAGA_LOG_TABLE_NAME,
+        SqlAlchemySagaStorage,
+    )
+
     import sqlalchemy
     from sqlalchemy import func
     from sqlalchemy.ext.asyncio import async_sessionmaker

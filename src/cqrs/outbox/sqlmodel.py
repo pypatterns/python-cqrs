@@ -7,16 +7,17 @@ import uuid
 from cqrs import compressors
 from cqrs.mapping import outbox as map
 from cqrs.outbox import repository
-from cqrs.outbox.sqlalchemy import (
-    MAX_FLUSH_COUNTER_VALUE,
-    BinaryUUID,
-    OutboxModel as SqlAlchemyOutboxModel,
-    SqlAlchemyOutboxedEventRepository,
-    rebind_outbox_model,
-)
 from cqrs.serializers.protocol import EventCodec
 
 try:
+    from cqrs.outbox.sqlalchemy import (
+        MAX_FLUSH_COUNTER_VALUE,
+        BinaryUUID,
+        OutboxModel as SqlAlchemyOutboxModel,
+        SqlAlchemyOutboxedEventRepository,
+        rebind_outbox_model,
+    )
+
     import sqlalchemy
     from sqlalchemy import func
     from sqlmodel import Field
