@@ -173,11 +173,13 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         *,
         serializer: EventCodec | None = None,
         event_map: map.OutboxedEventMap | None = None,
+        model: typing.Any = None,
     ):
         self.session = session
         self._compressor = compressor
         self._serializer = serializer or JsonEventSerializer()
         self._event_map = event_map if event_map is not None else map.OutboxedEventMap
+        self._model = OutboxModel if model is None else model
 
     def _resolve_codec(self, event_name: str) -> EventCodec:
         return self._event_map.get_serializer(event_name) or self._serializer
@@ -211,7 +213,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
             bytes_payload = self._compressor.compress(bytes_payload)
 
         self.session.add(
-            OutboxModel(
+            self._model(
                 event_id=event.event_id,
                 event_id_bin=event.event_id.bytes,
                 event_name=event.event_name,
@@ -221,7 +223,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
             ),
         )
 
-    def _process_events(self, model: OutboxModel) -> repository.OutboxedEvent | None:
+    def _process_events(self, model: typing.Any) -> repository.OutboxedEvent | None:
         event_dict = model.row_to_dict()
         event_name = event_dict["event_name"]
 
@@ -260,8 +262,8 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         batch_size: int = 100,
         topic: typing.Text | None = None,
     ) -> typing.List[repository.OutboxedEvent]:
-        events: typing.Sequence[OutboxModel] = (
-            (await self.session.execute(OutboxModel.get_batch_query(batch_size, topic))).scalars().all()
+        events: typing.Sequence[typing.Any] = (
+            (await self.session.execute(self._model.get_batch_query(batch_size, topic))).scalars().all()
         )
 
         result = []
@@ -285,7 +287,7 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
         new_status: repository.EventStatus,
     ) -> None:
         await self.session.execute(
-            statement=OutboxModel.update_status_query(outboxed_event_id, new_status),
+            statement=self._model.update_status_query(outboxed_event_id, new_status),
         )
 
     async def commit(self):

@@ -79,7 +79,7 @@ project ([documentation](https://akhundmurad.github.io/diator/)) with several en
 
 - **Typing:** Pydantic [v2.*](https://docs.pydantic.dev/2.8/) and `IRequest`/`IResponse` interfaces — use Pydantic-based, dataclass-based, or custom Request/Response implementations.
 - **Broker:** Kafka via [aiokafka](https://github.com/aio-libs/aiokafka).
-- **Storage:** SQLAlchemy-based Outbox and Saga storage on MySQL/MariaDB and PostgreSQL.
+- **Storage:** SQLAlchemy and SQLModel outbox and saga storage on MySQL/MariaDB and PostgreSQL.
 - **Integration:** Ready for integration with FastAPI and FastStream.
 - **Documentation:** Built-in Mermaid diagram generation (Sequence and Class diagrams).
 - **Protobuf:** Interface-level support for converting Notification events to Protobuf and back.
@@ -102,11 +102,12 @@ Do not add a Saga for a single `UPDATE` in one service, and do not use a Saga as
 pip install python-cqrs
 ```
 
-Optional extras (5.0+ — pydantic and SQLAlchemy are no longer core dependencies):
+Optional extras (5.0+ — pydantic and SQLAlchemy are no longer core dependencies; SQLModel storage is 5.1+):
 
 ```bash
 pip install "python-cqrs[pydantic]"     # PydanticRequest / Pydantic* events
 pip install "python-cqrs[sqlalchemy]"   # Outbox / Saga SQLAlchemy storage
+pip install "python-cqrs[sqlmodel]"     # Outbox / Saga SQLModel storage
 pip install "python-cqrs[kafka]"        # Kafka broker (aiokafka)
 pip install "python-cqrs[examples]"     # FastAPI, FastStream, uvicorn, etc.
 pip install "python-cqrs[aiobreaker]"   # Circuit breaker for saga fallbacks

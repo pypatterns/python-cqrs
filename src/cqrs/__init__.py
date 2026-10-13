@@ -12,6 +12,7 @@ if typing.TYPE_CHECKING:
         SqlAlchemyOutboxedEventRepository,
         rebind_outbox_model,
     )
+    from cqrs.outbox.sqlmodel import SqlModelOutboxedEventRepository
     from cqrs.sqlalchemy_types import (
         Binary16,
         DialectAwareType,
@@ -129,6 +130,7 @@ __all__ = (
     "PydanticResponse",
     "OutboxedEventRepository",
     "SqlAlchemyOutboxedEventRepository",
+    "SqlModelOutboxedEventRepository",
     "EventProducer",
     "EventSerializer",
     "EventCodec",
@@ -187,6 +189,13 @@ _LAZY_SQLALCHEMY = {
     "PayloadBinary": ("cqrs.sqlalchemy_types", "PayloadBinary"),
 }
 
+_LAZY_SQLMODEL = {
+    "SqlModelOutboxedEventRepository": (
+        "cqrs.outbox.sqlmodel",
+        "SqlModelOutboxedEventRepository",
+    ),
+}
+
 
 def __getattr__(name: str) -> typing.Any:
     if name in _LAZY_PYDANTIC:
@@ -199,6 +208,11 @@ def __getattr__(name: str) -> typing.Any:
     if name in _LAZY_SQLALCHEMY:
         module_name, attr = _LAZY_SQLALCHEMY[name]
         # ImportError message is raised by the sqlalchemy modules themselves.
+        module = __import__(module_name, fromlist=[attr])
+        return getattr(module, attr)
+    if name in _LAZY_SQLMODEL:
+        module_name, attr = _LAZY_SQLMODEL[name]
+        # ImportError message is raised by the sqlmodel modules themselves.
         module = __import__(module_name, fromlist=[attr])
         return getattr(module, attr)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

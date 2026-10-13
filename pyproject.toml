@@ -29,12 +29,13 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.0.0"
+version = "5.1.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
 pydantic = ["pydantic==2.*"]
 sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
+sqlmodel = ["sqlmodel>=0.0.22", "sqlalchemy[asyncio]==2.0.*"]
 dev = [
   # Develope tools
   "pycln==2.5.0",
@@ -64,6 +65,8 @@ dev = [
   # Full suite extras
   "pydantic==2.*",
   "sqlalchemy[asyncio]==2.0.*",
+  "sqlmodel>=0.0.22",
+  "aiosqlite>=0.20.0",
 ]
 examples = [
   "fastapi==0.109.*",
@@ -95,6 +98,7 @@ testpaths = ["tests"]
 markers = [
   "pydantic: tests that require the pydantic optional extra",
   "sqlalchemy: tests that require the sqlalchemy optional extra",
+  "sqlmodel: tests that require the sqlmodel optional extra",
 ]
 
 [tool.setuptools.packages.find]
