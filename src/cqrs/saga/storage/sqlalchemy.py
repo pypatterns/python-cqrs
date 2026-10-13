@@ -145,14 +145,23 @@ class SagaLogModel(Base):
 class _SqlAlchemySagaStorageRun(SagaStorageRun):
     """Scoped run: one session, no commit inside methods; caller calls commit()."""
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        execution_model: type[typing.Any] = SagaExecutionModel,
+        log_model: type[typing.Any] = SagaLogModel,
+    ) -> None:
         """
         Initialize the run wrapper with an async SQLAlchemy session.
 
         Parameters:
             session (AsyncSession): The AsyncSession instance scoped to this run, used for all database operations.
+            execution_model: Mapped class for saga execution rows. Defaults to the SQLAlchemy model.
+            log_model: Mapped class for saga log rows. Defaults to the SQLAlchemy model.
         """
         self._session = session
+        self._execution_model = execution_model
+        self._log_model = log_model
 
     async def create_saga(
         self,
@@ -170,7 +179,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
             name (str): Human-readable name of the saga.
             context (dict[str, Any]): Initial saga context to be stored (will be serialized to the model's JSON column).
         """
-        execution = SagaExecutionModel(
+        execution = self._execution_model(
             id=saga_id,
             name=name,
             status=SagaStatus.PENDING,
@@ -197,20 +206,20 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
         Raises:
             SagaConcurrencyError: If an optimistic version check fails (indicating a concurrent modification) or if the saga does not exist when a version was supplied.
         """
-        stmt = sqlalchemy.update(SagaExecutionModel).where(
-            SagaExecutionModel.id == saga_id,
+        stmt = sqlalchemy.update(self._execution_model).where(
+            self._execution_model.id == saga_id,
         )
         if current_version is not None:
-            stmt = stmt.where(SagaExecutionModel.version == current_version)
+            stmt = stmt.where(self._execution_model.version == current_version)
         stmt = stmt.values(
             context=context,
-            version=SagaExecutionModel.version + 1,
+            version=self._execution_model.version + 1,
         )
         result = await self._session.execute(stmt)
         if result.rowcount == 0:  # type: ignore[attr-defined]
             if current_version is not None:
-                check_stmt = sqlalchemy.select(SagaExecutionModel.id).where(
-                    SagaExecutionModel.id == saga_id,
+                check_stmt = sqlalchemy.select(self._execution_model.id).where(
+                    self._execution_model.id == saga_id,
                 )
                 check_result = await self._session.execute(check_stmt)
                 if check_result.scalar_one_or_none():
@@ -240,11 +249,11 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
             SagaConcurrencyError: If no row was updated (saga does not exist or was modified concurrently).
         """
         result = await self._session.execute(
-            sqlalchemy.update(SagaExecutionModel)
-            .where(SagaExecutionModel.id == saga_id)
+            sqlalchemy.update(self._execution_model)
+            .where(self._execution_model.id == saga_id)
             .values(
                 status=status,
-                version=SagaExecutionModel.version + 1,
+                version=self._execution_model.version + 1,
             ),
         )
         if result.rowcount == 0:  # pyright: ignore[reportAttributeAccessIssue]
@@ -270,7 +279,7 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
             status (SagaStepStatus): The step's outcome status.
             details (str | None): Optional free-form details or error message associated with the step.
         """
-        log_entry = SagaLogModel(
+        log_entry = self._log_model(
             saga_id=saga_id,
             step_name=step_name,
             action=action,
@@ -298,8 +307,8 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
         Raises:
             ValueError: If no saga with the given id exists.
         """
-        stmt = sqlalchemy.select(SagaExecutionModel).where(
-            SagaExecutionModel.id == saga_id,
+        stmt = sqlalchemy.select(self._execution_model).where(
+            self._execution_model.id == saga_id,
         )
         if read_for_update:
             stmt = stmt.with_for_update()
@@ -330,7 +339,9 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
             is normalized to UTC if not already timezone-aware.
         """
         result = await self._session.execute(
-            sqlalchemy.select(SagaLogModel).where(SagaLogModel.saga_id == saga_id).order_by(SagaLogModel.created_at),
+            sqlalchemy.select(self._log_model)
+            .where(self._log_model.saga_id == saga_id)
+            .order_by(self._log_model.created_at),
         )
         rows = result.scalars().all()
         return [
@@ -367,14 +378,24 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
 
 
 class SqlAlchemySagaStorage(ISagaStorage):
-    def __init__(self, session_factory: async_sessionmaker[AsyncSession]):
+    def __init__(
+        self,
+        session_factory: async_sessionmaker[AsyncSession],
+        *,
+        execution_model: type[typing.Any] = SagaExecutionModel,
+        log_model: type[typing.Any] = SagaLogModel,
+    ):
         """
         Initialize the SQLAlchemy-based saga storage with a factory for creating async sessions.
 
         Parameters:
             session_factory (async_sessionmaker[AsyncSession]): Factory that produces new AsyncSession instances used for each storage run and operation.
+            execution_model: Mapped class for saga execution rows. Defaults to the SQLAlchemy model.
+            log_model: Mapped class for saga log rows. Defaults to the SQLAlchemy model.
         """
         self.session_factory = session_factory
+        self._execution_model = execution_model
+        self._log_model = log_model
 
     def create_run(
         self,
@@ -391,7 +412,11 @@ class SqlAlchemySagaStorage(ISagaStorage):
         @contextlib.asynccontextmanager
         async def _run() -> typing.AsyncGenerator[SagaStorageRun, None]:
             async with self.session_factory() as session:
-                run = _SqlAlchemySagaStorageRun(session)
+                run = _SqlAlchemySagaStorageRun(
+                    session,
+                    self._execution_model,
+                    self._log_model,
+                )
                 try:
                     yield run
                 except BaseException:
@@ -422,7 +447,7 @@ class SqlAlchemySagaStorage(ISagaStorage):
         """
         async with self.session_factory() as session:
             try:
-                execution = SagaExecutionModel(
+                execution = self._execution_model(
                     id=saga_id,
                     name=name,
                     status=SagaStatus.PENDING,
@@ -444,14 +469,14 @@ class SqlAlchemySagaStorage(ISagaStorage):
     ) -> None:
         async with self.session_factory() as session:
             try:
-                stmt = sqlalchemy.update(SagaExecutionModel).where(
-                    SagaExecutionModel.id == saga_id,
+                stmt = sqlalchemy.update(self._execution_model).where(
+                    self._execution_model.id == saga_id,
                 )
                 if current_version is not None:
-                    stmt = stmt.where(SagaExecutionModel.version == current_version)
+                    stmt = stmt.where(self._execution_model.version == current_version)
                 stmt = stmt.values(
                     context=context,
-                    version=SagaExecutionModel.version + 1,
+                    version=self._execution_model.version + 1,
                 )
 
                 result = await session.execute(stmt)
@@ -462,8 +487,8 @@ class SqlAlchemySagaStorage(ISagaStorage):
                     # But for now, we assume if rowcount is 0 and we checked version, it's concurrency
                     if current_version is not None:
                         # Double check if saga exists
-                        check_stmt = sqlalchemy.select(SagaExecutionModel.id).where(
-                            SagaExecutionModel.id == saga_id,
+                        check_stmt = sqlalchemy.select(self._execution_model.id).where(
+                            self._execution_model.id == saga_id,
                         )
                         check_result = await session.execute(check_stmt)
                         if check_result.scalar_one_or_none():
@@ -492,11 +517,11 @@ class SqlAlchemySagaStorage(ISagaStorage):
         async with self.session_factory() as session:
             try:
                 await session.execute(
-                    sqlalchemy.update(SagaExecutionModel)
-                    .where(SagaExecutionModel.id == saga_id)
+                    sqlalchemy.update(self._execution_model)
+                    .where(self._execution_model.id == saga_id)
                     .values(
                         status=status,
-                        version=SagaExecutionModel.version + 1,
+                        version=self._execution_model.version + 1,
                     ),
                 )
                 await session.commit()
@@ -514,7 +539,7 @@ class SqlAlchemySagaStorage(ISagaStorage):
     ) -> None:
         async with self.session_factory() as session:
             try:
-                log_entry = SagaLogModel(
+                log_entry = self._log_model(
                     saga_id=saga_id,
                     step_name=step_name,
                     action=action,
@@ -534,8 +559,8 @@ class SqlAlchemySagaStorage(ISagaStorage):
         read_for_update: bool = False,
     ) -> tuple[SagaStatus, dict[str, typing.Any], int]:
         async with self.session_factory() as session:
-            stmt = sqlalchemy.select(SagaExecutionModel).where(
-                SagaExecutionModel.id == saga_id,
+            stmt = sqlalchemy.select(self._execution_model).where(
+                self._execution_model.id == saga_id,
             )
             if read_for_update:
                 stmt = stmt.with_for_update()
@@ -560,9 +585,9 @@ class SqlAlchemySagaStorage(ISagaStorage):
     ) -> list[SagaLogEntry]:
         async with self.session_factory() as session:
             result = await session.execute(
-                sqlalchemy.select(SagaLogModel)
-                .where(SagaLogModel.saga_id == saga_id)
-                .order_by(SagaLogModel.created_at),
+                sqlalchemy.select(self._log_model)
+                .where(self._log_model.saga_id == saga_id)
+                .order_by(self._log_model.created_at),
             )
             rows = result.scalars().all()
 
@@ -596,20 +621,20 @@ class SqlAlchemySagaStorage(ISagaStorage):
         )
         async with self.session_factory() as session:
             stmt = (
-                sqlalchemy.select(SagaExecutionModel.id)
-                .where(SagaExecutionModel.status.in_(recoverable))
-                .where(SagaExecutionModel.recovery_attempts < max_recovery_attempts)
+                sqlalchemy.select(self._execution_model.id)
+                .where(self._execution_model.status.in_(recoverable))
+                .where(self._execution_model.recovery_attempts < max_recovery_attempts)
             )
             if saga_name is not None:
-                stmt = stmt.where(SagaExecutionModel.name == saga_name)
+                stmt = stmt.where(self._execution_model.name == saga_name)
             if stale_after_seconds is not None:
                 threshold = datetime.datetime.now(
                     datetime.timezone.utc,
                 ) - datetime.timedelta(
                     seconds=stale_after_seconds,
                 )
-                stmt = stmt.where(SagaExecutionModel.updated_at < threshold)
-            stmt = stmt.order_by(SagaExecutionModel.updated_at.asc()).limit(limit)
+                stmt = stmt.where(self._execution_model.updated_at < threshold)
+            stmt = stmt.order_by(self._execution_model.updated_at.asc()).limit(limit)
             result = await session.execute(stmt)
             rows = result.scalars().all()
             return [typing.cast(uuid.UUID, row) for row in rows]
@@ -633,13 +658,15 @@ class SqlAlchemySagaStorage(ISagaStorage):
         async with self.session_factory() as session:
             try:
                 values: dict[str, typing.Any] = {
-                    "recovery_attempts": SagaExecutionModel.recovery_attempts + 1,
-                    "version": SagaExecutionModel.version + 1,
+                    "recovery_attempts": self._execution_model.recovery_attempts + 1,
+                    "version": self._execution_model.version + 1,
                 }
                 if new_status is not None:
                     values["status"] = new_status
                 result = await session.execute(
-                    sqlalchemy.update(SagaExecutionModel).where(SagaExecutionModel.id == saga_id).values(**values),
+                    sqlalchemy.update(self._execution_model)
+                    .where(self._execution_model.id == saga_id)
+                    .values(**values),
                 )
                 if result.rowcount == 0:  # type: ignore[attr-defined]
                     raise ValueError(f"Saga {saga_id} not found")
@@ -656,11 +683,11 @@ class SqlAlchemySagaStorage(ISagaStorage):
         async with self.session_factory() as session:
             try:
                 result = await session.execute(
-                    sqlalchemy.update(SagaExecutionModel)
-                    .where(SagaExecutionModel.id == saga_id)
+                    sqlalchemy.update(self._execution_model)
+                    .where(self._execution_model.id == saga_id)
                     .values(
                         recovery_attempts=attempts,
-                        version=SagaExecutionModel.version + 1,
+                        version=self._execution_model.version + 1,
                     ),
                 )
                 if result.rowcount == 0:  # type: ignore[attr-defined]

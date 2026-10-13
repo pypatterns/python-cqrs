@@ -52,6 +52,7 @@ def test_root_package_does_not_eager_import_sqlalchemy() -> None:
         flags=re.S,
     )
     assert "from cqrs.outbox.sqlalchemy" not in runtime_text
+    assert "from cqrs.outbox.sqlmodel" not in runtime_text
     assert "from cqrs.sqlalchemy_types" not in runtime_text
     import cqrs
 
@@ -73,6 +74,16 @@ def test_sqlalchemy_types_available_with_extra() -> None:
 
     assert cqrs.SqlAlchemyOutboxedEventRepository is not None
     assert cqrs.UUIDBinary is not None
+
+
+@pytest.mark.sqlmodel
+def test_sqlmodel_repository_available_with_extra() -> None:
+    import cqrs
+
+    assert cqrs.SqlModelOutboxedEventRepository is not None
+    from cqrs.saga.storage.sqlmodel import SqlModelSagaStorage
+
+    assert SqlModelSagaStorage is not None
 
 
 def test_producer_module_has_no_sqlalchemy_import() -> None:
