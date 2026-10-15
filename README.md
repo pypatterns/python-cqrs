@@ -20,12 +20,6 @@
     <a href="https://codecov.io/gh/vadikko2/python-cqrs">
       <img src="https://img.shields.io/codecov/c/github/vadikko2/python-cqrs?logo=codecov&logoColor=white" alt="Coverage">
     </a>
-    <a href="https://mkdocs.python-cqrs.dev/">
-      <img src="https://img.shields.io/badge/docs-mkdocs-blue?logo=readthedocs" alt="Documentation">
-    </a>
-    <a href="https://deepwiki.com/vadikko2/python-cqrs">
-      <img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki">
-    </a>
     <a href="https://github.com/mjhea0/awesome-fastapi#developer-tools">
       <img src="https://img.shields.io/badge/Awesome%20FastAPI-✓%20in%20list-purple?logo=eye&logoColor=white&style=flat-square" alt="Included in Awesome FastAPI">
     </a>
