@@ -1,4 +1,11 @@
-"""SQLModel saga storage: same schema and operations as the SQLAlchemy storage."""
+"""
+SQLModel saga storage: same schema and operations as the SQLAlchemy storage.
+
+[AI Instruction]
+Import ``SqlModelSagaStorage`` from this module. It needs the ``sqlmodel``
+extra and is not an attribute of ``cqrs``. The SQLModel outbox is
+``cqrs.SqlModelOutboxedEventRepository``.
+"""
 
 import contextlib
 import datetime
@@ -176,6 +183,11 @@ class SqlModelSagaStorage(SqlAlchemySagaStorage):
     ``class_=sqlmodel.ext.asyncio.session.AsyncSession``. Every operation of
     ``SqlAlchemySagaStorage`` is available, including checkpoint runs via
     ``create_run``, optimistic locking, and recovery queries.
+
+    [AI Instruction]
+    Same role as ``SqlAlchemySagaStorage`` when the application uses
+    SQLModel sessions. Install the sqlmodel extra. Do not point saga storage
+    at the outbox table.
     """
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:

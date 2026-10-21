@@ -9,6 +9,13 @@ logger = logging.getLogger("cqrs")
 
 
 class LoggingMiddleware(base.Middleware):
+    """
+    [AI Instruction]
+    Logs the request before ``handle`` and the response after. ``bootstrap``
+    appends this when the middleware list does not already contain it. Add
+    it yourself only when building a mediator without bootstrap.
+    """
+
     async def __call__(self, request: IRequest, handle: HandleType) -> IResponse | None:
         logger.debug(
             "Handle %s request",

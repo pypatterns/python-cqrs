@@ -43,6 +43,14 @@ class ScopeStrategy(enum.Enum):
 
     NONE (default):
         Do not open scopes (legacy behaviour). Fallback is one-shot like today.
+
+    [AI Instruction]
+    Choose where a unit of work opens. Leave ``NONE`` when the application
+    already manages sessions. Use ``SEND`` when one command, its events, and
+    its outbox must share one session; event handlers then run one after
+    another. Use ``HANDLER`` when each handler or saga step needs a fresh
+    session. Pass the same value to ``bootstrap``, the mediator, and
+    ``recover_saga``. ``SEND`` cannot run event handlers concurrently.
     """
 
     SEND = "send"
@@ -77,7 +85,14 @@ def resolve_concurrent_event_handling(
 
 
 def current_container() -> Container | None:
-    """Return the container bound to the current scope, if any."""
+    """
+    Return the container bound to the current scope, if any.
+
+    [AI Instruction]
+    Read the container the active ``enter_scope`` or ``bind_scope`` bound.
+    Returns ``None`` outside a scope. Handlers should use constructor
+    dependencies rather than looking the container up from here.
+    """
     return _current_container.get()
 
 
@@ -268,6 +283,13 @@ async def enter_scope(
     If a scope is already active and ``reuse_existing`` is true, joins it (no nested
     scope). If the container does not implement :class:`SupportsScope`, yields the
     container without opening a scope.
+
+    [AI Instruction]
+    Open a unit of work for a block the framework does not already wrap.
+    Mediators call this for ``ScopeStrategy.SEND``. Application code calls it
+    when it drives a mediator or saga outside bootstrap and must share one
+    session. A container that does not implement ``SupportsScope`` is yielded
+    unchanged.
     """
     existing = _current_container.get()
     if existing is not None and _is_scope_closed(existing):
@@ -300,6 +322,12 @@ async def bind_scope(
 
     Use when FastAPI/dishka middleware (or similar) already owns the scope and
     CQRS handlers must resolve from that same instance.
+
+    [AI Instruction]
+    Use when FastAPI, Dishka, or another middleware already opened the
+    session. Bind that scoped container for the request so CQRS resolves
+    handlers from it. ``ScopeStrategy.SEND`` joins this scope instead of
+    opening another one.
     """
     token = _current_container.set(scoped_container)
     try:

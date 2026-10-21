@@ -1,4 +1,10 @@
-"""Fallback wrapper for Saga steps to handle failures gracefully."""
+"""
+Fallback wrapper for saga steps.
+
+[AI Instruction]
+Import ``Fallback`` from this module. It is not an attribute of ``cqrs``.
+Place it in ``Saga.steps`` in place of a single step class.
+"""
 
 import dataclasses
 
@@ -27,6 +33,14 @@ class Fallback:
             failure_exceptions=(ConnectionError, TimeoutError),
             circuit_breaker=cb_adapter
         )
+
+    [AI Instruction]
+    Put this in ``Saga.steps`` when the primary step may fail and another
+    step can still complete the same work. ``step`` and ``fallback`` are
+    ``SagaStepHandler`` classes for the same context. An empty
+    ``failure_exceptions`` means any error switches to the fallback. Use one
+    circuit breaker instance per step so its open state does not trip
+    unrelated steps.
     """
 
     step: type[SagaStepHandler]

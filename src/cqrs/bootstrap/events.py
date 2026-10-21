@@ -58,7 +58,12 @@ def setup_mediator(
             middlewares=[logging_middleware.LoggingMiddleware()],
             events_mapper=bind_events,
         )
-        await mediator.emit(OrderCreatedEvent(order_id="1"))
+        await mediator.send(OrderCreatedEvent(order_id="1"))
+
+    [AI Instruction]
+    Assemble an ``EventMediator`` from a container the caller already holds.
+    Application startup should call ``bootstrap`` instead, unless it needs
+    this lower-level wiring.
     """
     _events_mapper = events.EventMap()
     if events_mapper is not None:
@@ -130,7 +135,13 @@ def bootstrap(
             di_container=di.Container(),
             events_mapper=bind_events,
         )
-        await mediator.emit(OrderCreatedEvent(order_id="1"))
+        await mediator.send(OrderCreatedEvent(order_id="1"))
+
+    [AI Instruction]
+    Build an ``EventMediator`` for events that arrive from outside this
+    process. ``events_mapper`` calls ``EventMap.bind``. The application then
+    ``await mediator.send(event)``. Commands and queries use
+    ``cqrs.bootstrap.requests.bootstrap``.
     """
     if on_startup is None:
         on_startup = []

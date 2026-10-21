@@ -1,3 +1,12 @@
+"""
+Shared state for one saga run.
+
+[AI Instruction]
+Import ``SagaContext`` from this module. It is not an attribute of ``cqrs``.
+Subclass it, keep it a dataclass, and bind the saga with
+``cqrs.SagaMap.bind(ContextClass, SagaClass)``.
+"""
+
 import dataclasses
 import typing
 from dataclass_wizard import asdict, fromdict
@@ -21,6 +30,12 @@ class SagaContext:
             order_id: str
             user_id: str
             amount: float
+
+    [AI Instruction]
+    Subclass this for the shared state of one saga. Every step reads and
+    updates the same instance. Store the ids compensation needs. The class
+    must stay a dataclass so storage can round-trip it with ``to_dict`` /
+    ``from_dict``. This is not a request and not a response.
     """
 
     def to_dict(self) -> dict[str, typing.Any]:

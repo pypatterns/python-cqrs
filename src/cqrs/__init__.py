@@ -1,3 +1,74 @@
+"""
+python-cqrs.
+
+[AI Instruction]
+Import the library as ``cqrs``. Names listed in ``__all__`` below are the
+stable surface. Commands and queries are both ``cqrs.Request``. Wire a
+request with ``RequestMap.bind``, an event with ``EventMap.bind``, and a
+saga with ``SagaMap.bind``. There is no ``Command``, ``Query``, or
+``CommandBus`` type, and no ``register_handler`` decorator.
+
+Startup is not on this package. Import the submodule:
+
+- ``cqrs.bootstrap.requests.bootstrap`` builds ``RequestMediator``.
+- ``cqrs.bootstrap.requests.bootstrap_streaming`` builds
+  ``StreamingRequestMediator``.
+- ``cqrs.bootstrap.events.bootstrap`` builds ``EventMediator``.
+- ``cqrs.bootstrap.saga.bootstrap`` builds ``SagaMediator``.
+
+Requests and handlers on ``cqrs``: ``Request``, ``DCRequest``, ``Response``,
+``RequestHandler``, ``StreamingRequestHandler``, ``RequestMediator``,
+``StreamingRequestMediator``, ``RequestMap``, ``RequestHandlerFallback``.
+``PydanticRequest`` and ``PydanticResponse`` are lazy and need the
+``pydantic`` extra. A chain of handlers is ``cqrs.handlers.CORRequestHandler``.
+``build_chain`` is ``cqrs.handlers.cor.build_chain``.
+
+Events on ``cqrs``: ``DomainEvent`` for this process, ``NotificationEvent``
+for another service, plus ``EventHandler``, ``EventMap``, ``EventMediator``,
+``EventEmitter``, ``EventHandlerFallback``. Pydantic event classes are lazy
+and need the ``pydantic`` extra.
+
+Sagas on ``cqrs``: ``Saga``, ``SagaStepHandler``, ``SagaStepResult``,
+``SagaMediator``, ``SagaMap``. Import the rest from their modules.
+``SagaContext`` is ``cqrs.saga.models.SagaContext``. A fallback step is
+``cqrs.saga.fallback.Fallback``. Resume a run with
+``cqrs.saga.recovery.recover_saga``. The storage protocol is
+``cqrs.saga.storage.ISagaStorage``. Implementations are
+``cqrs.saga.storage.memory.MemorySagaStorage``,
+``cqrs.saga.storage.sqlalchemy.SqlAlchemySagaStorage`` (extra
+``sqlalchemy``), and ``cqrs.saga.storage.sqlmodel.SqlModelSagaStorage``
+(extra ``sqlmodel``). Those storage classes are not attributes of ``cqrs``.
+
+Outbox on ``cqrs``: ``OutboxedEventRepository``, ``OutboxedEventMap``,
+``EventProducer``, ``EventStatus``. ``SqlAlchemyOutboxedEventRepository``,
+``rebind_outbox_model``, and the dialect types are lazy and need the
+``sqlalchemy`` extra. ``SqlModelOutboxedEventRepository`` is lazy and needs
+the ``sqlmodel`` extra. Codecs on ``cqrs``: ``JsonEventSerializer``,
+``ProtobufEventSerializer`` (extra ``protobuf``).
+
+Brokers are not on ``cqrs``. Kafka is
+``cqrs.adapters.kafka.kafka_producer_factory`` plus
+``cqrs.message_brokers.kafka.KafkaMessageBroker`` (extra ``kafka``). AMQP is
+``cqrs.message_brokers.amqp.AMQPMessageBroker`` (extra ``rabbit``).
+
+Containers: pass one into bootstrap. ``cqrs.DIContainer`` wraps the ``di``
+package, and bootstrap wraps a raw ``di.Container`` itself.
+``cqrs.container.dependency_injector.DependencyInjectorCQRSContainer`` wraps
+dependency-injector. ``cqrs.container.dishka.DishkaCQRSContainer`` needs the
+``dishka`` extra. Scope helpers on ``cqrs`` are ``ScopeStrategy``,
+``bind_scope``, ``enter_scope``, and ``current_container``.
+
+Middleware is ``cqrs.middlewares.Middleware``. Logging is
+``cqrs.middlewares.logging.LoggingMiddleware``; bootstrap adds it when the
+list does not already contain it. A circuit breaker adapter is
+``cqrs.adapters.circuit_breaker.AioBreakerAdapter`` (extra ``aiobreaker``).
+Diagrams on ``cqrs`` are ``CoRMermaid`` and ``SagaMermaid``.
+
+Do not import ``cqrs.dispatcher`` from application code. Mediators call it.
+Optional integrations are extras in ``pyproject.toml``. Reading a lazy name
+without its extra raises ``ImportError``.
+"""
+
 import typing
 
 if typing.TYPE_CHECKING:

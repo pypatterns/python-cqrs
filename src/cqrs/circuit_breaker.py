@@ -14,6 +14,12 @@ class ICircuitBreaker(typing.Protocol):
     Note:
         Implementors should use a dedicated adapter instance per domain (events,
         requests, saga) to keep circuit breaker state isolated.
+
+    [AI Instruction]
+    Implement this, or use ``AioBreakerAdapter``, to stop calling a failing
+    dependency. Pass one instance into ``RequestHandlerFallback``,
+    ``EventHandlerFallback``, or saga ``Fallback``. Use a separate instance
+    per area so one open circuit does not disable the others.
     """
 
     async def call(
@@ -38,6 +44,10 @@ class ICircuitBreaker(typing.Protocol):
         Raises:
             CircuitBreakerError: If the circuit breaker is open.
             Exception: Any exception raised by func (if circuit is closed).
+
+        [AI Instruction]
+        Run ``func`` if the circuit for ``identifier`` is closed. The
+        fallback wrappers call this. Application handlers do not.
         """
         ...
 

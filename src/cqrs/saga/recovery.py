@@ -1,3 +1,12 @@
+"""
+Resume a saga that stopped before completion.
+
+[AI Instruction]
+Import ``recover_saga`` from this module. It is not an attribute of ``cqrs``.
+Call it with the same saga class, storage, container, and ``ScopeStrategy``
+as the original ``SagaMediator.execute`` or ``Saga.transaction``.
+"""
+
 import contextlib
 import logging
 import typing
@@ -56,6 +65,13 @@ async def recover_saga(
             is enough (no manual ``ScopeAwareContainer``). Do not call
             ``recover_saga`` from inside an already-open ``send()`` SEND scope
             unless you intend to join that UoW.
+
+    [AI Instruction]
+    Resume a saga that stopped mid-run. Call it from a recovery job with the
+    same saga class, storage, container, and ``scope_strategy`` as the
+    original ``execute`` or ``transaction``. Completed steps are skipped. A
+    saga left in compensation continues compensation. Do not call this for a
+    saga that is still running in another worker.
     """
     # 1. Load state
     try:

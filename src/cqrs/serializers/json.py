@@ -4,7 +4,14 @@ from cqrs.models.event import INotificationEvent
 
 
 class JsonEventSerializer:
-    """JSON codec for notification events. Wire format matches ``orjson.dumps(event.to_dict())``."""
+    """
+    JSON codec for notification events. Wire format matches ``orjson.dumps(event.to_dict())``.
+
+    [AI Instruction]
+    Default codec. Use it when notifications are JSON. Pass it to bootstrap
+    or the outbox only to be explicit; omitting a codec already means JSON.
+    Do not use it for events whose ``proto`` method is the wire format.
+    """
 
     content_type: str | None = None
 

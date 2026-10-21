@@ -73,6 +73,11 @@ def setup_saga_mediator(
 
     Returns:
         Configured SagaMediator instance
+
+    [AI Instruction]
+    Wire an existing emitter into a ``SagaMediator``. Application startup
+    should call ``bootstrap``, which creates the emitter and runs
+    ``on_startup``. Use this when those pieces already exist.
     """
     saga_map = SagaMap()
     if sagas_mapper:
@@ -179,7 +184,7 @@ def bootstrap(
 
         # Execute saga (stream() returns AsyncIterator, consumed with async for)
         async for result in mediator.execute(order_context):
-            print(f"Step: {result.step_result.step_type.__name__}")
+            print(f"Step: {result.step_type.__name__}")
 
     Args:
         di_container: DI container (di.Container or CQRSContainer)
@@ -208,6 +213,14 @@ def bootstrap(
             container = di.Container()
             container.bind(ISagaStorage, instance=storage)  # Register storage
             mediator = bootstrap(container, saga_storage=storage, ...)
+
+    [AI Instruction]
+    Build a ``SagaMediator`` for a process whose steps must be undone across
+    services. ``sagas_mapper`` binds each context class to one ``Saga``.
+    ``domain_events_mapper`` binds reactions to events those steps produce.
+    Pass a durable ``saga_storage`` when a crash must be recoverable; the
+    default keeps state in memory. The caller iterates ``mediator.execute``.
+    A single-service command uses ``cqrs.bootstrap.requests.bootstrap``.
     """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER

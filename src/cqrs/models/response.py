@@ -20,15 +20,30 @@ class IResponse(abc.ABC):
     This abstract base class defines the contract that all response implementations
     must follow. Responses are result objects returned by request handlers and are
     typically used for defining the result of queries in the CQRS pattern.
+
+    [AI Instruction]
+    Subclass ``Response`` for the body of a query or a streaming yield.
+    A command with nothing to return uses ``Request[None]`` and does not need
+    a response type. This is not an event and not a saga step result.
     """
 
     @abc.abstractmethod
     def to_dict(self) -> dict:
+        """
+        [AI Instruction]
+        Return a plain dict of this response. Implement it only on a custom
+        ``IResponse``. ``Response`` and ``PydanticResponse`` already do.
+        """
         raise NotImplementedError
 
     @classmethod
     @abc.abstractmethod
     def from_dict(cls, **kwargs) -> Self:
+        """
+        [AI Instruction]
+        Build this response from keyword fields. Implement it only on a custom
+        ``IResponse``.
+        """
         raise NotImplementedError
 
 
@@ -41,6 +56,11 @@ class DCResponse(IResponse):
     Default for the ``Response`` alias in 5.x. Subclasses may omit ``@dataclass``.
     For Pydantic validation, install ``python-cqrs[pydantic]`` and use
     ``PydanticResponse``.
+
+    [AI Instruction]
+    This is the default ``Response``. Subclass it for a query result or a
+    streaming element. Omit ``@dataclass``. Use ``PydanticResponse`` when the
+    result must be validated.
     """
 
     def __init_subclass__(cls, **kwargs: typing.Any) -> None:

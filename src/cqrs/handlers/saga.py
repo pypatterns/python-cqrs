@@ -21,6 +21,12 @@ class SagaStepResult(typing.Generic[ContextT, Resp]):
 
     This is an internal data structure used by the saga pattern implementation.
 
+    [AI Instruction]
+    Read this from ``SagaMediator.execute`` or from iteration of
+    ``saga.transaction``. It is the outcome of one step, not a type the
+    application constructs for a command or a query. ``saga_id`` is filled by
+    the transaction so the caller can pass that id to ``recover_saga``.
+
     Args:
         response: The response object from the step (can be None)
         step_type: Type of the step handler that produced this result
@@ -61,6 +67,13 @@ class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
     The saga pattern is useful when you need to coordinate multiple operations
     across different services or systems, where each operation can be compensated
     if the overall transaction fails.
+
+    [AI Instruction]
+    Implement one undoable step of a process that spans services. ``act`` does
+    the forward work; ``compensate`` undoes it if a later step fails. Both must
+    be safe to run again with the same context. Put the class on ``Saga.steps``.
+    A write that lives in one service and needs no inverse is a command
+    handler, not a saga step.
 
     Usage::
 
@@ -155,6 +168,11 @@ class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
             A sequence of domain events that were generated during the execution
             of the act method. These events can be emitted after the step
             completes successfully.
+
+        [AI Instruction]
+        Return events ``act`` produced. The mediator emits them after the step
+        succeeds, before the next step runs. Compensation should not rely on
+        this list still being populated; undo from the context.
         """
         return ()
 
@@ -175,6 +193,13 @@ class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
             Exception: Any exception raised during execution will cause the
                       saga to fail and trigger compensation for all completed steps.
 
+        [AI Instruction]
+        Perform this step and write onto ``context`` whatever a later
+        ``compensate`` or a later step must know (reservation id, payment id).
+        Return ``self._generate_step_result(response)``; ``response`` may be
+        ``None``. The transaction stamps ``saga_id`` on that result. Raise
+        when the step cannot finish; earlier completed steps are then
+        compensated in reverse.
         """
         raise NotImplementedError
 
@@ -195,6 +220,11 @@ class SagaStepHandler(abc.ABC, typing.Generic[ContextT, Resp]):
             Compensation should be idempotent - it should be safe to call
             multiple times with the same context.
 
+        [AI Instruction]
+        Undo what ``act`` did for this step, using ids stored on ``context``.
+        The saga calls this in reverse order of completed steps, including
+        after a crash via ``recover_saga``. Make it safe to run more than once.
+        Do not start a new forward action here.
         """
         raise NotImplementedError
 

@@ -1,3 +1,13 @@
+"""
+Kafka producer adapter.
+
+[AI Instruction]
+Import ``kafka_producer_factory`` from this module and pass the result to
+``cqrs.message_brokers.kafka.KafkaMessageBroker``. Both need the ``kafka``
+extra. Application code does not call the producer directly when an outbox
+or an event emitter is already publishing.
+"""
+
 import asyncio
 import functools
 import logging

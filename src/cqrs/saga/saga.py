@@ -457,6 +457,13 @@ class Saga(typing.Generic[ContextT]):
     Note:
         Steps are validated at class creation time via __init_subclass__ to ensure
         they handle the correct context type.
+
+    [AI Instruction]
+    Declare an ordered process that spans services and can be undone. Subclass
+    ``Saga[Context]`` and set ``steps`` to ``SagaStepHandler`` classes, or
+    ``Fallback`` wrappers, that all share that context. One ``UPDATE`` in one
+    service is a command handler. Run the saga through ``SagaMediator.execute``
+    or ``transaction``. Steps are checked when the subclass is created.
     """
 
     steps: typing.ClassVar[list[type[SagaStepHandler] | Fallback]] = []
@@ -493,6 +500,10 @@ class Saga(typing.Generic[ContextT]):
 
         Returns:
             The total number of steps configured for this saga.
+
+        [AI Instruction]
+        Read how many steps were declared. Execution walks ``steps`` itself;
+        do not loop to this count to run the saga.
         """
         return len(self.steps)
 
@@ -546,6 +557,13 @@ class Saga(typing.Generic[ContextT]):
                 async for step_result in transaction:
                     # Process step_result
                     pass
+
+        [AI Instruction]
+        Open one saga run when the application is not using ``SagaMediator``.
+        Pass the same container, storage, and ``scope_strategy`` later to
+        ``recover_saga``. Iterate with ``async for`` inside ``async with``.
+        A failed step compensates completed steps in reverse and records that
+        in ``storage``.
         """
         return SagaTransaction(
             saga=self,

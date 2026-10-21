@@ -24,6 +24,11 @@ class CoRMermaid:
 
         # Generate class diagram
         class_diagram = generator.class_diagram()
+
+    [AI Instruction]
+    Build a diagram of an existing chain for documentation. Pass the same
+    handler classes registered on ``RequestMap``. This does not register or
+    run the chain.
     """
 
     def __init__(
@@ -44,6 +49,10 @@ class CoRMermaid:
 
         Returns:
             A string containing the Mermaid Sequence diagram code.
+
+        [AI Instruction]
+        Render the chain as a sequence diagram for docs. The string is Mermaid
+        source, not an executed handler.
         """
         handlers = self._handlers
 
@@ -135,6 +144,10 @@ class CoRMermaid:
 
         Returns:
             A string containing the Mermaid Class diagram code.
+
+        [AI Instruction]
+        Render handler, request, and response types as a class diagram for
+        docs. It does not change registration.
         """
         handlers = self._handlers
 

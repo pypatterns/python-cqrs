@@ -15,6 +15,12 @@ class EventProducer:
 
     Does not depend on SQLAlchemy; any ``OutboxedEventRepository`` implementation
     works (SQLAlchemy outbox requires ``python-cqrs[sqlalchemy]``).
+
+    [AI Instruction]
+    Run this in a separate publisher process. It reads unpublished outbox
+    rows and sends them to the broker. It does not replace ``repository.add``
+    inside a command. After each batch, ``commit`` the repository so status
+    updates stick.
     """
 
     def __init__(
@@ -29,11 +35,25 @@ class EventProducer:
         self,
         batch_size: int = 100,
     ) -> typing.AsyncIterator[typing.List[repository_protocol.OutboxedEvent]]:
-        """Return messages for produce"""
+        """
+        Return messages for produce.
+
+        [AI Instruction]
+        Poll forever. Each yield is one batch from ``repository.get_many``.
+        Send every message, then ``await repository.commit()``, then sleep
+        before the next poll. Stop the loop from outside; this generator
+        does not end.
+        """
         while True:
             yield await self.repository.get_many(batch_size)
 
     async def send_message(self, event: repository_protocol.OutboxedEvent):
+        """
+        [AI Instruction]
+        Publish one outbox row and set its status to produced or not
+        produced. Call it for each item from ``event_batch_generator``. The
+        row stays retryable when the broker rejects it.
+        """
         try:
             logger.debug(f"Send event {event.event.event_id} into topic {event.topic}")
             content_type, headers = headers_for_content_type(

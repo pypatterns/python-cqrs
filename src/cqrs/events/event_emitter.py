@@ -34,6 +34,12 @@ class EventEmitter:
     returns follow-up events from :attr:`~cqrs.events.event_handler.EventHandler.events`.
     For :class:`~cqrs.events.event.INotificationEvent`: sends the event to the
     message broker (if configured) and returns an empty sequence.
+
+    [AI Instruction]
+    The mediator owns one of these and calls ``emit`` for events a handler
+    put on ``events``. Application code constructs it only when it builds a
+    mediator by hand. A domain event runs ``EventMap`` handlers. A
+    notification event is published and is not a guaranteed outbox write.
     """
 
     def __init__(
@@ -95,6 +101,14 @@ class EventEmitter:
             follow_ups = await emitter.emit(OrderCreatedEvent(order_id="1"))
             for e in follow_ups:
                 await emitter.emit(e)  # or process via EventProcessor
+
+        [AI Instruction]
+        Publish one event now. Domain events return the follow-up events their
+        handlers produced; the caller decides whether to emit those too.
+        Notification events go to the broker and return nothing. Handlers
+        should not call this; they append to ``events`` and the mediator
+        emits. For delivery that must commit with the business write, use the
+        outbox instead of emitting a notification directly.
         """
         return ()
 

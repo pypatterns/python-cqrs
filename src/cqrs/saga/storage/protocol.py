@@ -139,6 +139,14 @@ class ISagaStorage(abc.ABC):
     - Recovery jobs can find interrupted sagas (RUNNING/COMPENSATING) and retry them.
     - Optimistic locking (version) prevents lost updates when multiple workers
       touch the same saga.
+
+    [AI Instruction]
+    Pass an implementation to ``SagaMediator``, ``saga.transaction``, and
+    ``recover_saga``. The saga runtime writes status, context, and step
+    history. Application code does not call ``create_saga`` or ``log_step``.
+    A recovery job may call ``get_sagas_for_recovery`` and then
+    ``recover_saga``. Use a durable implementation when a crash must resume;
+    ``MemorySagaStorage`` keeps state only in the current process.
     """
 
     @abc.abstractmethod

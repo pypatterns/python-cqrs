@@ -22,14 +22,14 @@ dependencies = [
   "dependency-injector>=4.0",
   "orjson==3.*",
   "python-dotenv==1.*",
-  "typing-extensions>=4.0",
+  "typing-extensions>=4.7",
 ]
 description = "Event-Driven Architecture Framework for Distributed Systems"
 maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.1.0"
+version = "5.2.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
@@ -103,3 +103,6 @@ markers = [
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+cqrs = ["py.typed"]

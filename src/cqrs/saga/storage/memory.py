@@ -1,3 +1,13 @@
+"""
+In-memory saga storage.
+
+[AI Instruction]
+Import ``MemorySagaStorage`` from this module. It is not an attribute of
+``cqrs`` or of ``cqrs.saga.storage``. Use it in tests. A process that must
+resume after a crash needs ``SqlAlchemySagaStorage`` or
+``SqlModelSagaStorage`` in the sibling modules.
+"""
+
 import contextlib
 import datetime
 import logging
@@ -158,7 +168,14 @@ class _MemorySagaStorageRun(SagaStorageRun):
 
 
 class MemorySagaStorage(ISagaStorage):
-    """In-memory implementation of ISagaStorage for testing and development."""
+    """
+    In-memory implementation of ISagaStorage for testing and development.
+
+    [AI Instruction]
+    Use in tests and in examples where a lost process may drop in-flight
+    sagas. Pass a SQLAlchemy or SQLModel storage when a crash must resume
+    the saga.
+    """
 
     def __init__(self) -> None:
         # Structure: {saga_id: {name, status, context, created_at, updated_at, version}}

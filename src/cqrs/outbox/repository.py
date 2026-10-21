@@ -19,6 +19,14 @@ else:
 
 
 class EventStatus(StrEnum):
+    """
+    [AI Instruction]
+    Lifecycle of one outbox row. Handlers insert ``NEW`` rows via
+    ``repository.add``. The producer moves a row to ``PRODUCED`` after the
+    broker accepts it and to ``NOT_PRODUCED`` when that send fails, so a
+    later poll can retry.
+    """
+
     NEW = "new"
     PRODUCED = "produced"
     NOT_PRODUCED = "not_produced"
@@ -51,6 +59,11 @@ class OutboxedEvent:
             topic="user.events",
             status=EventStatus.NEW
         )
+
+    [AI Instruction]
+    This is a stored outbox row, returned by ``get_many``. Application code
+    does not construct it. Read ``event`` for the notification and ``status``
+    for whether it has been published.
     """
 
     id: int
@@ -62,12 +75,28 @@ class OutboxedEvent:
 
 
 class OutboxedEventRepository(abc.ABC):
+    """
+    [AI Instruction]
+    Persist notification events in the same transaction as the business
+    write, then let ``EventProducer`` publish them. Inject the repository
+    into the command handler. Call ``add`` for each notification and
+    ``commit`` with the business changes. Do not also append those
+    notifications to ``handler.events``, or they can be published twice.
+    """
+
     @abc.abstractmethod
     def add(
         self,
         event: INotificationEvent,
     ) -> None:
-        """Add an event to the repository."""
+        """
+        Add an event to the repository.
+
+        [AI Instruction]
+        Stage one ``NotificationEvent`` in the current transaction. This does
+        not publish it. The event name must already be registered on
+        ``OutboxedEventMap`` when a non-JSON codec is required.
+        """
 
     @abc.abstractmethod
     async def get_many(
@@ -75,7 +104,13 @@ class OutboxedEventRepository(abc.ABC):
         batch_size: int = 100,
         topic: typing.Text | None = None,
     ) -> typing.List[OutboxedEvent]:
-        """Get many events from the repository."""
+        """
+        Get many events from the repository.
+
+        [AI Instruction]
+        Read a batch of unpublished outbox rows. ``EventProducer`` calls this.
+        A command handler does not.
+        """
 
     @abc.abstractmethod
     async def update_status(
@@ -83,15 +118,32 @@ class OutboxedEventRepository(abc.ABC):
         outboxed_event_id: int,
         new_status: EventStatus,
     ):
-        """Update the event status"""
+        """
+        Update the event status.
+
+        [AI Instruction]
+        Mark one row produced or not produced after a broker attempt.
+        ``EventProducer.send_message`` does this. Application handlers do not
+        flip status by hand.
+        """
 
     @abc.abstractmethod
     async def commit(self):
-        pass
+        """
+        [AI Instruction]
+        Commit the staged outbox rows together with the business changes in
+        this session. Call it from the handler after ``add`` and the domain
+        write. A later crash can still leave a row unpublished;
+        ``EventProducer`` retries those.
+        """
 
     @abc.abstractmethod
     async def rollback(self):
-        pass
+        """
+        [AI Instruction]
+        Drop staged outbox rows and the business changes in this session.
+        Call it when the handler must abort the whole unit of work.
+        """
 
 
 __all__ = (
