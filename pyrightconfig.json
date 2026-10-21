@@ -16,12 +16,6 @@
       "pythonVersion": "3.10",
       "pythonPlatform": "Linux",
       "reportMissingImports": "warning"
-    },
-    {
-      "root": "./",
-      "pythonVersion": "3.10",
-      "pythonPlatform": "Linux",
-      "reportMissingImports": "error"
     }
   ]
 }
