@@ -181,7 +181,9 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
     Outbox on a SQLAlchemy ``AsyncSession``. Construct it with that session,
     not a session factory, inside the same unit of work as the business
     write. ``commit`` commits the session. Install ``python-cqrs[sqlalchemy]``.
-    Register codecs on ``OutboxedEventMap`` before the first write.
+    Register every notification event name on ``OutboxedEventMap`` before
+    the first write, including JSON. Only the codec argument is optional
+    for JSON.
     """
 
     def __init__(

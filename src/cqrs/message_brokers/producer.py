@@ -42,7 +42,8 @@ class EventProducer:
         Poll forever. Each yield is one batch from ``repository.get_many``.
         Send every message, then ``await repository.commit()``, then sleep
         before the next poll. Stop the loop from outside; this generator
-        does not end.
+        does not end. A rejected row is retried only until ``flush_counter``
+        reaches five; see ``send_message``.
         """
         while True:
             yield await self.repository.get_many(batch_size)
@@ -51,8 +52,13 @@ class EventProducer:
         """
         [AI Instruction]
         Publish one outbox row and set its status to produced or not
-        produced. Call it for each item from ``event_batch_generator``. The
-        row stays retryable when the broker rejects it.
+        produced. Call it for each item from ``event_batch_generator``. A
+        broker rejection leaves the row ``NOT_PRODUCED`` and increments
+        ``flush_counter``. The row stays retryable only until
+        ``flush_counter`` reaches five. ``OutboxModel.get_batch_query`` then
+        excludes it, so a later poll will not yield it. Inspect those
+        exhausted rows and repair or delete them; this producer does not
+        select them again.
         """
         try:
             logger.debug(f"Send event {event.event.event_id} into topic {event.topic}")

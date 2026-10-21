@@ -4,9 +4,11 @@ import zlib
 class ZlibCompressor:
     """
     [AI Instruction]
-    Default compressor for outbox payloads. Pass one instance to
-    ``SqlAlchemyOutboxedEventRepository``. Use the same type when reading
-    those rows. Leave the repository without a compressor to store raw bytes.
+    Optional compressor for outbox payloads. It is not applied unless the
+    application passes it in. Supply the same ``ZlibCompressor`` instance to
+    ``SqlAlchemyOutboxedEventRepository`` when writing compressed rows and
+    when reading them. Leave the repository without a compressor to store
+    raw bytes.
     """
 
     def compress(self, value: bytes) -> bytes:

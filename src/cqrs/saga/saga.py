@@ -537,33 +537,38 @@ class Saga(typing.Generic[ContextT]):
             compensation_retry_backoff: Backoff multiplier for exponential delay (default: 2.0)
             scope_strategy: DI scope boundary (default NONE, no framework
                     scopes). SEND keeps one scope for the whole saga including
-                    compensation; HANDLER opens a fresh scope per step, and
-                    compensation re-resolves the step in a new scope.
-                    A plain container is enough; the transaction wraps it so
-                    resolves read the ambient scope. Pass the same strategy to
-                    ``recover_saga``.
+                    compensation. A standalone ``SEND`` transaction must
+                    already be inside ``enter_scope(container)`` so a scope
+                    is active before this transaction resolves handlers.
+                    HANDLER opens a fresh scope per step, and compensation
+                    re-resolves the step in a new scope. A plain container is
+                    enough; the transaction reads the ambient scope. Pass the
+                    same container, storage, and strategy to ``recover_saga``.
 
         Returns:
             A SagaTransaction context manager that can be used in an async with statement.
 
         Usage::
 
-            async with saga.transaction(
-                context=OrderContext(order_id="123"),
-                container=container,
-                storage=storage,
-                scope_strategy=ScopeStrategy.SEND,
-            ) as transaction:
-                async for step_result in transaction:
-                    # Process step_result
-                    pass
+            async with cqrs.enter_scope(container):
+                async with saga.transaction(
+                    context=OrderContext(order_id="123"),
+                    container=container,
+                    storage=storage,
+                    scope_strategy=ScopeStrategy.SEND,
+                ) as transaction:
+                    async for step_result in transaction:
+                        # Process step_result
+                        pass
 
         [AI Instruction]
         Open one saga run when the application is not using ``SagaMediator``.
-        Pass the same container, storage, and ``scope_strategy`` later to
-        ``recover_saga``. Iterate with ``async for`` inside ``async with``.
-        A failed step compensates completed steps in reverse and records that
-        in ``storage``.
+        For ``ScopeStrategy.SEND``, wrap the transaction in
+        ``enter_scope(container)`` before ``SagaTransaction`` resolves
+        handlers. Pass the same container, storage, and ``scope_strategy``
+        later to ``recover_saga``. Iterate with ``async for`` inside
+        ``async with``. A failed step compensates completed steps in reverse
+        and records that in ``storage``.
         """
         return SagaTransaction(
             saga=self,

@@ -94,8 +94,11 @@ class OutboxedEventRepository(abc.ABC):
 
         [AI Instruction]
         Stage one ``NotificationEvent`` in the current transaction. This does
-        not publish it. The event name must already be registered on
-        ``OutboxedEventMap`` when a non-JSON codec is required.
+        not publish it. Register every notification ``event_name`` on
+        ``OutboxedEventMap`` before ``add``, including events that use the
+        default JSON codec. Only the codec argument is optional for JSON.
+        ``SqlAlchemyOutboxedEventRepository.add`` raises ``TypeError`` when
+        the name is not registered.
         """
 
     @abc.abstractmethod

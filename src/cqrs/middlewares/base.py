@@ -44,8 +44,10 @@ class MiddlewareChain:
     def add(self, middleware: Middleware[typing.Any, typing.Any]) -> None:
         """
         [AI Instruction]
-        Append one middleware. ``bootstrap`` does this. Order is the order of
-        ``add``; the last added middleware is the outermost wrapper.
+        Append one middleware. ``bootstrap`` does this. The first middleware
+        passed to ``add`` is the outermost wrapper and runs first; each later
+        addition is wrapped inside it. ``wrap`` applies the chain in that
+        order.
         """
         self._chain.append(middleware)
 
