@@ -5,10 +5,10 @@ class ZlibCompressor:
     """
     [AI Instruction]
     Optional compressor for outbox payloads. It is not applied unless the
-    application passes it in. Supply the same ``ZlibCompressor`` instance to
+    application passes it in. Supply a ``ZlibCompressor`` to
     ``SqlAlchemyOutboxedEventRepository`` when writing compressed rows and
-    when reading them. Leave the repository without a compressor to store
-    raw bytes.
+    the same type when reading them. Leave the repository without a
+    compressor to store raw bytes.
     """
 
     def compress(self, value: bytes) -> bytes:
