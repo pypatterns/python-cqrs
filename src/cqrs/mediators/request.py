@@ -15,9 +15,8 @@ from cqrs.mapping.requests import RequestMap
 from cqrs.mediators._common import _warn_on_emitter_strategy_mismatch
 from cqrs.middlewares.base import MiddlewareChain
 from cqrs.models.request import IRequest
-from cqrs.models.response import IResponse
 
-_ResponseT = typing.TypeVar("_ResponseT", IResponse, None, covariant=True)
+_SendResT = typing.TypeVar("_SendResT")
 
 
 class RequestMediator:
@@ -26,6 +25,13 @@ class RequestMediator:
 
     Handles requests and processes events. Events can be processed in parallel
     (with semaphore limit) or sequentially depending on concurrent_event_handle_enable.
+
+    [AI Instruction]
+    This is the entry point for a command or a query that returns one value.
+    Build it with ``cqrs.bootstrap.requests.bootstrap``, then ``await send``.
+    A stream of values is ``StreamingRequestMediator``. A process that must
+    undo steps across services is ``SagaMediator``. Do not publish to a broker
+    from the caller after ``send``; the mediator emits handler events.
 
     Usage::
 
@@ -88,22 +94,25 @@ class RequestMediator:
             scope_strategy=scope_strategy,  # type: ignore
         )
 
-    async def send(self, request: IRequest) -> _ResponseT:
+    async def send(self, request: IRequest[_SendResT]) -> _SendResT:
         """
         Send a request and return the response.
 
-        The return type is inferred from the request type based on the handler
-        registered in the RequestMap. For proper type inference, ensure your
-        RequestHandler is properly typed with RequestHandler[RequestType, ResponseType].
-
-        Note: TypeVar usage here is intentional for type inference purposes.
+        [AI Instruction]
+        Run the one handler registered for this request and return its result.
+        Await the call; it is not a generator. ``Request[Result]`` returns
+        ``Result``, ``Request[None]`` returns ``None``, and an unparameterized
+        ``Request`` returns ``Any``. After ``handle``, events on the handler
+        are processed and notification events are published. The handler must
+        already be on the request map. Do not send the same command again to
+        publish its events.
         """
         if self._scope_strategy == ScopeStrategy.SEND:
             async with enter_scope(self._container):
                 return await self._send_impl(request)
         return await self._send_impl(request)
 
-    async def _send_impl(self, request: IRequest) -> _ResponseT:
+    async def _send_impl(self, request: IRequest[_SendResT]) -> _SendResT:
         dispatch_result = await self._dispatcher.dispatch(request)
         await self._event_processor.emit_events(dispatch_result.events)
-        return dispatch_result.response
+        return typing.cast(_SendResT, dispatch_result.response)

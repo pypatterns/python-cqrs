@@ -1,3 +1,13 @@
+"""
+SQLAlchemy transactional outbox.
+
+[AI Instruction]
+Import ``SqlAlchemyOutboxedEventRepository`` and ``rebind_outbox_model``
+from ``cqrs``. Both are lazy and need the ``sqlalchemy`` extra. This module
+is the implementation. Saga storage is a different class,
+``cqrs.saga.storage.sqlalchemy.SqlAlchemySagaStorage``.
+"""
+
 import datetime
 import logging
 import typing
@@ -166,6 +176,16 @@ class OutboxModel(Base):
 
 
 class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
+    """
+    [AI Instruction]
+    Outbox on a SQLAlchemy ``AsyncSession``. Construct it with that session,
+    not a session factory, inside the same unit of work as the business
+    write. ``commit`` commits the session. Install ``python-cqrs[sqlalchemy]``.
+    Register every notification event name on ``OutboxedEventMap`` before
+    the first write, including JSON. Only the codec argument is optional
+    for JSON.
+    """
+
     def __init__(
         self,
         session: sql_session.AsyncSession,
@@ -302,6 +322,12 @@ def rebind_outbox_model(
     new_base: DeclarativeMeta,
     table_name: typing.Text | None = None,
 ):
+    """
+    [AI Instruction]
+    Attach the outbox model to the application's declarative base, and
+    optionally rename the table. Call it once at startup, before
+    ``create_all``, before migrations, and before the first outbox query.
+    """
     model.__bases__ = (new_base,)
     model.__table__.name = table_name or model.__table__.name
     new_base.metadata._add_table(

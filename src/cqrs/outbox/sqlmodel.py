@@ -1,4 +1,11 @@
-"""SQLModel outbox: same table, queries, and repository behavior as SQLAlchemy."""
+"""
+SQLModel outbox: same table, queries, and repository behavior as SQLAlchemy.
+
+[AI Instruction]
+Import ``SqlModelOutboxedEventRepository`` from ``cqrs``. It is lazy and
+needs the ``sqlmodel`` extra. Saga storage for SQLModel is
+``cqrs.saga.storage.sqlmodel.SqlModelSagaStorage``, not this repository.
+"""
 
 import datetime
 import typing
@@ -158,6 +165,10 @@ class SqlModelOutboxedEventRepository(SqlAlchemyOutboxedEventRepository):
     Pass a ``sqlmodel.ext.asyncio.session.AsyncSession``. Behavior matches
     ``SqlAlchemyOutboxedEventRepository``: the same batch query, flush budget,
     status ordering, codecs, and compressor hooks.
+
+    [AI Instruction]
+    Outbox on a SQLModel ``AsyncSession``. Same calls as
+    ``SqlAlchemyOutboxedEventRepository``. Install ``python-cqrs[sqlmodel]``.
     """
 
     def __init__(

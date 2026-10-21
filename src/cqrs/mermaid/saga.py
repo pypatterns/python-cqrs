@@ -29,6 +29,10 @@ class SagaMermaid:
 
         # Generate class diagram
         class_diagram = generator.class_diagram()
+
+    [AI Instruction]
+    Build a diagram of an existing saga for documentation. Pass a saga
+    instance. This does not run the saga or compensate anything.
     """
 
     def __init__(self, saga: Saga[typing.Any]) -> None:
@@ -46,6 +50,9 @@ class SagaMermaid:
 
         Returns:
             A string containing the Mermaid Sequence diagram code.
+
+        [AI Instruction]
+        Render steps and compensation as a sequence diagram for docs.
         """
         steps = self._saga.steps
 
@@ -207,6 +214,10 @@ class SagaMermaid:
 
         Returns:
             A string containing the Mermaid Class diagram code.
+
+        [AI Instruction]
+        Render the saga, its steps, and context types as a class diagram for
+        docs. It does not run or compensate the saga.
         """
         steps = self._saga.steps
 

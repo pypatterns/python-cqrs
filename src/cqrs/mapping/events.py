@@ -18,6 +18,12 @@ class EventMap(typing.Dict[_KT, _VT]):
     Handlers can be plain types or :class:`~cqrs.events.fallback.EventHandlerFallback`.
     Keys cannot be overwritten or deleted.
 
+    [AI Instruction]
+    Register reactions to facts that already happened. Several handlers may
+    share one event. Pass the map to an event emitter, ``EventMediator``, or
+    ``domain_events_mapper`` / ``events_mapper`` on bootstrap. Do not put
+    commands or queries here; those belong on ``RequestMap``.
+
     Example::
 
         event_map = EventMap()
@@ -43,6 +49,13 @@ class EventMap(typing.Dict[_KT, _VT]):
 
         Raises:
             KeyError: If the same handler type or fallback is already bound to this event type.
+
+        [AI Instruction]
+        Add one handler for this event. Each call appends, and every bound
+        handler runs when the event is emitted. Pass an ``EventHandler``
+        subclass or an ``EventHandlerFallback``. Binding the same handler
+        twice raises ``KeyError``. A request has one handler, on
+        ``RequestMap.bind``.
         """
         if event_type not in self:
             self[event_type] = [handler_type]

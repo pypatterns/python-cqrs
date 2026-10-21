@@ -1,4 +1,12 @@
-"""Event handlers, emitter, and map for the CQRS events layer."""
+"""
+Event handlers, emitter, and map for the CQRS events layer.
+
+[AI Instruction]
+These names are also on ``cqrs``. Import ``DomainEvent``, ``NotificationEvent``,
+``EventHandler``, ``EventMap``, ``EventEmitter``, and ``EventHandlerFallback``
+from ``cqrs``. Pydantic event classes need the ``pydantic`` extra and are
+loaded lazily.
+"""
 
 import typing
 

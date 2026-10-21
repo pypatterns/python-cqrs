@@ -49,6 +49,12 @@ class DependencyInjectorCQRSContainer(
         >>> service = await cqrs_container.resolve(UserService)
         >>> # Or resolve by abstract interface
         >>> service = await cqrs_container.resolve(IUserService)
+
+    [AI Instruction]
+    Wrap a dependency-injector declarative container and pass this object to
+    ``bootstrap``. Call ``attach_external_container`` before the first
+    resolve. Providers are discovered by type. This is not ``DIContainer``,
+    which wraps the ``di`` package.
     """
 
     def __init__(self) -> None:

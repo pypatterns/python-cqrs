@@ -1,3 +1,12 @@
+"""
+Kafka broker.
+
+[AI Instruction]
+Import ``KafkaMessageBroker`` from this module. Build its producer with
+``cqrs.adapters.kafka.kafka_producer_factory``. Both need the ``kafka``
+extra. Pass the broker to bootstrap or to ``cqrs.EventProducer``.
+"""
+
 import logging
 import typing
 

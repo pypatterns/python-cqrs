@@ -1,3 +1,12 @@
+"""
+AMQP broker.
+
+[AI Instruction]
+Import ``AMQPMessageBroker`` from this module. It needs the ``rabbit``
+extra. Pass it to bootstrap or to ``cqrs.EventProducer``. The publisher
+and consumer types live in ``cqrs.adapters.amqp``.
+"""
+
 import logging
 
 import aio_pika

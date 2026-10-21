@@ -457,6 +457,13 @@ class Saga(typing.Generic[ContextT]):
     Note:
         Steps are validated at class creation time via __init_subclass__ to ensure
         they handle the correct context type.
+
+    [AI Instruction]
+    Declare an ordered process that spans services and can be undone. Subclass
+    ``Saga[Context]`` and set ``steps`` to ``SagaStepHandler`` classes, or
+    ``Fallback`` wrappers, that all share that context. One ``UPDATE`` in one
+    service is a command handler. Run the saga through ``SagaMediator.execute``
+    or ``transaction``. Steps are checked when the subclass is created.
     """
 
     steps: typing.ClassVar[list[type[SagaStepHandler] | Fallback]] = []
@@ -493,6 +500,10 @@ class Saga(typing.Generic[ContextT]):
 
         Returns:
             The total number of steps configured for this saga.
+
+        [AI Instruction]
+        Read how many steps were declared. Execution walks ``steps`` itself;
+        do not loop to this count to run the saga.
         """
         return len(self.steps)
 
@@ -526,26 +537,38 @@ class Saga(typing.Generic[ContextT]):
             compensation_retry_backoff: Backoff multiplier for exponential delay (default: 2.0)
             scope_strategy: DI scope boundary (default NONE, no framework
                     scopes). SEND keeps one scope for the whole saga including
-                    compensation; HANDLER opens a fresh scope per step, and
-                    compensation re-resolves the step in a new scope.
-                    A plain container is enough; the transaction wraps it so
-                    resolves read the ambient scope. Pass the same strategy to
-                    ``recover_saga``.
+                    compensation. A standalone ``SEND`` transaction must
+                    already be inside ``enter_scope(container)`` so a scope
+                    is active before this transaction resolves handlers.
+                    HANDLER opens a fresh scope per step, and compensation
+                    re-resolves the step in a new scope. A plain container is
+                    enough; the transaction reads the ambient scope. Pass the
+                    same container, storage, and strategy to ``recover_saga``.
 
         Returns:
             A SagaTransaction context manager that can be used in an async with statement.
 
         Usage::
 
-            async with saga.transaction(
-                context=OrderContext(order_id="123"),
-                container=container,
-                storage=storage,
-                scope_strategy=ScopeStrategy.SEND,
-            ) as transaction:
-                async for step_result in transaction:
-                    # Process step_result
-                    pass
+            async with cqrs.enter_scope(container):
+                async with saga.transaction(
+                    context=OrderContext(order_id="123"),
+                    container=container,
+                    storage=storage,
+                    scope_strategy=ScopeStrategy.SEND,
+                ) as transaction:
+                    async for step_result in transaction:
+                        # Process step_result
+                        pass
+
+        [AI Instruction]
+        Open one saga run when the application is not using ``SagaMediator``.
+        For ``ScopeStrategy.SEND``, wrap the transaction in
+        ``enter_scope(container)`` before ``SagaTransaction`` resolves
+        handlers. Pass the same container, storage, and ``scope_strategy``
+        later to ``recover_saga``. Iterate with ``async for`` inside
+        ``async with``. A failed step compensates completed steps in reverse
+        and records that in ``storage``.
         """
         return SagaTransaction(
             saga=self,

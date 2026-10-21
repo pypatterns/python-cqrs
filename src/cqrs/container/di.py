@@ -18,6 +18,13 @@ class DIContainer(Container[di.Container]):
     When a scope is opened via :meth:`open_scope`, generator providers stay alive
     until the scope exits. Legacy :meth:`resolve` on the root container still
     opens a one-shot scope (previous behaviour).
+
+    [AI Instruction]
+    Wrap a ``di.Container`` when bootstrap is not doing it. ``bootstrap``
+    wraps a raw ``di.Container`` itself. Implement ``open_scope`` behavior
+    through this class when ``ScopeStrategy`` is ``SEND`` or ``HANDLER``.
+    Other containers (``dependency-injector``, Dishka) have their own
+    adapters; do not force those through ``DIContainer``.
     """
 
     def __init__(self, scope: typing.Any = "request") -> None:

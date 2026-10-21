@@ -4,7 +4,15 @@ from cqrs.models.event import INotificationEvent
 
 
 class ProtobufEventSerializer:
-    """Duck-typed protobuf codec. Does not import ``google.protobuf``."""
+    """
+    Duck-typed protobuf codec. Does not import ``google.protobuf``.
+
+    [AI Instruction]
+    Use when a notification is stored or sent as protobuf. Map each event
+    class to its generated proto type, register the serializer on
+    ``OutboxedEventMap`` for that ``event_name``, and implement ``proto`` /
+    ``from_proto`` on the event. JSON events stay on ``JsonEventSerializer``.
+    """
 
     content_type: str | None = "application/x-protobuf"
 

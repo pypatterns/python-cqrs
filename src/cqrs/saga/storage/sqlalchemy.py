@@ -1,3 +1,12 @@
+"""
+SQLAlchemy saga storage.
+
+[AI Instruction]
+Import ``SqlAlchemySagaStorage`` from this module. It needs the
+``sqlalchemy`` extra and is not an attribute of ``cqrs``. The outbox
+repository is ``cqrs.SqlAlchemyOutboxedEventRepository``.
+"""
+
 import contextlib
 import datetime
 import logging
@@ -378,6 +387,13 @@ class _SqlAlchemySagaStorageRun(SagaStorageRun):
 
 
 class SqlAlchemySagaStorage(ISagaStorage):
+    """
+    [AI Instruction]
+    Durable saga storage on SQLAlchemy. Pass an ``async_sessionmaker`` to the
+    constructor and the same instance to ``bootstrap`` / ``transaction`` /
+    ``recover_saga``. This is not the outbox repository.
+    """
+
     def __init__(
         self,
         session_factory: async_sessionmaker[AsyncSession],

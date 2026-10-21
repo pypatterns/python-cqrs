@@ -16,6 +16,13 @@ class DishkaCQRSContainer(Container[AsyncContainer]):
 
     Request-scoped providers (``Scope.REQUEST``) are finalized when the CQRS
     scope opened via :meth:`open_scope` exits.
+
+    [AI Instruction]
+    Wrap a Dishka ``AsyncContainer`` and pass this to ``bootstrap`` when the
+    application uses Dishka. Install ``python-cqrs[dishka]``. If FastAPI
+    middleware already opened the request scope, wrap that scoped container
+    with ``DishkaCQRSContainer.of`` and ``bind_scope`` instead of asking CQRS
+    to open another one.
     """
 
     def __init__(self, container: AsyncContainer | None = None) -> None:
@@ -23,7 +30,13 @@ class DishkaCQRSContainer(Container[AsyncContainer]):
 
     @classmethod
     def of(cls, container: AsyncContainer) -> DishkaCQRSContainer:
-        """Wrap an already-opened dishka container (e.g. from FastAPI middleware)."""
+        """Wrap an already-opened dishka container (e.g. from FastAPI middleware).
+
+        [AI Instruction]
+        Use this for the container a request middleware already entered.
+        Pair it with ``bind_scope`` so handlers resolve from that scope.
+        ``ScopeStrategy.SEND`` then joins it.
+        """
         return cls(container)
 
     @property

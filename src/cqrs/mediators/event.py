@@ -22,6 +22,12 @@ class EventMediator:
 
       # Handles ecst and notification events.
       await mediator.send(user_joined_event)
+
+    [AI Instruction]
+    Dispatch an event that arrived from outside this process, such as a broker
+    consumer. Handlers come from ``EventMap``. Events produced by a command
+    are emitted by ``RequestMediator``; sending those same events here runs
+    the handlers twice.
     """
 
     def __init__(
@@ -43,6 +49,12 @@ class EventMediator:
         )
 
     async def send(self, event: IEvent) -> None:
+        """
+        [AI Instruction]
+        Run every handler bound to this event's type. Await the call. It
+        returns nothing. Use this for an event the application received, not
+        for an event a command handler just appended to ``events``.
+        """
         if self._scope_strategy == ScopeStrategy.SEND:
             async with enter_scope(self._container):
                 await self._dispatcher.dispatch(event)

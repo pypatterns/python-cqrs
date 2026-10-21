@@ -41,6 +41,12 @@ class EventHandlerFallback:
                 circuit_breaker=event_cb,
             ),
         )
+
+    [AI Instruction]
+    Pass this to ``EventMap.bind`` when a failed event handler should be
+    replaced by another handler of the same event. Both classes are
+    ``EventHandler`` of that event. This does not replace a request handler;
+    that is ``RequestHandlerFallback`` on ``RequestMap``.
     """
 
     primary: EventHandlerT

@@ -32,6 +32,13 @@ class SagaMediator:
     It processes events after each yield, emits events via event emitter, and
     streams results back to the client.
 
+    [AI Instruction]
+    Run a saga whose context type is bound on ``SagaMap``. Use it when a step
+    in one service must be undone if a later step in another service fails.
+    One write in one database is a command on ``RequestMediator``. Build this
+    with ``cqrs.bootstrap.saga.bootstrap`` and a durable ``saga_storage`` when
+    a crash must be recoverable.
+
     Usage::
 
       saga_map = SagaMap()
@@ -51,7 +58,7 @@ class SagaMediator:
 
       # Streams results and publishes events after each step.
       async for result in mediator.execute(order_context):
-          print(f"Step completed: {result.step_result.step_type.__name__}")
+          print(f"Step completed: {result.step_type.__name__}")
     """
 
     def __init__(
@@ -123,6 +130,14 @@ class SagaMediator:
         The consumer must exhaust the iterator or call ``aclose()`` /
         ``async with contextlib.aclosing(...)``. An abandoned SEND stream keeps
         the UoW alive until the generator is garbage-collected.
+
+        [AI Instruction]
+        Run the saga for this context. Do not await ``execute``; iterate with
+        ``async for``. Each item is the step result after that step's events
+        were emitted. Pass a stable ``saga_id`` when this run must be resumed
+        later with ``recover_saga``. A failed step compensates completed steps
+        in reverse. Exhaust or close the iterator, the same way as a request
+        stream.
         """
         return self._execute_impl(context, saga_id=saga_id)
 

@@ -15,6 +15,12 @@ class EventHandler(abc.ABC, typing.Generic[E]):
     to return follow-up events emitted after handling (e.g. for multi-level
     event chains).
 
+    [AI Instruction]
+    Subclass this to react to something that already happened. Many handlers
+    may share one event; register each with ``EventMap.bind``. This does not
+    answer a caller and is not a ``RequestHandler``. Use it for an in-process
+    domain reaction, or for a notification consumed from a broker.
+
     Example::
 
         class UserJoinedEvent(DomainEvent):
@@ -42,6 +48,11 @@ class EventHandler(abc.ABC, typing.Generic[E]):
 
         Returns:
             Sequence of follow-up events (e.g. new domain events) to process.
+
+        [AI Instruction]
+        Return further events this reaction produced. The emitter handles them
+        after ``handle``. Leave the sequence empty when the reaction is a leaf,
+        such as updating a read model.
         """
         return ()
 
@@ -55,5 +66,11 @@ class EventHandler(abc.ABC, typing.Generic[E]):
 
         Raises:
             NotImplementedError: Must be implemented by subclasses.
+
+        [AI Instruction]
+        Perform the reaction to this event. Return nothing and do not change
+        the event. Register the class with ``EventMap.bind``; another ``bind``
+        for a different handler of the same event appends it. Follow-up events
+        go on ``events``, not in the return value.
         """
         raise NotImplementedError

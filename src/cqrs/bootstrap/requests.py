@@ -46,6 +46,13 @@ def setup_event_emitter(
     *,
     serializer: EventSerializer | None = None,
 ) -> events.EventEmitter:
+    """
+    [AI Instruction]
+    Build the emitter ``bootstrap`` uses to publish handler events. Call
+    ``bootstrap`` from application startup. Use this only when the
+    application already owns the container and must pass a custom emitter
+    into ``setup_mediator``.
+    """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
     event_mapper = events.EventMap()
@@ -101,6 +108,12 @@ def setup_mediator(
     concurrent_event_handle_enable: bool | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.RequestMediator:
+    """
+    [AI Instruction]
+    Wire maps and middleware into a ``RequestMediator``. Application startup
+    should call ``bootstrap``, which also creates the emitter and runs
+    ``on_startup``. Use this when those pieces already exist.
+    """
     requests_mapper = RequestMap()
     if commands_mapper:
         commands_mapper(requests_mapper)
@@ -176,6 +189,20 @@ def bootstrap(
     *,
     serializer: EventSerializer | None = None,
 ) -> cqrs.RequestMediator:
+    """
+    Create a ``RequestMediator``.
+
+    [AI Instruction]
+    Build the ``RequestMediator`` an application calls for commands and
+    queries. Pass ``commands_mapper`` and ``queries_mapper`` that call
+    ``mapper.bind``. Both kinds of request are ``cqrs.Request``.
+    ``domain_events_mapper`` registers in-process reactions to events those
+    handlers produce. Logging middleware is added when the list does not
+    already contain it. A missing broker becomes a broker that discards
+    messages; pass a real broker when notifications must leave the process.
+    Install optional integrations explicitly (``pydantic``, ``sqlalchemy``,
+    ``sqlmodel``, ``kafka``, and the others in ``pyproject.toml``).
+    """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
     if on_startup is None:
@@ -258,6 +285,12 @@ def setup_streaming_mediator(
     concurrent_event_handle_enable: bool | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
 ) -> cqrs.StreamingRequestMediator:
+    """
+    [AI Instruction]
+    Wire maps and middleware into a ``StreamingRequestMediator``. Application
+    startup should call ``bootstrap_streaming``. Use this when the emitter
+    already exists.
+    """
     requests_mapper = RequestMap()
     if commands_mapper:
         commands_mapper(requests_mapper)
@@ -333,6 +366,14 @@ def bootstrap_streaming(
     *,
     serializer: EventSerializer | None = None,
 ) -> cqrs.StreamingRequestMediator:
+    """
+    [AI Instruction]
+    Build the mediator for handlers that yield many results. Wire streaming
+    handlers through ``commands_mapper`` or ``queries_mapper`` with
+    ``mapper.bind``, the same as a normal request. The caller iterates
+    ``mediator.stream``, it does not ``await send``. Use ``bootstrap`` when
+    each request returns one value.
+    """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
     if on_startup is None:

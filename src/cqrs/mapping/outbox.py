@@ -35,6 +35,13 @@ class OutboxedEventMap:
 
     Warning: class-level methods mutate the process singleton; prefer an
     instance map when tests or apps need isolation.
+
+    [AI Instruction]
+    Tell the outbox which Python type and codec belong to an ``event_name``.
+    Register before the repository reads or writes that event. JSON is the
+    default codec. Pass a ``ProtobufEventSerializer`` (or another
+    ``EventCodec``) only for events that travel as protobuf. Prefer an
+    instance when tests must not share process-global registrations.
     """
 
     _instance: typing.ClassVar["OutboxedEventMap | None"] = None
@@ -58,6 +65,16 @@ class OutboxedEventMap:
         event_type: typing.Type[INotificationEvent],
         serializer: EventCodec | None = None,
     ) -> None:
+        """
+        [AI Instruction]
+        Bind ``event_name`` to the notification class stored in the outbox.
+        Call once at startup, before ``create_all``, migrations, or the first
+        outbox read. A second registration of the same name raises
+        ``KeyError``. Omit ``serializer`` for JSON. When the stored bytes are
+        not JSON, register the codec on the ``OutboxedEventMap`` the
+        repository uses. ``EventProducer`` accepts no codec parameter and
+        sends the payload bytes the repository already provides.
+        """
         if event_name in self._entries:
             raise KeyError(f"Event with {event_name} already registered")
         self._entries[event_name] = (event_type, serializer)
@@ -67,6 +84,12 @@ class OutboxedEventMap:
         self,
         event_name: typing.Text,
     ) -> typing.Type[INotificationEvent] | None:
+        """
+        [AI Instruction]
+        Resolve the notification class for a stored ``event_name``. Returns
+        ``None`` when nothing was registered. The outbox repository calls
+        this while reading rows; application handlers usually do not.
+        """
         entry = self._entries.get(event_name)
         if entry is None:
             return None
@@ -77,6 +100,12 @@ class OutboxedEventMap:
         self,
         event_name: typing.Text,
     ) -> EventCodec | None:
+        """
+        [AI Instruction]
+        Return the codec registered for ``event_name``, or ``None`` when the
+        event uses the default JSON serializer. Do not build a second codec
+        in the publisher; read it from here.
+        """
         entry = self._entries.get(event_name)
         if entry is None:
             return None
@@ -87,6 +116,17 @@ class OutboxedEventMap:
         self,
         default: EventSerializer | None = None,
     ) -> EventSerializer:
+        """
+        [AI Instruction]
+        Build the serializer an emitter should use. It picks the codec
+        registered for each event and falls back to JSON. Pass the result as
+        the bootstrap or emitter ``serializer`` when some notifications are
+        protobuf and others stay JSON. Do not pass it to an outbox
+        repository: the result has no ``deserialize``, so ``get_many`` skips
+        the row and increments its failure count. Configure the repository
+        with this event map and an ``EventCodec`` fallback such as
+        ``JsonEventSerializer``, which does provide ``deserialize``.
+        """
         fallback = default or JsonEventSerializer()
         event_map = self
 

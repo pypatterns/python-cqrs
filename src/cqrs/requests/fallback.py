@@ -42,6 +42,14 @@ class RequestHandlerFallback:
                 circuit_breaker=request_cb,
             ),
         )
+
+    [AI Instruction]
+    Pass this to ``RequestMap.bind`` when a failed primary handler should be
+    replaced by another handler of the same request. Both classes are
+    ``RequestHandler`` or both are ``StreamingRequestHandler``, parameterized
+    with the same request. An empty ``failure_exceptions`` treats any error
+    as a reason to fall back. Keep a separate circuit breaker from the one
+    used for events or saga steps.
     """
 
     primary: RequestHandlerT

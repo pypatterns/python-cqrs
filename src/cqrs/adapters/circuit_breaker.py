@@ -136,6 +136,12 @@ class AioBreakerAdapter(ICircuitBreaker, ISagaStepCircuitBreaker):
         saga_cb = AioBreakerAdapter(fail_max=3, timeout_duration=60)
         request_cb = AioBreakerAdapter(fail_max=5, timeout_duration=30)
         event_cb = AioBreakerAdapter(fail_max=5, timeout_duration=30)
+
+    [AI Instruction]
+    Construct one adapter per area (requests, events, saga) and pass it into
+    that area's fallback. ``fail_max`` is how many failures open the circuit.
+    ``timeout_duration`` is how long it stays open. Requires ``aiobreaker``.
+    A business exception listed in ``exclude`` must not open the circuit.
     """
 
     def __init__(

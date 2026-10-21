@@ -36,6 +36,12 @@ class IEvent(abc.ABC):
     All event implementations must provide:
     - `to_dict()`: Convert the event instance to a dictionary representation
     - `from_dict()`: Create an event instance from a dictionary
+
+    [AI Instruction]
+    Implement this only for a custom event type. Application events subclass
+    ``DomainEvent`` or ``NotificationEvent`` instead, and those already
+    serialize. A domain event stays inside this process. A notification event
+    is what another service receives.
     """
 
     @abc.abstractmethod
@@ -45,6 +51,10 @@ class IEvent(abc.ABC):
 
         Returns:
             A dictionary containing all fields of the event instance.
+
+        [AI Instruction]
+        Return a plain dict. Override only on a custom ``IEvent``. Domain and
+        notification bases already implement this.
         """
         raise NotImplementedError
 
@@ -59,6 +69,11 @@ class IEvent(abc.ABC):
 
         Returns:
             A new instance of the event class.
+
+        [AI Instruction]
+        Rebuild the event from the dict produced by ``to_dict``. The outbox
+        and broker path call this. Keep field names stable once events are
+        stored.
         """
         raise NotImplementedError
 
@@ -80,6 +95,11 @@ class DCEvent(IEvent):
         class UserCreatedEvent(DCEvent, frozen=True):
             user_id: str
             username: str
+
+    [AI Instruction]
+    Low-level dataclass event. Application code usually subclasses
+    ``DomainEvent`` or ``NotificationEvent``, which extend this. Pass
+    ``frozen=True`` unless a handler must mutate the instance.
     """
 
     def __init_subclass__(
@@ -109,6 +129,12 @@ class IDomainEvent(IEvent):
     Domain events represent something that happened in the domain that domain experts
     care about. They are typically used for in-process event handling within the
     same bounded context.
+
+    [AI Instruction]
+    Subclass ``DomainEvent`` for a fact other handlers in this process should
+    react to. Append instances to a command or saga step ``events`` property.
+    Do not publish a domain event to a broker yourself. Several
+    ``EventHandler`` classes may handle one domain event.
     """
 
 
@@ -120,6 +146,10 @@ class DCDomainEvent(DCEvent, IDomainEvent):
 
     Default for the ``DomainEvent`` alias in 5.x. For Pydantic validation,
     install ``python-cqrs[pydantic]`` and use ``PydanticDomainEvent``.
+
+    [AI Instruction]
+    This is the default ``DomainEvent``. Subclass it for an in-process fact.
+    It is not a ``NotificationEvent`` and it is not a request.
     """
 
     def __init_subclass__(cls, frozen: bool = True, **kwargs: typing.Any) -> None:
@@ -132,6 +162,13 @@ class INotificationEvent(IEvent, typing.Generic[PayloadT]):
 
     Notification events are used for cross-service communication and are typically
     published to message brokers (Kafka, RabbitMQ, etc.).
+
+    [AI Instruction]
+    Subclass ``NotificationEvent`` when another service must hear about a
+    change. Set ``event_name``, ``payload``, and ``topic``. Append it from a
+    command only when loss is acceptable. When the business write and the
+    message must commit together, ``outbox.add`` this event and ``commit``
+    in that same transaction instead of putting it on ``events``.
     """
 
     if typing.TYPE_CHECKING:
@@ -161,6 +198,12 @@ class DCNotificationEvent(
     so subclasses may override ``event_name`` with a default without breaking
     field ordering. For Pydantic validation, install ``python-cqrs[pydantic]``
     and use ``PydanticNotificationEvent``.
+
+    [AI Instruction]
+    This is the default ``NotificationEvent``. Subclass it and set
+    ``event_name`` and ``payload``. Fields are keyword-only. Implement
+    ``proto`` and ``from_proto`` only when this event is stored or sent as
+    protobuf; register that codec on ``OutboxedEventMap``.
     """
 
     event_name: str
@@ -176,10 +219,21 @@ class DCNotificationEvent(
         super().__init_subclass__(frozen=frozen, kw_only=True, **kwargs)
 
     def proto(self) -> typing.Any:
+        """
+        [AI Instruction]
+        Return the protobuf message for this notification. Implement it on the
+        subclass when a ``ProtobufEventSerializer`` is registered for
+        ``event_name``. Leave the base unimplemented for JSON events.
+        """
         raise NotImplementedError("Method not implemented")
 
     @classmethod
     def from_proto(cls, proto: typing.Any) -> Self:
+        """
+        [AI Instruction]
+        Rebuild this notification from the protobuf message produced by
+        ``proto``. The outbox codec calls this when reading protobuf bytes.
+        """
         raise NotImplementedError("Method not implemented")
 
     def __hash__(self) -> int:

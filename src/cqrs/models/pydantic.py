@@ -16,7 +16,7 @@ from cqrs.models.event import (
     INotificationEvent,
     PayloadT,
 )
-from cqrs.models.request import IRequest
+from cqrs.models.request import IRequest, RequestResT
 from cqrs.models.response import IResponse
 
 if sys.version_info >= (3, 11):
@@ -33,6 +33,11 @@ class PydanticEvent(pydantic.BaseModel, IEvent, frozen=True):
     ``Event`` / ``DomainEvent`` / ``NotificationEvent`` point at the
     dataclass implementations; use these classes when you need Pydantic
     validation.
+
+    [AI Instruction]
+    Use when a dataclass event is not enough and fields must be validated.
+    Install ``python-cqrs[pydantic]`` first. ``Event`` still points at the
+    dataclass base; subclass this explicitly.
     """
 
     @classmethod
@@ -44,7 +49,13 @@ class PydanticEvent(pydantic.BaseModel, IEvent, frozen=True):
 
 
 class PydanticDomainEvent(PydanticEvent, IDomainEvent, frozen=True):
-    """Pydantic-based domain event (optional pydantic extra)."""
+    """
+    Pydantic-based domain event (optional pydantic extra).
+
+    [AI Instruction]
+    Subclass this for an in-process domain event that needs Pydantic
+    validation. The default ``DomainEvent`` stays the dataclass base.
+    """
 
 
 class PydanticNotificationEvent(
@@ -53,7 +64,14 @@ class PydanticNotificationEvent(
     typing.Generic[PayloadT],
     frozen=True,
 ):
-    """Pydantic-based notification event (optional pydantic extra)."""
+    """
+    Pydantic-based notification event (optional pydantic extra).
+
+    [AI Instruction]
+    Subclass this for a broker or outbox notification that needs Pydantic
+    validation. Set ``event_name`` and ``payload``. Implement ``proto`` /
+    ``from_proto`` only for protobuf.
+    """
 
     payload: PayloadT
 
@@ -84,12 +102,20 @@ __all__ = (
 )
 
 
-class PydanticRequest(pydantic.BaseModel, IRequest):
+class PydanticRequest(pydantic.BaseModel, IRequest[RequestResT]):
     """
     Pydantic-based request implementation.
 
     Requires ``pip install python-cqrs[pydantic]``. The default ``Request``
     alias points at ``DCRequest``.
+
+    ``class Query(PydanticRequest[Result])`` publishes ``Result`` the same way
+    ``Request[Result]`` does. An unparameterized subclass stays valid.
+
+    [AI Instruction]
+    Subclass this instead of ``Request`` when the command or query must be
+    validated. Install the pydantic extra first. Parameterize it the same way:
+    ``PydanticRequest[Result]`` or ``PydanticRequest[None]``.
     """
 
     @classmethod
@@ -109,6 +135,10 @@ class PydanticResponse(pydantic.BaseModel, IResponse):
 
     Requires ``pip install python-cqrs[pydantic]``. The default ``Response``
     alias points at ``DCResponse``.
+
+    [AI Instruction]
+    Subclass this instead of ``Response`` when a query result or stream
+    element must be validated. Install the pydantic extra first.
     """
 
     @classmethod

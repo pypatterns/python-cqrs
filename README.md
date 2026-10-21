@@ -55,9 +55,6 @@
 
 An event-driven framework for building distributed systems in Python. It centers on CQRS (Command Query Responsibility Segregation) and extends into messaging, sagas, and reliable event delivery — so you can separate read and write flows, react to events from the bus, run distributed transactions with compensation, and publish events via Transaction Outbox. The result is clearer structure, better scalability, and easier evolution of the application.
 
-This package is a fork of the [diator](https://github.com/akhundMurad/diator)
-project ([documentation](https://akhundmurad.github.io/diator/)) with several enhancements, ordered by importance:
-
 **Core framework**
 
 1. Redesigned the event and request mapping mechanism to handlers;
@@ -111,6 +108,8 @@ Default `Request` / `Response` / `Event` / `DomainEvent` / `NotificationEvent` a
 are dataclass-based (`DC*`). Use `Pydantic*` types with the pydantic extra when you
 need validation.
 
+Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGENTS.md). Copy that file into the application repository.
+
 
 ## Quick Start
 
@@ -121,12 +120,12 @@ import di
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 
-class CreateOrderCommand(cqrs.Request):
+class CreateOrderCommand(cqrs.Request[None]):
     order_id: str
     amount: float
 
-class CreateOrderHandler(cqrs.RequestHandler[CreateOrderCommand, None]):
-    async def handle(self, request: CreateOrderCommand) -> None:
+class CreateOrderHandler(cqrs.RequestHandler[CreateOrderCommand]):
+    async def handle(self, request: CreateOrderCommand):
         print(f"Order {request.order_id}, amount {request.amount}")
 
 def commands_mapper(mapper: cqrs.RequestMap) -> None:
@@ -203,14 +202,20 @@ Request handlers can be divided into two main types:
 Command Handler executes the received command. The logic of the handler may include, for example, modifying the state of
 the domain model.
 As a result of executing the command, an event may be produced to the broker.
+
 > [!TIP]
 > By default, the command handler does not return any result, but it is not mandatory.
 
 ```python
+import cqrs
 from cqrs.handlers.request import RequestHandler
 from cqrs.models.event import Event
 
-class JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):
+class JoinMeetingCommand(cqrs.Request[None]):
+    user_id: str
+    meeting_id: str
+
+class JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand]):
 
       def __init__(self, meetings_api: MeetingAPIProtocol) -> None:
           self._meetings_api = meetings_api
@@ -220,25 +225,36 @@ class JoinMeetingCommandHandler(RequestHandler[JoinMeetingCommand, None]):
       def events(self) -> typing.List[events.Event]:
           return self._events
 
-      async def handle(self, request: JoinMeetingCommand) -> None:
+      async def handle(self, request: JoinMeetingCommand):
           await self._meetings_api.join_user(request.user_id, request.meeting_id)
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py).
+The one-argument form is in
+[`examples/events/typed_request_handler.py`](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/typed_request_handler.py).
 
 ### Query handler
 
 Query Handler returns a representation of the requested data, for example, from
 the [read model](https://radekmaziarka.pl/2018/01/08/cqrs-third-step-simple-read-model/#simple-read-model---to-the-rescue).
+
 > [!TIP]
 > The read model can be constructed based on domain events produced by the `Command Handler`.
 
 ```python
+import cqrs
 from cqrs.handlers.request import RequestHandler
 from cqrs.models.event import Event
 
-class ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryResult]):
+class ReadMeetingQueryResult(cqrs.Response):
+    link: str
+    meeting_id: str
+
+class ReadMeetingQuery(cqrs.Request[ReadMeetingQueryResult]):
+    meeting_id: str
+
+class ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery]):
 
       def __init__(self, meetings_api: MeetingAPIProtocol) -> None:
           self._meetings_api = meetings_api
@@ -248,14 +264,16 @@ class ReadMeetingQueryHandler(RequestHandler[ReadMeetingQuery, ReadMeetingQueryR
       def events(self) -> typing.List[events.Event]:
           return self._events
 
-      async def handle(self, request: ReadMeetingQuery) -> ReadMeetingQueryResult:
+      async def handle(self, request: ReadMeetingQuery):
           link = await self._meetings_api.get_link(request.meeting_id)
           return ReadMeetingQueryResult(link=link, meeting_id=request.meeting_id)
 
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/request_handler.py).
+The one-argument form is in
+[`examples/events/typed_request_handler.py`](https://github.com/vadikko2/python-cqrs/blob/master/examples/events/typed_request_handler.py).
 
 ### Streaming Request Handler
 
@@ -266,11 +284,18 @@ real-time progress updates.
 `StreamingRequestHandler` works with `StreamingRequestMediator` that streams results to clients in real-time.
 
 ```python
-import typing
+import cqrs
 from cqrs.handlers.request import StreamingRequestHandler
 from cqrs.models.event import Event
 
-class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand, FileProcessedResult]):
+class FileProcessedResult(cqrs.Response):
+    file_id: str
+    status: str
+
+class ProcessFilesCommand(cqrs.Request[FileProcessedResult]):
+    file_ids: list[str]
+
+class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand]):
     def __init__(self):
         self._events: list[Event] = []
 
@@ -281,7 +306,7 @@ class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand, Fi
     def clear_events(self) -> None:
         self._events.clear()
 
-    async def handle(self, request: ProcessFilesCommand) -> typing.AsyncIterator[FileProcessedResult]:
+    async def handle(self, request: ProcessFilesCommand):
         for file_id in request.file_ids:
             # Process file
             result = FileProcessedResult(file_id=file_id, status="completed", ...)
@@ -291,7 +316,9 @@ class ProcessFilesCommandHandler(StreamingRequestHandler[ProcessFilesCommand, Fi
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming/streaming_handler_parallel_events.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming/streaming_handler_parallel_events.py).
+The one-argument form is in
+[`examples/streaming/typed_streaming_handler.py`](https://github.com/vadikko2/python-cqrs/blob/master/examples/streaming/typed_streaming_handler.py).
 
 ### Chain of Responsibility Request Handler
 
@@ -304,10 +331,18 @@ when a handler successfully processes the request or when all handlers have been
 
 ```python
 import typing
+import cqrs
 from cqrs.handlers.cor import CORRequestHandler
 from cqrs.models.event import Event
 
-class CreditCardPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
+class PaymentResult(cqrs.Response):
+    success: bool
+    transaction_id: str
+
+class ProcessPaymentCommand(cqrs.Request[PaymentResult]):
+    payment_method: str
+
+class CreditCardPaymentHandler(CORRequestHandler[ProcessPaymentCommand]):
     def __init__(self, payment_service: PaymentServiceProtocol) -> None:
         self._payment_service = payment_service
         self._events: typing.List[Event] = []
@@ -316,7 +351,7 @@ class CreditCardPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentR
     def events(self) -> typing.List[Event]:
         return self._events
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand):
         if request.payment_method == "credit_card":
             # Process credit card payment
             result = await self._payment_service.process_credit_card(request)
@@ -326,7 +361,7 @@ class CreditCardPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentR
         # Pass to next handler
         return await self.next(request)
 
-class PayPalPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResult]):
+class PayPalPaymentHandler(CORRequestHandler[ProcessPaymentCommand]):
     def __init__(self, paypal_service: PayPalServiceProtocol) -> None:
         self._paypal_service = paypal_service
         self._events: typing.List[Event] = []
@@ -335,7 +370,7 @@ class PayPalPaymentHandler(CORRequestHandler[ProcessPaymentCommand, PaymentResul
     def events(self) -> typing.List[Event]:
         return self._events
 
-    async def handle(self, request: ProcessPaymentCommand) -> PaymentResult | None:
+    async def handle(self, request: ProcessPaymentCommand):
         if request.payment_method == "paypal":
             # Process PayPal payment
             result = await self._paypal_service.process_payment(request)
@@ -354,7 +389,9 @@ def payment_mapper(mapper: cqrs.RequestMap) -> None:
 ```
 
 A complete example can be found in
-the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor/cor_request_handler.py)
+the [documentation](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor/cor_request_handler.py).
+The one-argument form is in
+[`examples/cor/typed_cor_request_handler.py`](https://github.com/vadikko2/python-cqrs/blob/master/examples/cor/typed_cor_request_handler.py).
 
 #### Mermaid Diagram Generation
 
@@ -726,7 +763,11 @@ Complete example: [Saga Mermaid Diagrams](https://github.com/vadikko2/python-cqr
 During the handling of a command, `cqrs.NotificationEvent` events may be generated and then sent to the broker.
 
 ```python
-class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
+class JoinMeetingCommand(cqrs.Request[None]):
+    user_id: str
+    meeting_id: str
+
+class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand]):
     def __init__(self):
         self._events = []
 
@@ -734,7 +775,7 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
     def events(self):
         return self._events
 
-    async def handle(self, request: JoinMeetingCommand) -> None:
+    async def handle(self, request: JoinMeetingCommand):
         print(f"User {request.user_id} joined meeting {request.meeting_id}")
         self._events.append(
             cqrs.NotificationEvent[UserJoinedNotificationPayload](
@@ -794,7 +835,11 @@ The package implements the [Transactional Outbox](https://microservices.io/patte
 pattern, which ensures that messages are produced to the broker according to the at-least-once semantics.
 
 ```python
-class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
+class JoinMeetingCommand(cqrs.Request[None]):
+    user_id: str
+    meeting_id: str
+
+class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand]):
     def __init__(self, outbox: cqrs.OutboxedEventRepository):
         self.outbox = outbox
 
@@ -802,7 +847,7 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
     def events(self):
         return []
 
-    async def handle(self, request: JoinMeetingCommand) -> None:
+    async def handle(self, request: JoinMeetingCommand):
         print(f"User {request.user_id} joined meeting {request.meeting_id}")
         # Outbox repository is bound to a session (e.g. via DI request scope).
         # add() takes only the event; commit() persists the outbox and your changes.
@@ -839,12 +884,14 @@ A runnable FastAPI flow (route → command → transactional outbox → publishe
 > The Outbox table is named `outbox` by default. To rename it, or to attach the model to your own declarative
 > base, use `cqrs.rebind_outbox_model(OutboxModel, Base, table_name="my_outbox_table")` at startup — before
 > `create_all()`, before generating migrations and before the first query.
+
 > [!TIP]
 > `SqlAlchemyOutboxedEventRepository` works on **MySQL/MariaDB** and **PostgreSQL**: the outbox columns are
 > rendered with dialect-aware types (`BINARY(16)` on MySQL, `UUID`/`BYTEA` on PostgreSQL), with a portable
 > `BLOB` fallback for other dialects. Switching databases is a DSN change only — see the
 > [Database Support](https://mkdocs.python-cqrs.dev/outbox/databases/) docs for the DDL, the Alembic recipe and
 > how to register a native type for your own database.
+
 > [!TIP]
 > For Protobuf events, implement `proto()` / `from_proto()` and register a
 > `ProtobufEventSerializer` on an `OutboxedEventMap`. JSON stays the default —
@@ -909,7 +956,11 @@ To configure event handling, you need to implement a broker consumer on the side
 Below is an example of `Kafka event consuming` that can be used in the Presentation Layer.
 
 ```python
-class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
+class JoinMeetingCommand(cqrs.Request[None]):
+    user_id: str
+    meeting_id: str
+
+class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand]):
     def __init__(self):
         self._events = []
 
@@ -917,7 +968,7 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand, None]):
     def events(self):
         return self._events
 
-    async def handle(self, request: JoinMeetingCommand) -> None:
+    async def handle(self, request: JoinMeetingCommand):
         STORAGE[request.meeting_id].append(request.user_id)
         self._events.append(
             UserJoined(user_id=request.user_id, meeting_id=request.meeting_id),

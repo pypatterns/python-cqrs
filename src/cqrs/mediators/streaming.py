@@ -17,6 +17,8 @@ from cqrs.middlewares.base import MiddlewareChain
 from cqrs.models.request import IRequest
 from cqrs.models.response import IResponse
 
+_StreamResT = typing.TypeVar("_StreamResT")
+
 
 class StreamingRequestMediator:
     """
@@ -25,6 +27,11 @@ class StreamingRequestMediator:
     This mediator works with handlers that are generators. It processes requests
     by iterating through the generator, emitting events after each yield, and
     streaming results back to the client.
+
+    [AI Instruction]
+    Entry point for a handler that yields many results. Build it with
+    ``bootstrap_streaming``. Iterate ``stream`` with ``async for``. A request
+    that returns one value belongs on ``RequestMediator.send``.
 
     Usage::
 
@@ -85,8 +92,8 @@ class StreamingRequestMediator:
 
     def stream(
         self,
-        request: IRequest,
-    ) -> typing.AsyncGenerator[IResponse | None, None]:
+        request: IRequest[_StreamResT],
+    ) -> typing.AsyncGenerator[_StreamResT, None]:
         """
         Stream results from a generator-based handler.
 
@@ -102,8 +109,21 @@ class StreamingRequestMediator:
         The consumer must exhaust the iterator or call ``aclose()`` /
         ``async with contextlib.aclosing(...)``. An abandoned SEND stream keeps
         the UoW alive until the generator is garbage-collected.
+
+        [AI Instruction]
+        Start the streaming handler. Do not await ``stream``; iterate it with
+        ``async for``. Each element is the request's type parameter
+        (``Request[Result]`` yields ``Result``; an unparameterized request
+        yields ``Any``). After every yield the mediator emits that step's
+        events, then the value reaches the caller. Exhaust the iterator or
+        close it with ``aclose`` / ``contextlib.aclosing``. Abandoning a
+        ``ScopeStrategy.SEND`` stream keeps the unit of work open until
+        garbage collection.
         """
-        return self._stream_impl(request)
+        return typing.cast(
+            typing.AsyncGenerator[_StreamResT, None],
+            self._stream_impl(request),
+        )
 
     async def _stream_impl(
         self,

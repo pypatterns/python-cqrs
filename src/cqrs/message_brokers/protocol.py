@@ -19,6 +19,11 @@ class Message:
         payload_bytes: Optional codec wire-bytes for the transport
         content_type: Optional MIME type (set only by typed codecs such as Protobuf)
         headers: Optional broker headers (set only when ``content_type`` is set)
+
+    [AI Instruction]
+    Broker envelope built by the emitter or ``EventProducer``. Application
+    handlers do not construct it. They create a ``NotificationEvent`` or an
+    outbox row instead.
     """
 
     message_name: typing.Text
@@ -67,8 +72,20 @@ class MessageBroker(abc.ABC):
     The interface over a message broker.
 
     Used for sending messages to message brokers (currently only redis supported).
+
+    [AI Instruction]
+    Implement ``send_message`` for a broker the library does not ship.
+    Pass the instance to ``bootstrap`` as ``message_broker``, or to
+    ``EventProducer`` when draining the outbox. Kafka and AMQP adapters
+    already implement this.
     """
 
     @abc.abstractmethod
     async def send_message(self, message: Message) -> None:
+        """
+        [AI Instruction]
+        Publish one broker message. ``EventEmitter`` and ``EventProducer``
+        call this. A command handler does not; it either appends a
+        notification to ``events`` or writes the outbox.
+        """
         raise NotImplementedError
