@@ -26,6 +26,10 @@ pytest -c ./tests/pytest-config.ini ./tests/unit
 
 Integration tests use `docker-compose-test.yml`. New behavior needs a unit test under `tests/unit`.
 
+## Examples and application guidance
+
+Feature choice for an application (command, query, domain event, notification, outbox, saga, chain of responsibility, streaming, validation, FastAPI, FastStream, SQLAlchemy, SQLModel, `di`, dishka, dependency-injector) lives in [`templates/AGENTS.md`](templates/AGENTS.md). Examples and docs in this repository follow that file. This file stays the rules for changing the library.
+
 ## API shape
 
 - Commands and queries are both `cqrs.Request`. Do not add a `Query` base, a `Command` base, or a `CommandBus`.
