@@ -46,6 +46,14 @@ Outbox on ``cqrs``: ``OutboxedEventRepository``, ``OutboxedEventMap``,
 the ``sqlmodel`` extra. Codecs on ``cqrs``: ``JsonEventSerializer``,
 ``ProtobufEventSerializer`` (extra ``protobuf``).
 
+Inbox on ``cqrs``: ``InboxRepository``, ``InboxMessage``, ``InboxStatus``,
+``InboxMessageMap``, ``InboxProcessor``. ``SqlAlchemyInboxRepository`` and
+``rebind_inbox_model`` are lazy and need the ``sqlalchemy`` extra.
+``SqlModelInboxRepository`` is lazy and needs the ``sqlmodel`` extra.
+Presentation calls ``add`` with a batch. ``InboxProcessor`` reads rows and
+calls the mediator that is already registered. FastAPI and FastStream are
+not imported here.
+
 Brokers are not on ``cqrs``. Kafka is
 ``cqrs.adapters.kafka.kafka_producer_factory`` plus
 ``cqrs.message_brokers.kafka.KafkaMessageBroker`` (extra ``kafka``). AMQP is
@@ -79,6 +87,11 @@ if typing.TYPE_CHECKING:
     )
     from cqrs.models.pydantic import PydanticRequest
     from cqrs.models.pydantic import PydanticResponse
+    from cqrs.inbox.sqlalchemy import (
+        SqlAlchemyInboxRepository,
+        rebind_inbox_model,
+    )
+    from cqrs.inbox.sqlmodel import SqlModelInboxRepository
     from cqrs.outbox.sqlalchemy import (
         SqlAlchemyOutboxedEventRepository,
         rebind_outbox_model,
@@ -126,6 +139,9 @@ from cqrs.mediators import (
     SagaMediator,
     StreamingRequestMediator,
 )
+from cqrs.inbox.map import InboxMessageMap
+from cqrs.inbox.processor import InboxProcessor
+from cqrs.inbox.repository import InboxMessage, InboxRepository, InboxStatus
 from cqrs.mapping.outbox import OutboxedEventMap
 from cqrs.outbox.repository import (
     EventStatus,
@@ -202,6 +218,13 @@ __all__ = (
     "OutboxedEventRepository",
     "SqlAlchemyOutboxedEventRepository",
     "SqlModelOutboxedEventRepository",
+    "InboxRepository",
+    "InboxMessage",
+    "InboxStatus",
+    "InboxMessageMap",
+    "InboxProcessor",
+    "SqlAlchemyInboxRepository",
+    "SqlModelInboxRepository",
     "EventProducer",
     "EventSerializer",
     "EventCodec",
@@ -220,6 +243,7 @@ __all__ = (
     "Compressor",
     "ZlibCompressor",
     "rebind_outbox_model",
+    "rebind_inbox_model",
     "Saga",
     "SagaStepHandler",
     "SagaStepResult",
@@ -252,6 +276,11 @@ _LAZY_SQLALCHEMY = {
         "SqlAlchemyOutboxedEventRepository",
     ),
     "rebind_outbox_model": ("cqrs.outbox.sqlalchemy", "rebind_outbox_model"),
+    "SqlAlchemyInboxRepository": (
+        "cqrs.inbox.sqlalchemy",
+        "SqlAlchemyInboxRepository",
+    ),
+    "rebind_inbox_model": ("cqrs.inbox.sqlalchemy", "rebind_inbox_model"),
     "DialectAwareType": ("cqrs.sqlalchemy_types", "DialectAwareType"),
     "DialectTypeHandler": ("cqrs.sqlalchemy_types", "DialectTypeHandler"),
     "UUIDBinary": ("cqrs.sqlalchemy_types", "UUIDBinary"),
@@ -264,6 +293,10 @@ _LAZY_SQLMODEL = {
     "SqlModelOutboxedEventRepository": (
         "cqrs.outbox.sqlmodel",
         "SqlModelOutboxedEventRepository",
+    ),
+    "SqlModelInboxRepository": (
+        "cqrs.inbox.sqlmodel",
+        "SqlModelInboxRepository",
     ),
 }
 
