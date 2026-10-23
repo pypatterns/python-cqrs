@@ -13,6 +13,7 @@ Full write-ups live at [mkdocs.python-cqrs.dev](https://mkdocs.python-cqrs.dev/)
 | Another part of this process must react before `send` returns | `DomainEvent` on the handler `events` property |
 | Another service must hear about the change, and losing the message is acceptable | `NotificationEvent` on `events`, plus a real broker on bootstrap |
 | The database row and the broker message must commit together | Transactional outbox in the same session. Leave `events` empty for that notification |
+| A broker or HTTP endpoint only accepts a command or event, and a separate process must run it and survive a repeat delivery | Transactional inbox. Do not call `mediator.send` in that subscriber or route |
 | Several steps cross services or databases and a finished step must be undone | Orchestrated saga |
 | Several strategies can handle one request, and the first match wins | Chain of responsibility |
 | One request produces many results over time (progress, batch, SSE) | `StreamingRequestHandler` and `StreamingRequestMediator.stream` |
@@ -158,6 +159,38 @@ Anti-patterns:
 - Share one outbox repository instance across concurrent requests. The repository holds the request session.
 - Register the event type only in the publisher and not in the writer. Both sides resolve `event_name` through the map they were given.
 
+## Transactional inbox
+
+Use the inbox when a broker or an HTTP endpoint only accepts a command or an event, and a separate process must run the handler. The transport is at-least-once. `add` always takes a batch of `(message_id, message)` and returns `list[bool]` of the same length. `True` means the row was inserted. `False` means `(message_id, message_name)` is already stored, including earlier in the same batch. An empty batch returns `[]`. `add` does not commit. The caller opens a session, calls `add`, and commits.
+
+FastAPI passes a batch of one element and returns 202. FastStream passes the Kafka batch from `batch=True`. Ack, or the HTTP response, happens after that commit. A `False` in the list is still ack or 202: the message is already in the inbox. An exception before the commit rolls the batch back, and the transport delivers it again.
+
+`open_scope` and `bind_scope` are only when that same presentation transaction must also write another row.
+
+`get_many` and `mediator.send` live in another process. Construct `InboxProcessor` with the repository for that batch session, the message map, and the mediators. `process` takes the row. It deserializes each row and sends a `Request` through `RequestMediator` or an event through `EventMediator`. The handler is the one already registered. It does not call `session.commit`. The worker opens one session for the batch, builds the repository and the handler's mediator from that session, and commits the business rows and the status together. A handler exception rolls back only that row's savepoint. `not_processed` increments `flush_counter`. After five failures the row leaves `get_many`.
+
+Register every message name before the first read or write. Requests and domain events use the class name. Notification events use `event_name`, the same string the outbox stores. A second registration of the same name raises `KeyError`. Prefer an `InboxMessageMap()` instance when tests must not share the process-global map. JSON is the default codec.
+
+```python
+message_map = cqrs.InboxMessageMap()
+message_map.register("ProcessDeposit", ProcessDeposit)
+
+async with session_factory() as session:
+    inbox = cqrs.SqlAlchemyInboxRepository(session, message_map=message_map)
+    stored = await inbox.add([("msg-1", ProcessDeposit(account_id="acc-1", amount="10.00"))])
+    await session.commit()
+```
+
+`SqlAlchemyInboxRepository` needs `python-cqrs[sqlalchemy]`. `SqlModelInboxRepository` needs `python-cqrs[sqlmodel]`. Both are lazy on `cqrs`. `get_many` locks rows with `FOR UPDATE SKIP LOCKED` on PostgreSQL and MySQL. Call `cqrs.rebind_inbox_model` when Alembic must see the inbox table on the application metadata.
+
+Anti-patterns:
+
+- A second method that adds one message. `add` already takes a batch of one.
+- `ack` or the HTTP response before the session commits.
+- `mediator.send` in the route or the subscriber that only accepts work.
+- One session shared by presentation and the processor. Presentation commits the inbox row. The processor opens another session later.
+- `enter_scope` around a plain `add`. Use `open_scope` only when the presentation transaction also writes another row.
+
 ## Saga
 
 Use an orchestrated saga when a flow has several steps across processes or data stores, a later step can fail, and each finished step has a `compensate`. `SagaMediator` runs steps in order, persists progress, and compensates completed steps in reverse. Resume a crashed run with `cqrs.saga.recovery.recover_saga` and the same `scope_strategy`.
@@ -278,6 +311,8 @@ Anti-patterns:
 
 The route authenticates, reads path and body, builds one request, and calls the mediator. Business writes, events, and the outbox stay in the handler.
 
+`mediator.send` stays the path when the response needs the handler result. When the route can answer before the handler runs, accept the command or event into the transactional inbox (`InboxRepository.add` of a one-element batch, status 202) and process it in another process. The route does not call the mediator.
+
 Build the mediator once at startup. A mediator is safe to reuse. The per-request object is the scope (session, unit of work), not a new mediator and not a new container.
 
 ```python
@@ -320,6 +355,8 @@ Anti-patterns:
 ## FastStream
 
 FastStream is the consumer (and, if you publish without the outbox, a place to lose messages). Incoming facts go to `EventMediator`. Incoming work that must run as a use case can be a command, after the subscriber has decoded and accepted the message.
+
+`mediator.send` stays the path when this delivery must finish the handler before ack. When the subscriber only accepts work, open a session, pass the Kafka batch (`batch=True`) to `InboxRepository.add`, commit, and ack after that commit. A duplicate in the batch is still ack. The processor calls the mediator later. `open_scope` is only when that transaction also writes another row.
 
 ```python
 import di

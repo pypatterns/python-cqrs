@@ -28,10 +28,13 @@ Integration tests use `docker-compose-test.yml`. New behavior needs a unit test 
 
 ## Examples and application guidance
 
-Feature choice for an application (command, query, domain event, notification, outbox, saga, chain of responsibility, streaming, validation, FastAPI, FastStream, SQLAlchemy, SQLModel, `di`, dishka, dependency-injector) lives in [`templates/AGENTS.md`](templates/AGENTS.md). Examples and docs in this repository follow that file. This file stays the rules for changing the library.
+Feature choice for an application (command, query, domain event, notification, outbox, inbox, saga, chain of responsibility, streaming, validation, FastAPI, FastStream, SQLAlchemy, SQLModel, `di`, dishka, dependency-injector) lives in [`templates/AGENTS.md`](templates/AGENTS.md). Examples and docs in this repository follow that file. This file stays the rules for changing the library.
 
 ## API shape
 
 - Commands and queries are both `cqrs.Request`. Do not add a `Query` base, a `Command` base, or a `CommandBus`.
+- The inbox does not add a `Command` base, an `IdempotentCommand`, or middleware. Presentation calls `InboxRepository.add`. `InboxProcessor` takes the `InboxRepository` in `__init__`. `process` takes the row. It calls the mediator that is already registered. The caller owns the session and the commit.
+- `SqlAlchemyInboxRepository`, `SqlModelInboxRepository`, and `rebind_inbox_model` stay lazy through `__getattr__`, the same way the outbox repositories do. Do not import them from the package root at import time.
+- FastAPI and FastStream are not imported by `src/cqrs`. Accepting a message is an example, not a core dependency.
 - One handler per request type (`RequestMap.bind` raises `KeyError` on a second bind). Many handlers per event (`EventMap.bind` appends).
 - A new request with a body is `Request[Result]` and `RequestHandler[ThatRequest]`. Do not write a redundant `-> Result` on `handle`. A command with an empty body is `Request[None]`. Existing `Request` and `RequestHandler[Request, Result]` stay valid; `send` on an unparameterized `Request` is `Any`.
