@@ -8,7 +8,7 @@ The default workflow below targets the **current major** (`master` / **5.x**). F
 
 ## 1. Prerequisites
 
-- **Python Version:** Python **3.10** or higher (3.10, 3.11, 3.12, 3.13 are supported).
+- **Python Version:** Python **3.10** or higher (3.10, 3.11, 3.12, 3.13, 3.14 are supported).
 - **Git** installed on your system.
 - *(Optional, for integration tests)*: **Docker** & **Docker Compose**. `docker-compose-test.yml` provides MySQL, PostgreSQL, and Redis. Kafka is available separately in `docker-compose-dev.yml` for local broker experiments; RabbitMQ is not defined in either Compose file.
 
