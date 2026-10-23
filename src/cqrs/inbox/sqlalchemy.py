@@ -69,7 +69,6 @@ def create_sqlite_inbox_table(sync_connection: typing.Any) -> None:
     ``Base.metadata`` as-is.
     """
 
-    sync_connection.exec_driver_sql("DROP TABLE IF EXISTS inbox")
     sync_connection.exec_driver_sql(SQLITE_INBOX_DDL)
 
 

@@ -6,12 +6,13 @@ mediator. ``inbox_repository`` opens a session, yields
 ``SqlAlchemyInboxRepository``, commits when the subscriber returns, and rolls
 back when it raises. FastStream acks the batch after that generator exits, so
 the offset is committed only after the database commit. ``False`` from ``add``
-is still ack: that message was already stored. An exception rolls the batch
-back and skips ack, so Kafka delivers it again.
+is still ack: that message was already stored. ``retry=True`` nacks the batch
+on exception, and Kafka seeks back to those records.
 
-Each idempotency key is ``{offset}-{timestamp}``, the id FastStream assigns
-to one Kafka record. An event subscriber is the same shape with a
-``NotificationEvent`` or ``DomainEvent`` in the batch instead of a command.
+Each idempotency key is ``{topic}-{partition}-{offset}``. An offset is unique
+inside one partition, so the key includes the topic and the partition.
+An event subscriber is the same shape with a ``NotificationEvent`` or
+``DomainEvent`` in the batch instead of a command.
 
 Run (Kafka must be reachable)::
 
@@ -70,6 +71,7 @@ async def inbox_repository() -> typing.AsyncIterator[cqrs.InboxRepository]:
     batch=True,
     max_records=500,
     auto_commit=False,
+    retry=True,
     group_id="deposits-inbox",
 )
 async def on_deposits(
@@ -83,7 +85,7 @@ async def on_deposits(
     await inbox.add(
         [
             (
-                f"{record.offset}-{record.timestamp}",
+                f"{record.topic}-{record.partition}-{record.offset}",
                 ProcessDeposit(
                     account_id=body["account_id"],
                     amount=body["amount"],

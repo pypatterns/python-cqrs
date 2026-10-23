@@ -41,6 +41,21 @@ async def session_factory():
     os.remove(path)
 
 
+async def test_create_sqlite_inbox_table_keeps_existing_rows(session_factory):
+    message_map = _map()
+    async with session_factory() as session:
+        repository = cqrs.SqlAlchemyInboxRepository(session, message_map=message_map)
+        assert await repository.add([("m1", _deposit())]) == [True]
+        await session.commit()
+
+    async with session_factory() as session:
+        connection = await session.connection()
+        await connection.run_sync(create_sqlite_inbox_table)
+        repository = cqrs.SqlAlchemyInboxRepository(session, message_map=message_map)
+        rows = await repository.get_many()
+        assert [row.message_id for row in rows] == ["m1"]
+
+
 async def test_duplicate_does_not_abort_the_outer_transaction(session_factory):
     message_map = _map()
     async with session_factory() as session:
