@@ -32,6 +32,9 @@ The producer will:
 
 Note: This example uses MockOutboxedEventRepository for demonstration. In production,
 you would use a real database-backed outbox repository (e.g., SQLAlchemyOutboxedEventRepository).
+The same loop's get_many on PostgreSQL, MySQL, and MariaDB holds rows until
+commit, and a second such process skips them. The mock in this file does not
+show that lock.
 
 ================================================================================
 WHAT THIS EXAMPLE DEMONSTRATES

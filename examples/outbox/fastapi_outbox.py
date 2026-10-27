@@ -18,6 +18,11 @@ Default: SQLite, no Docker
    pip install -e ".[examples]"
    python examples/outbox/fastapi_outbox.py
 
+This file runs on SQLite, so get_many does not lock rows. POST /outbox/publish
+already commits; on PostgreSQL, MySQL, and MariaDB that commit releases the
+lock. GET /outbox also calls get_many, and the session closes at the end of
+the request.
+
 The server listens on http://localhost:8000
 Open http://localhost:8000/docs and:
 

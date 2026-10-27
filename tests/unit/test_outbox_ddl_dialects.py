@@ -235,6 +235,27 @@ class TestBatchQueryStatusLiterals:
             assert value not in sql
 
 
+class TestBatchQuerySkipLocked:
+    """``lock=True`` is the row lock the repository turns on for capable dialects."""
+
+    @pytest.mark.parametrize("dialect_name", ["postgresql", "mysql", "mariadb"])
+    def test_lock_compiles_to_for_update_skip_locked(self, dialect_name):
+        query = OutboxModel.get_batch_query(10, lock=True)
+
+        sql = str(query.compile(dialect=dialect_by_name(dialect_name)))
+
+        assert "FOR UPDATE SKIP LOCKED" in sql
+
+    @pytest.mark.parametrize("dialect_name", ["postgresql", "mysql", "mariadb", "sqlite"])
+    def test_unlocked_query_omits_the_clause(self, dialect_name):
+        query = OutboxModel.get_batch_query(10, lock=False)
+
+        sql = str(query.compile(dialect=dialect_by_name(dialect_name)))
+
+        assert "FOR UPDATE" not in sql
+        assert "SKIP LOCKED" not in sql
+
+
 class TestValueConversion:
     """Values must travel to and from the database in the dialect representation."""
 

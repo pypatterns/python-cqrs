@@ -47,6 +47,7 @@ DEFAULT_OUTBOX_TABLE_NAME = "outbox"
 
 MAX_FLUSH_COUNTER_VALUE = 5
 
+_SKIP_LOCKED_DIALECTS = frozenset({"postgresql", "mysql", "mariadb"})
 
 # Deprecated name of cqrs.sqlalchemy_types.UUIDBinary — kept importable for
 # backward compatibility (e.g. already generated Alembic migrations).
@@ -125,8 +126,10 @@ class OutboxModel(Base):
         cls,
         size: int,
         topic: typing.Text | None = None,
+        *,
+        lock: bool = False,
     ) -> sqlalchemy.Select:
-        return (
+        query = (
             sqlalchemy.select(cls)
             .select_from(cls)
             .where(
@@ -145,6 +148,9 @@ class OutboxModel(Base):
             .order_by(cls.id.asc())
             .limit(size)
         )
+        if lock:
+            query = query.with_for_update(skip_locked=True)
+        return query
 
     @classmethod
     def update_status_query(
@@ -277,13 +283,23 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
             content_type=codec.content_type_for(event),
         )
 
+    def _skip_locked(self) -> bool:
+        bind = self.session.get_bind()
+        return bind.dialect.name in _SKIP_LOCKED_DIALECTS
+
     async def get_many(
         self,
         batch_size: int = 100,
         topic: typing.Text | None = None,
     ) -> typing.List[repository.OutboxedEvent]:
         events: typing.Sequence[typing.Any] = (
-            (await self.session.execute(self._model.get_batch_query(batch_size, topic))).scalars().all()
+            (
+                await self.session.execute(
+                    self._model.get_batch_query(batch_size, topic, lock=self._skip_locked()),
+                )
+            )
+            .scalars()
+            .all()
         )
 
         result = []
