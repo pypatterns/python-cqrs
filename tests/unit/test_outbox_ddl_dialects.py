@@ -17,7 +17,7 @@ from sqlalchemy.dialects import oracle
 from sqlalchemy.schema import CreateTable
 
 from cqrs.outbox import repository
-from cqrs.outbox.sqlalchemy import OutboxModel
+from cqrs.outbox.sqlalchemy import OutboxModel, SqlAlchemyOutboxedEventRepository
 from cqrs.sqlalchemy_types import (
     Binary16,
     DialectAwareType,
@@ -254,6 +254,133 @@ class TestBatchQuerySkipLocked:
 
         assert "FOR UPDATE" not in sql
         assert "SKIP LOCKED" not in sql
+
+
+class _Dialect:
+    def __init__(
+        self,
+        name: str,
+        server_version_info: tuple[int, ...] | None,
+        *,
+        is_mariadb: bool = False,
+    ):
+        self.name = name
+        self.server_version_info = server_version_info
+        self.is_mariadb = is_mariadb
+
+
+class _Result:
+    def scalars(self) -> "_Result":
+        return self
+
+    def all(self) -> list[object]:
+        return []
+
+
+class _Session:
+    """Stand-in for the bind dialect and the async connection that initializes it."""
+
+    def __init__(
+        self,
+        dialect: _Dialect,
+        on_connect: typing.Callable[[_Dialect], None] | None = None,
+    ):
+        self.dialect = dialect
+        self.on_connect = on_connect
+        self.connected = False
+        self.statement: typing.Any = None
+
+    def get_bind(self) -> "_Session":
+        return self
+
+    async def connection(self) -> None:
+        self.connected = True
+        if self.on_connect is not None:
+            self.on_connect(self.dialect)
+
+    async def execute(self, statement: typing.Any) -> _Result:
+        self.statement = statement
+        return _Result()
+
+
+def _query_locks(statement: typing.Any) -> bool:
+    sql = str(statement.compile(dialect=dialect_by_name("postgresql")))
+    return "FOR UPDATE SKIP LOCKED" in sql
+
+
+def _repository(session: _Session) -> SqlAlchemyOutboxedEventRepository:
+    return SqlAlchemyOutboxedEventRepository(typing.cast(typing.Any, session))
+
+
+class TestSkipLockedDialectVersions:
+    """Version gate for FOR UPDATE SKIP LOCKED. No live server."""
+
+    @pytest.mark.parametrize(
+        ("name", "version", "is_mariadb", "locked"),
+        [
+            ("mysql", (5, 7), False, False),
+            ("mysql", (8, 0), False, True),
+            ("mariadb", (10, 5), False, False),
+            ("mariadb", (10, 6), False, True),
+            ("mysql", (10, 5), True, False),
+            ("mysql", (10, 6), True, True),
+            ("postgresql", None, False, True),
+            ("sqlite", (3, 40, 1), False, False),
+        ],
+    )
+    async def test_known_version_selects_the_lock(self, name, version, is_mariadb, locked):
+        session = _Session(_Dialect(name, version, is_mariadb=is_mariadb))
+        repository = _repository(session)
+
+        await repository.get_many()
+
+        assert _query_locks(session.statement) is locked
+        assert session.connected is False
+
+    async def test_mysql_8_locks_once_the_connection_initializes_the_dialect(self):
+        def initialize(dialect: _Dialect) -> None:
+            dialect.server_version_info = (8, 0)
+
+        session = _Session(_Dialect("mysql", None), on_connect=initialize)
+        repository = _repository(session)
+
+        await repository.get_many()
+
+        assert session.connected is True
+        assert _query_locks(session.statement) is True
+
+    async def test_mariadb_flag_is_read_after_the_dialect_is_initialized(self):
+        """``(10, 5) >= (8, 0)`` must not lock a MariaDB that still looks like MySQL."""
+
+        def initialize(dialect: _Dialect) -> None:
+            dialect.server_version_info = (10, 5)
+            dialect.is_mariadb = True
+
+        session = _Session(_Dialect("mysql", None), on_connect=initialize)
+        repository = _repository(session)
+
+        await repository.get_many()
+
+        assert session.connected is True
+        assert _query_locks(session.statement) is False
+
+    async def test_unknown_version_after_connect_does_not_lock(self):
+        session = _Session(_Dialect("mysql", None))
+        repository = _repository(session)
+
+        await repository.get_many()
+
+        assert session.connected is True
+        assert _query_locks(session.statement) is False
+
+    async def test_postgresql_locks_without_waiting_for_a_version(self):
+        session = _Session(_Dialect("postgresql", None))
+        repository = _repository(session)
+
+        await repository.get_many()
+
+        assert session.connected is False
+        assert _query_locks(session.statement) is True
 
 
 class TestValueConversion:

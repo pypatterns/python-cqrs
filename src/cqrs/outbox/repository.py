@@ -110,9 +110,10 @@ class OutboxedEventRepository(abc.ABC):
         """
         Get many events from the repository.
 
-        SQLAlchemy and SQLModel on PostgreSQL, MySQL, and MariaDB take rows
-        with ``FOR UPDATE SKIP LOCKED`` until the caller commits or rolls
-        back. SQLite does not.
+        SQLAlchemy and SQLModel take rows with ``FOR UPDATE SKIP LOCKED`` on
+        PostgreSQL, MySQL 8.0 or later, and MariaDB 10.6 or later, until the
+        caller commits or rolls back. Older MySQL and MariaDB, SQLite, and
+        other dialects do not.
 
         [AI Instruction]
         Read a batch of unpublished outbox rows. ``EventProducer`` calls this.
