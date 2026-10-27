@@ -47,6 +47,23 @@ DEFAULT_OUTBOX_TABLE_NAME = "outbox"
 
 MAX_FLUSH_COUNTER_VALUE = 5
 
+# SKIP LOCKED arrived in MySQL 8.0 and MariaDB 10.6. PostgreSQL has it
+# without a version gate. Older servers and every other dialect stay unlocked.
+_MYSQL_SKIP_LOCKED_SINCE = (8, 0)
+_MARIADB_SKIP_LOCKED_SINCE = (10, 6)
+
+
+def _dialect_is_mariadb(dialect: typing.Any) -> bool:
+    """MariaDB via ``mariadb://`` or the MySQL dialect's ``is_mariadb`` flag.
+
+    A MariaDB reached through the MySQL dialect keeps ``dialect.name == "mysql"``
+    and a version such as ``(10, 5)``, which would pass a MySQL 8.0 check.
+    """
+
+    if getattr(dialect, "name", None) == "mariadb":
+        return True
+    return bool(getattr(dialect, "is_mariadb", False))
+
 
 # Deprecated name of cqrs.sqlalchemy_types.UUIDBinary — kept importable for
 # backward compatibility (e.g. already generated Alembic migrations).
@@ -125,8 +142,10 @@ class OutboxModel(Base):
         cls,
         size: int,
         topic: typing.Text | None = None,
+        *,
+        lock: bool = False,
     ) -> sqlalchemy.Select:
-        return (
+        query = (
             sqlalchemy.select(cls)
             .select_from(cls)
             .where(
@@ -145,6 +164,9 @@ class OutboxModel(Base):
             .order_by(cls.id.asc())
             .limit(size)
         )
+        if lock:
+            query = query.with_for_update(skip_locked=True)
+        return query
 
     @classmethod
     def update_status_query(
@@ -277,13 +299,44 @@ class SqlAlchemyOutboxedEventRepository(repository.OutboxedEventRepository):
             content_type=codec.content_type_for(event),
         )
 
+    async def _skip_locked(self) -> bool:
+        dialect = self.session.get_bind().dialect
+        name = dialect.name
+        if name == "postgresql":
+            return True
+        if name != "mysql" and name != "mariadb":
+            return False
+
+        # The dialect leaves server_version_info unset until the first
+        # connection runs initialize(). Reading it earlier looks like an old
+        # server and drops SKIP LOCKED on MySQL 8 and MariaDB 10.6.
+        version = getattr(dialect, "server_version_info", None)
+        if version is None:
+            await self.session.connection()
+            version = getattr(dialect, "server_version_info", None)
+        if version is None:
+            return False
+
+        minimum = _MARIADB_SKIP_LOCKED_SINCE if _dialect_is_mariadb(dialect) else _MYSQL_SKIP_LOCKED_SINCE
+        return tuple(version) >= minimum
+
     async def get_many(
         self,
         batch_size: int = 100,
         topic: typing.Text | None = None,
     ) -> typing.List[repository.OutboxedEvent]:
         events: typing.Sequence[typing.Any] = (
-            (await self.session.execute(self._model.get_batch_query(batch_size, topic))).scalars().all()
+            (
+                await self.session.execute(
+                    self._model.get_batch_query(
+                        batch_size,
+                        topic,
+                        lock=await self._skip_locked(),
+                    ),
+                )
+            )
+            .scalars()
+            .all()
         )
 
         result = []

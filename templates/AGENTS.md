@@ -141,6 +141,8 @@ await repository.commit()
 
 `EventProducer(broker, repository)` belongs in a publisher loop. After each batch, `commit` the repository so status updates stick. Rows that fail until `flush_counter` reaches five leave the selectable batch. Inspect those rows. The producer will not yield them again.
 
+On PostgreSQL, MySQL, and MariaDB, `get_many` holds that batch with `FOR UPDATE SKIP LOCKED` until the caller commits or rolls back; SQLite does not lock the rows.
+
 Install one storage extra and use it for both the outbox and saga tables in a process:
 
 | App ORM | Extra | Outbox | Saga storage |

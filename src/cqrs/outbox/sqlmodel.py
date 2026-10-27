@@ -140,9 +140,11 @@ class OutboxModel(Base, table=True):
         cls,
         size: int,
         topic: typing.Text | None = None,
+        *,
+        lock: bool = False,
     ) -> sqlalchemy.Select:
         query = SqlAlchemyOutboxModel.get_batch_query
-        return query.__func__(cls, size, topic)  # type: ignore[attr-defined]
+        return query.__func__(cls, size, topic, lock=lock)  # type: ignore[attr-defined]
 
     @classmethod
     def update_status_query(
