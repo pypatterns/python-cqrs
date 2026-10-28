@@ -116,7 +116,11 @@ Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGE
 Two registries: [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai). From your service's project root, not a clone of python-cqrs, either block is enough. Files land in `<app>/.agents/skills/<name>/`.
 
 ```bash
-npx skills add pypatterns/python-cqrs --skill cqrs-setup --skill cqrs-eda --skill cqrs-saga --skill cqrs-streaming --skill cqrs-cor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-setup -y
+npx skills add pypatterns/python-cqrs --skill cqrs-eda -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga -y
+npx skills add pypatterns/python-cqrs --skill cqrs-streaming -y
+npx skills add pypatterns/python-cqrs --skill cqrs-cor -y
 ```
 
 ```bash
