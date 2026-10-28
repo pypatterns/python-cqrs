@@ -32,7 +32,7 @@ The transport is at-least-once. Presentation stores the message and commits. The
 
 `add` always takes a batch. `True` inserted the row. `False` means the pair `(message_id, message_name)` is already stored. `add` does not commit. Ack or HTTP 202 happens after the commit. A duplicate is still ack or 202.
 
-`InboxProcessor.process` takes one row, deserializes it, and calls the mediator already registered for that request or event. The worker opens the processor session, and commits the business rows and the inbox status together. A handler exception rolls back only that row's savepoint. `not_processed` increments `flush_counter`. After five failures the row leaves `get_many`.
+`InboxProcessor.process` takes one row, deserializes it, and calls the mediator already registered for that request or event. The worker opens the processor session, and commits the business rows and the inbox status together. A request-handler exception rolls back only that row's savepoint. `not_processed` increments `flush_counter`. After five failures the row leaves `get_many`. A domain-handler exception is logged and does not fail `send`, so this path must not be the retry signal for that reaction. A crash after the handler runs and before the status commit can run the handler again.
 
 `open_scope` is only when that same presentation transaction also writes another row. A plain `add` does not need it.
 

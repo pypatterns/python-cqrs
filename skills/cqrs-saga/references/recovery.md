@@ -11,7 +11,8 @@ Use one saga id per business id. Do not start a second saga for an order that al
 - Forward steps that already finished are skipped.
 - A run that stopped mid-flight continues at the next step.
 - A run that stopped while compensating continues compensation in reverse.
-- A run that already reached a terminal status is left alone.
+- A run that already reached `COMPLETED` is left alone.
+- `FAILED` is not that stop. A failed compensation also leaves `FAILED`, and `recover_saga` still tries the compensation that is outstanding. `get_sagas_for_recovery` returns `RUNNING` and `COMPENSATING` only, so a `FAILED` saga is not in that scan. Find those rows another way and call `recover_saga`, or the unfinished compensation stays undone.
 
 Call it with an instance of the original saga class, not the class itself. Pass the same storage, the same container, and the same `scope_strategy` as the original `execute`. Import the function from `cqrs.saga.recovery`. It is not an attribute of `cqrs`.
 
@@ -19,7 +20,7 @@ Call it with an instance of the original saga class, not the class itself. Pass 
 
 Do not call `recover_saga` for a saga that another worker is still running.
 
-On a failed resume the storage increments recovery attempts. Callers do not increment that counter themselves. `get_sagas_for_recovery(max_recovery_attempts=...)` can exclude a run that has failed recovery too many times.
+On a failed resume after the context is rebuilt, the storage increments recovery attempts. A failure while loading state or rebuilding the context does not increment that counter, so a `RUNNING` saga can stay eligible for the next scan. Callers do not increment the counter themselves. `get_sagas_for_recovery(max_recovery_attempts=...)` can exclude a run that has failed recovery too many times.
 
 ## Memory storage and SQL storage
 

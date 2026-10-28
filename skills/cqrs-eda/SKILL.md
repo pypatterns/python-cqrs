@@ -32,7 +32,8 @@ Put the types in `app/events.py`. Keep the handler in `app/handlers.py` and the 
    Use this for a metric or a best-effort signal.
 4. For a notification that must commit with the business row, leave `events` empty for that notification.
    In the handler, `session.add` the business row and `repository.add` the notification on the same session.
-   `await repository.commit()` commits both.
+   `await repository.commit()` commits both when this handler is not the one an inbox worker sends.
+   A handler the inbox worker sends must not commit. The worker commits the business rows, the outbox rows, and the inbox status together.
    A separate process runs `cqrs.EventProducer`, then commits the repository so status updates stick.
    Register `event_name` on an `OutboxedEventMap` before the first read or write.
    A second registration of the same name raises `KeyError`.
@@ -69,11 +70,11 @@ Presentation owns `add` and the commit. The worker owns `get_many`, `InboxProces
 
 `SqlAlchemyInboxRepository` needs `python-cqrs[sqlalchemy]`. `SqlModelInboxRepository` needs `python-cqrs[sqlmodel]`. Both are lazy on `cqrs`. Register message names on an `InboxMessageMap` instance when tests must not share the process-global map. The same rule applies to `OutboxedEventMap`. JSON is the default codec.
 
-A handler exception in the worker rolls back only that row's savepoint. `not_processed` increments `flush_counter`. After five failures the row leaves `get_many`.
+A request-handler exception in the worker rolls back only that row's savepoint. `not_processed` increments `flush_counter`. After five failures the row leaves `get_many`. A domain-handler exception is logged and does not fail `send`, so the inbox can still mark the row processed. Do not use a domain event on an inbox request for a reaction that must cause a retry.
 
 ## How the four differ
 
-A domain event finishes before `send` returns. A notification on `events` is a best-effort publish. An outbox row commits with the business row and is published later. An inbox row commits before the handler runs, so a repeat delivery does not run the handler twice.
+A domain event finishes before `send` returns. A notification on `events` is a best-effort publish. An outbox row commits with the business row and is published later. An inbox row commits before the handler runs, so a repeat delivery does not insert a second row. A crash after the handler runs and before the status commit can run that handler again. Effects outside the worker transaction must be idempotent.
 
 One command may do two of these. The short shape appends `OrderPlaced` for this process and stores `OrderCreated` in the outbox. The inbox function only accepts `PlaceOrder` from outside. It does not call the mediator.
 

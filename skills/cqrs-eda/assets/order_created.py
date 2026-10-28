@@ -59,7 +59,8 @@ class PlaceOrderHandler(cqrs.RequestHandler[PlaceOrder]):
             ),
         )
         self._events.append(OrderPlaced(order_id=request.order_id))
-        await self._outbox.commit()
+        # The caller commits. An inbox worker commits after process, together
+        # with the inbox status. Do not commit inside handle on that path.
 
 
 class OrderPlacedHandler(cqrs.EventHandler[OrderPlaced]):

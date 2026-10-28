@@ -57,7 +57,7 @@ Use when a reaction stays in this process and in the same unit of work, and the 
 
 Skip when the next step is the rest of the same function, when nothing else listens, or when the work must reach another service. Skip it for slow I/O (email, HTTP to another service). The caller of `send` waits for every domain handler.
 
-Append a `cqrs.DomainEvent` on the handler `events` property. Register each `cqrs.EventHandler` on `domain_events_mapper`. `EventMap.bind` appends, so one event may have many handlers. With `ScopeStrategy.SEND`, those handlers run one after another on the command's session.
+Append a `cqrs.DomainEvent` on the handler `events` property. The default property returns an empty tuple, so define `self._events: list[cqrs.Event] = []` in `__init__` and override `events` to return that list. Do not call `append` on the default. Register each `cqrs.EventHandler` on `domain_events_mapper`. `EventMap.bind` appends, so one event may have many handlers. With `ScopeStrategy.SEND`, those handlers run one after another on the command's session.
 
 Neighbor: another service, or a message that must not be lost, is a notification plus the outbox, not a domain event. Steps are `cqrs-eda`.
 
@@ -67,7 +67,7 @@ Use when another service receives a fact and losing the message is acceptable: a
 
 Skip when nothing outside this process listens. A domain event is the in-process tool. Skip when the message must not be lost between `commit` and `broker.send`.
 
-A `cqrs.NotificationEvent` sets keyword-only `event_name`, `topic`, and `payload`. Put it on `events` only for the lossy case, and pass a real `message_broker` into bootstrap. A missing broker becomes a broker that discards messages.
+A `cqrs.NotificationEvent` sets keyword-only `event_name`, `topic`, and `payload`. Put it on `events` only for the lossy case, and pass a real `message_broker` into bootstrap. A missing broker becomes a broker that discards messages. The same mutable `events` list is required: the default property is an empty tuple.
 
 Neighbor: a durable publish is the outbox. An in-process reaction is a domain event. Steps are `cqrs-eda`.
 

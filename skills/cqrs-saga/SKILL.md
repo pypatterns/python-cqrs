@@ -65,16 +65,16 @@ A step that publishes does not call the broker beside `session.commit()`. It wri
 
 `app/sagas.py` holds the context, the step classes, the saga class, and `sagas_mapper`. Do not send that context through `RequestMediator`.
 
-Pass one `scope_strategy` into `cqrs.bootstrap.saga.bootstrap` and the same value into `recover_saga`. `ScopeStrategy.SEND` opens one scope for the run. `ScopeStrategy.HANDLER` opens a scope per step. `ScopeStrategy.NONE` leaves the unit of work to the step. A step does not open its own session when `SEND` already provided one.
+Pass one `scope_strategy` into `cqrs.bootstrap.saga.bootstrap` and the same value into `recover_saga`. `ScopeStrategy.SEND` opens one scope for the run. Saga storage still commits each checkpoint on its own session before that scope closes. If the business session commits only when the scope closes, a crash after the checkpoint and before that commit rolls back the business row and the outbox row, and recovery skips the step it already stored. Keep the step's effect in the same transaction as the checkpoint, or reconcile a skipped step whose effect never committed. `ScopeStrategy.HANDLER` opens a scope per step. `ScopeStrategy.NONE` leaves the unit of work to the step. A step does not open its own session when `SEND` already provided one.
 
 `execute` returns an async iterator. Do not await it. Exhaust the iterator or close it. An abandoned `SEND` iterator can keep its unit of work open until it is collected.
 
-A step may expose `events`. The mediator emits them after `act` succeeds, before the next step. Compensation reads ids on the context, not that list. A notification that must survive the step still goes through the outbox.
+A step may expose `events`. `mediator.execute` emits them after `act` succeeds, before the next step. `recover_saga` runs the transaction directly and does not emit those events. A crash after a checkpoint and before that emission can also drop events from a normal run. A fact that downstream logic needs still goes through the outbox. Compensation reads ids on the context, not that list.
 
 Storage classes are not attributes of `cqrs`. Import `MemorySagaStorage` from `cqrs.saga.storage.memory`, `SqlAlchemySagaStorage` from `cqrs.saga.storage.sqlalchemy`, and `SqlModelSagaStorage` from `cqrs.saga.storage.sqlmodel`. Create tables from the saga `Base.metadata` that matches the extra you installed. Production databases are PostgreSQL, MySQL, and MariaDB. SQLite is for examples.
 
 `act` returns `self._generate_step_result(cqrs.Response())` when the step has no payload for the caller. The transaction stamps `saga_id` on that result. Raise from `act` when the step cannot finish. Do not catch that error and continue to the next step. The mediator compensates the steps that already finished.
 
-Give `compensate` the same context fields `act` wrote. A missing id means that step did not finish, so `compensate` returns without calling the remote service. Calling release, refund, or cancel with an empty id creates a new failure during rollback.
+Give `compensate` the same context fields `act` wrote. A missing id does not prove the remote call failed: a timeout can happen after the service reserved the resource and before `act` stored the id. The mediator does not compensate a step that has not finished `act`, so that reservation can stay. Give the remote call an idempotency key, and look up or reconcile an uncertain result before you treat the step as undone. Recovery can also repeat `act` when the process stops before the checkpoint. Calling release, refund, or cancel with an empty id creates a new failure during rollback.
 
 Do not retry `act` from inside the step. The mediator records the failure and starts compensation. A circuit breaker belongs on a step that calls a failing remote dependency. It is not a substitute for `compensate`.

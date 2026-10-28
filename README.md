@@ -127,7 +127,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
 
 Cursor copies each skill to `.agents/skills/<name>/` under the application root. The files are copies, not symlinks. A later install does not replace a skill already there. They are not read from the virtualenv.
 
-Public installation comes from the `pypatterns/python-cqrs` repository. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. Catalog: [Agent skills](https://mkdocs.python-cqrs.dev/skills/).
+Public installation comes from the `pypatterns/python-cqrs` repository. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. Catalog: [Agent skills](https://mkdocs.python-cqrs.dev/latest/skills/).
 
 [ClawHub](https://clawhub.ai) is a separate publish. The `npx skills add` commands above do not publish there. After these skills are on `master`, check out that commit and publish the folders under `skills/` with the ClawHub CLI. Run it on that checkout. Do not run it from CI. `sync` publishes those folders and does not report install telemetry. The slug is the folder name: `cqrs-setup`, `cqrs-eda`, `cqrs-saga`, `cqrs-streaming`, or `cqrs-cor`. A skill published this way is released under MIT-0 on ClawHub.
 

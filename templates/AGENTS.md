@@ -41,10 +41,10 @@ npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
 npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
 ```
 
-- [`cqrs-setup`](../skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
-- [`cqrs-eda`](../skills/cqrs-eda/SKILL.md) builds a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
-- [`cqrs-saga`](../skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
-- [`cqrs-streaming`](../skills/cqrs-streaming/SKILL.md) and [`cqrs-cor`](../skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
+- [`.agents/skills/cqrs-setup/SKILL.md`](.agents/skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
+- [`.agents/skills/cqrs-eda/SKILL.md`](.agents/skills/cqrs-eda/SKILL.md) builds a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
+- [`.agents/skills/cqrs-saga/SKILL.md`](.agents/skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
+- [`.agents/skills/cqrs-streaming/SKILL.md`](.agents/skills/cqrs-streaming/SKILL.md) and [`.agents/skills/cqrs-cor/SKILL.md`](.agents/skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
 
 Start with `cqrs-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. ClawHub publish is the maintainer CLI in the library README, run from a checkout of `master` after merge.
 
