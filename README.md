@@ -31,6 +31,7 @@
 - [Overview](#overview)
 - [When NOT to use python-cqrs](#when-not-to-use-python-cqrs)
 - [Installation](#installation)
+- [Agent skills](#agent-skills)
 - [Quick Start](#quick-start)
 - [Request and Response Types](#request-and-response-types)
 - [Request Handlers](#request-handlers)
@@ -110,6 +111,27 @@ need validation.
 
 Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGENTS.md). Copy that file into the application repository.
 
+## Agent skills
+
+Run these from the application root. They install from `master` of this repository, not from the installed package version. See the [catalog](https://mkdocs.python-cqrs.dev/latest/skills/).
+
+```bash
+npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-eda -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
+```
+
+After the skills are on `master`, publish from that checkout, then install with `clawhub install @<owner>/<slug>`:
+
+```bash
+npm i -g clawhub
+clawhub login
+clawhub whoami
+clawhub sync --root ./skills --all --dry-run
+clawhub sync --root ./skills --all
+```
 
 ## Quick Start
 

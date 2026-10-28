@@ -29,6 +29,25 @@ Startup is not `cqrs.bootstrap`. Import the submodule:
 
 A missing `message_broker` becomes a broker that discards messages. Pass a real broker when a notification must leave the process. Logging middleware is added when the list does not already contain it.
 
+### Agent skills
+
+Install from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed package. Cursor copies each skill to `.agents/skills/<name>/`. The files are copies, not symlinks, and they are not in the virtualenv.
+
+```bash
+npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-eda -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
+```
+
+- [`.agents/skills/cqrs-setup/SKILL.md`](.agents/skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
+- [`.agents/skills/cqrs-eda/SKILL.md`](.agents/skills/cqrs-eda/SKILL.md) builds a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
+- [`.agents/skills/cqrs-saga/SKILL.md`](.agents/skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
+- [`.agents/skills/cqrs-streaming/SKILL.md`](.agents/skills/cqrs-streaming/SKILL.md) and [`.agents/skills/cqrs-cor/SKILL.md`](.agents/skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
+
+Start with `cqrs-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. ClawHub publish is the maintainer CLI in the library README, run from a checkout of `master` after merge.
+
 ## Commands and queries
 
 Commands and queries are both `cqrs.Request`. There is no `Query` class, no `Command` class, and no `CommandBus`. There is no `register_handler` decorator. Register with `mapper.bind(RequestType, Handler)`.
