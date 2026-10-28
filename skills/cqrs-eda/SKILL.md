@@ -1,14 +1,15 @@
 ---
-name: cqrs-event-driven
+name: cqrs-eda
 description: >-
   Wires a python-cqrs domain event, notification, transactional outbox,
-  and transactional inbox. Use when a fact stays in this process, must
-  reach another service, or must survive at-least-once delivery.
+  and transactional inbox, and runs independent domain handlers concurrently.
+  Use when a fact stays in this process, must reach another service, must
+  survive at-least-once delivery, or when handler order does not matter.
 ---
 
 # Event-driven delivery
 
-Read cqrs-core-setup before writing these types. This file builds the feature that skill already picked: a domain event, a notification, the outbox, or the inbox.
+Read cqrs-setup before writing these types. This file builds the feature that skill already picked: a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
 
 The package is already installed. Do not add an install step.
 
@@ -25,6 +26,7 @@ Put the types in `app/events.py`. Keep the handler in `app/handlers.py` and the 
    The mediator emits `events` after `handle` returns and before `send` returns.
    Keep those handlers idempotent when the command can be retried.
    With `ScopeStrategy.SEND` they run one after another on the command session.
+   Independent handlers are the parallel section below.
 3. For a notification that may be lost, append the `NotificationEvent` on `events` and pass a real `message_broker` to bootstrap.
    The default broker drops the message.
    Use this for a metric or a best-effort signal.
@@ -75,16 +77,46 @@ A domain event finishes before `send` returns. A notification on `events` is a b
 
 One command may do two of these. The short shape appends `OrderPlaced` for this process and stores `OrderCreated` in the outbox. The inbox function only accepts `PlaceOrder` from outside. It does not call the mediator.
 
+## Parallel domain handlers
+
+Use this when domain handlers do not share a session and the order of those handlers does not matter. Skip it when `ScopeStrategy.SEND` is the application's strategy, or when the handlers write one session. `cqrs-setup` already has that pair. This section only turns the flag on.
+
+`concurrent_event_handle_enable=True` is valid only with `cqrs.ScopeStrategy.HANDLER` or `cqrs.ScopeStrategy.NONE`. Never set it with `ScopeStrategy.SEND`. Bootstrap raises `ValueError` because those handlers would share one unit of work.
+
+1. Keep the command and its `cqrs.DomainEvent` as the domain-event steps above.
+   Several `cqrs.EventHandler` classes may bind to one event.
+   `EventMap.bind` appends.
+2. Choose `cqrs.ScopeStrategy.HANDLER` or `cqrs.ScopeStrategy.NONE`.
+   `HANDLER` opens a new scope per event handler.
+   `NONE` leaves the session to the handler.
+3. Pass `concurrent_event_handle_enable=True` and `max_concurrent_event_handlers` together on the same `cqrs.bootstrap.requests.bootstrap` call.
+   The limit is how many handlers may run at once.
+   Set it above 1 only when the handlers are independent.
+   The same pair is valid on `cqrs.bootstrap.requests.bootstrap_streaming` when a stream emits domain events.
+4. Leave the flag off when handlers must see the command's session or must run in a fixed order.
+   The default is `concurrent_event_handle_enable=False`.
+   Handlers then run one after another.
+
+The command handler still runs alone. Parallelism starts after `handle` returns, when the mediator emits `events`. Handlers must not write one session. Under `HANDLER` each handler's scope is its own. Under `NONE` the handler opens and closes whatever it needs, and it must not borrow the command's session.
+
+Pass the same `scope_strategy` the rest of this mediator already uses. Do not build a second mediator only to flip the flag. `max_concurrent_event_handlers` is a cap, not a promise that every handler starts at once.
+
+Do not use parallel handlers as a saga. There is no compensation here. A flow that must undo a finished step is `cqrs-saga`. Do not use them to publish a notification reliably. That path is the outbox above. Do not depend on handler order.
+
+Short shape: [assets/parallel_handlers.py](assets/parallel_handlers.py).
+Full example: `examples/streaming/streaming_handler_parallel_events.py`.
+
 ## Do not
 
 - Publish with `broker.send` next to `session.commit()`. A crash between those writes loses the message. Write the outbox row instead.
 - Call `mediator.send` in the route or subscriber that only accepts work. Store the inbox row, commit, then ack.
 - Use a domain event for email or HTTP to another service. The caller of `send` waits for every domain handler.
-- Use the outbox to compensate a later step. That path is `cqrs-saga-orchestration`.
+- Use the outbox to compensate a later step. That path is `cqrs-saga`.
 - Call `EventProducer` from the request handler. The handler only writes the row.
 - Share one outbox repository across concurrent requests. The repository holds the request session.
 - Register the event type only in the publisher. The writer and the publisher resolve `event_name` through the map they were given.
 - Ack before the inbox session commits. An exception before that commit must leave the message for another delivery.
+- Set `concurrent_event_handle_enable=True` with `ScopeStrategy.SEND`.
 
 Delivery notes: [references/delivery.md](references/delivery.md).
 Short shape: [assets/order_created.py](assets/order_created.py).

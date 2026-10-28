@@ -1,5 +1,5 @@
 ---
-name: cqrs-streaming-requests
+name: cqrs-streaming
 description: >-
   Streams many results from one python-cqrs request before the work finishes.
   Use when the caller reads progress, a batch, or a sequence instead of one send.
@@ -7,7 +7,7 @@ description: >-
 
 # Streaming requests
 
-Read cqrs-core-setup before writing a stream. Use a stream when the caller reads progress before the final answer. One `send` is the ordinary command and query path.
+Read cqrs-setup before writing a stream. Use a stream when the caller reads progress before the final answer. One `send` is the ordinary command and query path.
 
 The package is already installed. Do not add an install step.
 
@@ -46,7 +46,7 @@ Record a domain event before the `yield` it belongs to. `clear_events` runs afte
 
 A streaming command and an ordinary command do not share a mediator. Binding the streaming request on `commands_mapper` of `bootstrap` does not make `send` yield. Binding it only on `bootstrap_streaming` does not make `stream` available on the ordinary mediator.
 
-Skip this skill when the caller needs one answer. The chooser in `cqrs-core-setup` already says that. This file only builds the stream.
+Skip this skill when the caller needs one answer. The chooser in `cqrs-setup` already says that. This file only builds the stream.
 
 ## Do not
 
@@ -57,7 +57,7 @@ Skip this skill when the caller needs one answer. The chooser in `cqrs-core-setu
 - Share one mediator between `send` and `stream`. They are different types.
 - Copy `examples/streaming/typed_streaming_handler.py` into the application. Open it when the short shape is not enough.
 
-A streaming command that also emits domain events still follows `cqrs-event-driven` for those events. Parallel domain handlers are `cqrs-parallel-events`, and only when they do not share a session.
+A streaming command that also emits domain events still follows `cqrs-eda` for those events. Parallel domain handlers are `cqrs-eda`, and only when they do not share a session.
 
 Short shape: [assets/progress_stream.py](assets/progress_stream.py).
 Full example: `examples/streaming/typed_streaming_handler.py`.

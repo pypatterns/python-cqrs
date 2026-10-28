@@ -34,17 +34,19 @@ A missing `message_broker` becomes a broker that discards messages. Pass a real 
 Install from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed package. Cursor copies each skill to `.agents/skills/<name>/`. The files are copies, not symlinks, and they are not in the virtualenv.
 
 ```bash
-npx skills add pypatterns/python-cqrs --skill cqrs-core-setup -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-event-driven -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-saga-orchestration -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-eda -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
 ```
 
-- [`cqrs-core-setup`](../skills/cqrs-core-setup/SKILL.md) picks the feature, then builds a command and a query.
-- [`cqrs-event-driven`](../skills/cqrs-event-driven/SKILL.md) builds a domain event, a notification, the outbox, or the inbox.
-- [`cqrs-saga-orchestration`](../skills/cqrs-saga-orchestration/SKILL.md) builds a step, its compensation, and recovery.
-- [`cqrs-streaming-requests`](../skills/cqrs-streaming-requests/SKILL.md), [`cqrs-chain-of-responsibility`](../skills/cqrs-chain-of-responsibility/SKILL.md), and [`cqrs-parallel-events`](../skills/cqrs-parallel-events/SKILL.md) are the short how-tos. Their Use when and Skip when pairs stay in `cqrs-core-setup`.
+- [`cqrs-setup`](../skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
+- [`cqrs-eda`](../skills/cqrs-eda/SKILL.md) builds a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
+- [`cqrs-saga`](../skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
+- [`cqrs-streaming`](../skills/cqrs-streaming/SKILL.md) and [`cqrs-cor`](../skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
 
-Start with `cqrs-core-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after such installations.
+Start with `cqrs-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. ClawHub publish is the maintainer CLI in the library README, run from a checkout of `master` after merge.
 
 ## Commands and queries
 

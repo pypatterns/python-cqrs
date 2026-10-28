@@ -1,5 +1,5 @@
 ---
-name: cqrs-chain-of-responsibility
+name: cqrs-cor
 description: >-
   Routes one python-cqrs request through handlers until one returns.
   Use when several independent decisions exist and exactly one should handle it.
@@ -7,7 +7,7 @@ description: >-
 
 # Chain of responsibility
 
-Read cqrs-core-setup before writing a chain. Use a chain when one request has several alternative strategies and exactly one of them should handle it. The first handler that applies returns the result.
+Read cqrs-setup before writing a chain. Use a chain when one request has several alternative strategies and exactly one of them should handle it. The first handler that applies returns the result.
 
 The package is already installed. Do not add an install step.
 
@@ -40,7 +40,7 @@ A handler that forgets `return await self.next(request)` and also returns nothin
 
 The list is still one registration. `commands_mapper` and `queries_mapper` both fill one `RequestMap`. Binding the same request from both raises `KeyError`.
 
-Skip this skill when every step must run, or when the handler itself is the only decision. `cqrs-core-setup` already says that. This file only builds the chain.
+Skip this skill when every step must run, or when the handler itself is the only decision. `cqrs-setup` already says that. This file only builds the chain.
 
 A payment method, a file type, or a tenant policy is the usual split. The condition is a field on the request. The handler does not choose by reading a global. Exactly one handler returns. The others must call `next`.
 
@@ -48,7 +48,7 @@ Do not reorder the list to "run the important step last" unless that step is the
 
 ## Do not
 
-- Use a chain when every step must run. That is one handler, or a command plus domain events. See `cqrs-event-driven`.
+- Use a chain when every step must run. That is one handler, or a command plus domain events. See `cqrs-eda`.
 - Use a chain of one handler. Bind that handler alone.
 - Use a chain for logging or metrics. Those are `cqrs.middlewares.Middleware` on bootstrap.
 - Treat HTTP CORS as this feature. A browser preflight is not a `CORRequestHandler`.
