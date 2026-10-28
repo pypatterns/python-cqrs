@@ -1,5 +1,5 @@
 ---
-name: cqrs-saga-orchestration
+name: cqrs-saga
 description: >-
   Orchestrates a python-cqrs saga whose finished steps compensate on failure,
   with persistent state and recovery. Use when a flow crosses services or
@@ -8,7 +8,7 @@ description: >-
 
 # Saga orchestration
 
-Read cqrs-core-setup before writing steps. Use a saga when several steps cross services or databases and a finished step has a compensate. A single UPDATE in one service stays a database transaction. Publishing one message reliably is the outbox inside cqrs-event-driven, not a saga.
+Read cqrs-setup before writing steps. Use a saga when several steps cross services or databases and a finished step has a compensate. A single UPDATE in one service stays a database transaction. Publishing one message reliably is the outbox inside cqrs-eda, not a saga.
 
 The package is already installed. Do not add an install step.
 
@@ -59,7 +59,7 @@ A step that has not finished `act` is not compensated. The failure itself is the
 
 A fallback (`cqrs.saga.fallback.Fallback`) is a degraded path when `act` fails. It is not compensation. Compensation undoes a step that already succeeded.
 
-A step that publishes does not call the broker beside `session.commit()`. It writes the outbox in `cqrs-event-driven`, in the session the scope already opened.
+A step that publishes does not call the broker beside `session.commit()`. It writes the outbox in `cqrs-eda`, in the session the scope already opened.
 
 ## Files and scope
 

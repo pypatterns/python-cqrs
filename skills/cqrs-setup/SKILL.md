@@ -1,5 +1,5 @@
 ---
-name: cqrs-core-setup
+name: cqrs-setup
 description: >-
   Sets up a service on python-cqrs and picks the feature.
   Use when writing a command, a query, a domain event, a notification,
@@ -8,7 +8,7 @@ description: >-
 
 # python-cqrs
 
-Pick the feature with the Use when and Skip when pairs in this file. Both a command and a query are `cqrs.Request`. Event steps are cqrs-event-driven. Saga steps are cqrs-saga-orchestration.
+Pick the feature with the Use when and Skip when pairs in this file. Both a command and a query are `cqrs.Request`. Event steps are cqrs-eda. Saga steps are cqrs-saga.
 
 The package is already installed. Do not add an install step. Do not copy `examples/` into the application. Open the linked file when the short shape is not enough.
 
@@ -22,8 +22,8 @@ Keep one layout. Do not add a directory per pattern.
 - `app/queries.py` holds read models: `cqrs.Request[Result]`.
 - `app/handlers.py` holds `cqrs.RequestHandler` classes. Chains, streams, and event lists live here too.
 - `app/bootstrap.py` holds `commands_mapper`, `queries_mapper`, and one call to `cqrs.bootstrap.requests.bootstrap`.
-- `app/sagas.py` exists only when the saga pair is the feature you picked. Step detail is `cqrs-saga-orchestration`.
-- `app/events.py` exists only when you picked a domain event, a notification, the outbox, or the inbox. Detail is `cqrs-event-driven`.
+- `app/sagas.py` exists only when the saga pair is the feature you picked. Step detail is `cqrs-saga`.
+- `app/events.py` exists only when you picked a domain event, a notification, the outbox, or the inbox. Detail is `cqrs-eda`.
 
 Outbox rows, streams, chains, and events stay in `handlers.py` and `bootstrap.py`.
 
@@ -59,7 +59,7 @@ Skip when the next step is the rest of the same function, when nothing else list
 
 Append a `cqrs.DomainEvent` on the handler `events` property. Register each `cqrs.EventHandler` on `domain_events_mapper`. `EventMap.bind` appends, so one event may have many handlers. With `ScopeStrategy.SEND`, those handlers run one after another on the command's session.
 
-Neighbor: another service, or a message that must not be lost, is a notification plus the outbox, not a domain event. Steps are `cqrs-event-driven`.
+Neighbor: another service, or a message that must not be lost, is a notification plus the outbox, not a domain event. Steps are `cqrs-eda`.
 
 ### Notification event
 
@@ -69,7 +69,7 @@ Skip when nothing outside this process listens. A domain event is the in-process
 
 A `cqrs.NotificationEvent` sets keyword-only `event_name`, `topic`, and `payload`. Put it on `events` only for the lossy case, and pass a real `message_broker` into bootstrap. A missing broker becomes a broker that discards messages.
 
-Neighbor: a durable publish is the outbox. An in-process reaction is a domain event. Steps are `cqrs-event-driven`.
+Neighbor: a durable publish is the outbox. An in-process reaction is a domain event. Steps are `cqrs-eda`.
 
 ### Transactional outbox
 
@@ -79,7 +79,7 @@ Skip when nothing leaves the database transaction. Skip the outbox as a stand-in
 
 `repository.add(event)` and the business `session.add(...)` share one session. `await repository.commit()` commits both. `cqrs.EventProducer` runs in another process. Register every `event_name` before the first read or write. A second registration of the same name raises `KeyError`. Leave `events` empty for that notification so it is not published twice.
 
-Neighbor: a lost message is acceptable only for a notification on `events`. Compensation of a later step is a saga. Steps are `cqrs-event-driven`.
+Neighbor: a lost message is acceptable only for a notification on `events`. Compensation of a later step is a saga. Steps are `cqrs-eda`.
 
 ### Transactional inbox
 
@@ -89,7 +89,7 @@ Skip when the message is already inside the process, or when the handler can be 
 
 `InboxRepository.add` takes a batch of `(message_id, message)` and returns `list[bool]` of the same length. `True` means the row was inserted. `False` means `(message_id, message_name)` is already stored. `add` does not commit. The caller commits. Ack, or HTTP 202, happens after that commit. A later process runs `InboxProcessor`. `process` takes the row and calls the mediator that is already registered.
 
-Neighbor: finishing the handler before ack is `mediator.send` in that delivery, not an inbox row. Steps are `cqrs-event-driven`.
+Neighbor: finishing the handler before ack is `mediator.send` in that delivery, not an inbox row. Steps are `cqrs-eda`.
 
 ### Saga
 
@@ -99,7 +99,7 @@ Skip when one `UPDATE` in one service is enough. A database transaction is the t
 
 `SagaMediator` runs steps in order, stores progress, and compensates completed steps in reverse. Resume a crashed run with `cqrs.saga.recovery.recover_saga` and the same `scope_strategy`. Do not send a saga context through `RequestMediator`.
 
-Neighbor: one service and one transaction is a command. One reliable message is the outbox. Steps are `cqrs-saga-orchestration`.
+Neighbor: one service and one transaction is a command. One reliable message is the outbox. Steps are `cqrs-saga`.
 
 ### Chain of responsibility
 
@@ -109,7 +109,7 @@ Skip when the decision is single and the handler itself makes it. Skip a chain w
 
 Register the ordered list with one `mapper.bind(Request, [First, Second])`. That list is the one handler for the request type. A handler that does not apply returns `await self.next(request)`. The last handler is the default. HTTP CORS is not this feature.
 
-Neighbor: "run every step" is not a chain. Steps are `cqrs-chain-of-responsibility`.
+Neighbor: "run every step" is not a chain. Steps are `cqrs-cor`.
 
 ### Streaming
 
@@ -119,17 +119,15 @@ Skip when one `send` returns the whole answer. Skip streaming to hide a slow dom
 
 The handler is `cqrs.StreamingRequestHandler`. Build `cqrs.bootstrap.requests.bootstrap_streaming` once. The caller iterates `async for item in mediator.stream(request)`. A streaming command and an ordinary command are different mediators. One request type still has one handler, on one map.
 
-Neighbor: a single response is `RequestMediator.send`. Steps are `cqrs-streaming-requests`.
+Neighbor: a single response is `RequestMediator.send`. Steps are `cqrs-streaming`.
 
 ### Parallel events
 
 Use when domain handlers do not share a session and the order of those handlers does not matter.
 
-Skip when `ScopeStrategy.SEND` is on, or when the handlers write one session. `ScopeStrategy.SEND` cannot run with `concurrent_event_handle_enable=True`. Bootstrap raises `ValueError`.
+Skip when `ScopeStrategy.SEND` is on, or when the handlers write one session.
 
-Turn the flag on only together with `ScopeStrategy.HANDLER` or `ScopeStrategy.NONE`, and set `max_concurrent_event_handlers` in that same bootstrap call.
-
-Neighbor: handlers that must see the command's session stay sequential. Steps are `cqrs-parallel-events`.
+Neighbor: handlers that must see the command's session stay sequential. Steps are `cqrs-eda`.
 
 ### Validation
 
@@ -160,11 +158,11 @@ Already written `Request` and `RequestHandler[Request, Result]` stay as they are
 Startup is not the package `cqrs.bootstrap`. Import the submodule:
 
 - `cqrs.bootstrap.requests.bootstrap` builds `RequestMediator` for commands and queries.
-- `cqrs.bootstrap.requests.bootstrap_streaming` builds `StreamingRequestMediator`. See `cqrs-streaming-requests`.
-- `cqrs.bootstrap.events.bootstrap` builds `EventMediator` for events that arrive from outside. See `cqrs-event-driven`.
-- `cqrs.bootstrap.saga.bootstrap` builds `SagaMediator`. See `cqrs-saga-orchestration`.
+- `cqrs.bootstrap.requests.bootstrap_streaming` builds `StreamingRequestMediator`. See `cqrs-streaming`.
+- `cqrs.bootstrap.events.bootstrap` builds `EventMediator` for events that arrive from outside. See `cqrs-eda`.
+- `cqrs.bootstrap.saga.bootstrap` builds `SagaMediator`. See `cqrs-saga`.
 
-Build the mediator once. Reuse it. A missing `message_broker` discards notifications. Pass a real broker only for a lossy notification. A notification that must survive `commit` uses the outbox inside `cqrs-event-driven`.
+Build the mediator once. Reuse it. A missing `message_broker` discards notifications. Pass a real broker only for a lossy notification. A notification that must survive `commit` uses the outbox inside `cqrs-eda`.
 
 Logging middleware is added when the middleware list does not already contain it. Do not add a middleware class for a rule that belongs to one use case.
 
@@ -192,8 +190,8 @@ Build both a `RequestMediator` and a `StreamingRequestMediator` at startup when 
 
 - Add a `Command` or `Query` base class, or a `CommandBus`.
 - Call the mediator from inside `handle`.
-- Publish to a broker next to `session.commit()`. That path is the outbox inside `cqrs-event-driven`.
-- Roll back several services. That path is `cqrs-saga-orchestration`.
+- Publish to a broker next to `session.commit()`. That path is the outbox inside `cqrs-eda`.
+- Roll back several services. That path is `cqrs-saga`.
 - Open a new mediator inside a route, a subscriber, or a handler.
 - Copy a full example into the application. The files under `examples/` stay runnable demos.
 

@@ -1,12 +1,12 @@
 # Domain event, notification, outbox, inbox
 
-Four names, four jobs. Pick one in `cqrs-core-setup`. This note is how the chosen one is delivered.
+Four names, four jobs. Pick one in `cqrs-setup`. This note is how the chosen one is delivered.
 
 ## Domain event
 
 A `cqrs.DomainEvent` is a fact other handlers in this process react to. The command handler appends it to `events`. `cqrs.bootstrap.requests.bootstrap` takes `domain_events_mapper`. The mediator runs those handlers after `handle` returns, before `send` returns. Several `EventHandler` classes may bind to one event.
 
-The caller waits. Do not put slow I/O here. With `ScopeStrategy.SEND`, handlers share the command session and run one after another.
+The caller waits. Do not put slow I/O here. With `ScopeStrategy.SEND`, handlers share the command session and run one after another. Independent handlers set `concurrent_event_handle_enable=True` only with `ScopeStrategy.HANDLER` or `ScopeStrategy.NONE`.
 
 ## Notification event
 
