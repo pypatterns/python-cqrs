@@ -42,6 +42,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-saga-orchestration -a cursor 
 - [`cqrs-core-setup`](../skills/cqrs-core-setup/SKILL.md) picks the feature, then builds a command and a query.
 - [`cqrs-event-driven`](../skills/cqrs-event-driven/SKILL.md) builds a domain event, a notification, the outbox, or the inbox.
 - [`cqrs-saga-orchestration`](../skills/cqrs-saga-orchestration/SKILL.md) builds a step, its compensation, and recovery.
+- [`cqrs-streaming-requests`](../skills/cqrs-streaming-requests/SKILL.md), [`cqrs-chain-of-responsibility`](../skills/cqrs-chain-of-responsibility/SKILL.md), and [`cqrs-parallel-events`](../skills/cqrs-parallel-events/SKILL.md) are the short how-tos. Their Use when and Skip when pairs stay in `cqrs-core-setup`.
 
 Start with `cqrs-core-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after such installations.
 
