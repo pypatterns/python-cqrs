@@ -31,6 +31,7 @@
 - [Overview](#overview)
 - [When NOT to use python-cqrs](#when-not-to-use-python-cqrs)
 - [Installation](#installation)
+- [Agent skills](#agent-skills)
 - [Quick Start](#quick-start)
 - [Request and Response Types](#request-and-response-types)
 - [Request Handlers](#request-handlers)
@@ -110,6 +111,21 @@ need validation.
 
 Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGENTS.md). Copy that file into the application repository.
 
+## Agent skills
+
+Coding agents that write a service on this library install skills into the application. Run the commands from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed `python-cqrs` package. `pip install` does not ship the skills.
+
+```bash
+npx skills add pypatterns/python-cqrs --skill cqrs-core-setup -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-event-driven -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga-orchestration -a cursor -y
+```
+
+`cqrs-core-setup` picks the feature and builds a command and a query. `cqrs-event-driven` covers a domain event, a notification, the outbox, and the inbox. `cqrs-saga-orchestration` covers a step, compensation, and recovery.
+
+Cursor copies each skill to `.agents/skills/<name>/` under the application root. The files are copies, not symlinks. A later install does not replace a skill already there. They are not read from the virtualenv.
+
+Public installation comes from the `pypatterns/python-cqrs` repository. A skills.sh listing appears after such installations. Catalog: [Agent skills](https://mkdocs.python-cqrs.dev/skills/).
 
 ## Quick Start
 

@@ -29,6 +29,22 @@ Startup is not `cqrs.bootstrap`. Import the submodule:
 
 A missing `message_broker` becomes a broker that discards messages. Pass a real broker when a notification must leave the process. Logging middleware is added when the list does not already contain it.
 
+### Agent skills
+
+Install from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed package. Cursor copies each skill to `.agents/skills/<name>/`. The files are copies, not symlinks, and they are not in the virtualenv.
+
+```bash
+npx skills add pypatterns/python-cqrs --skill cqrs-core-setup -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-event-driven -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga-orchestration -a cursor -y
+```
+
+- [`cqrs-core-setup`](../skills/cqrs-core-setup/SKILL.md) picks the feature, then builds a command and a query.
+- [`cqrs-event-driven`](../skills/cqrs-event-driven/SKILL.md) builds a domain event, a notification, the outbox, or the inbox.
+- [`cqrs-saga-orchestration`](../skills/cqrs-saga-orchestration/SKILL.md) builds a step, its compensation, and recovery.
+
+Start with `cqrs-core-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after such installations.
+
 ## Commands and queries
 
 Commands and queries are both `cqrs.Request`. There is no `Query` class, no `Command` class, and no `CommandBus`. There is no `register_handler` decorator. Register with `mapper.bind(RequestType, Handler)`.
