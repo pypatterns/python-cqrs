@@ -113,7 +113,7 @@ Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGE
 
 ## Agent skills
 
-Coding agents that write a service on this library install skills into the application. Run the commands from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed `python-cqrs` package. `pip install` does not ship the skills.
+Run these from the application root. They install from `master` of this repository, not from the installed package version. See the [catalog](https://mkdocs.python-cqrs.dev/latest/skills/).
 
 ```bash
 npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
@@ -123,13 +123,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
 npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
 ```
 
-`cqrs-setup` picks the feature and builds a command and a query. `cqrs-eda` covers a domain event, a notification, the outbox, the inbox, and parallel domain handlers. `cqrs-saga` covers a step, compensation, and recovery. `cqrs-streaming` and `cqrs-cor` are the short how-tos.
-
-Cursor copies each skill to `.agents/skills/<name>/` under the application root. The files are copies, not symlinks. A later install does not replace a skill already there. They are not read from the virtualenv.
-
-Public installation comes from the `pypatterns/python-cqrs` repository. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. Catalog: [Agent skills](https://mkdocs.python-cqrs.dev/latest/skills/).
-
-[ClawHub](https://clawhub.ai) is a separate publish. The `npx skills add` commands above do not publish there. After these skills are on `master`, check out that commit and publish the folders under `skills/` with the ClawHub CLI. Run it on that checkout. Do not run it from CI. `sync` publishes those folders and does not report install telemetry. The slug is the folder name: `cqrs-setup`, `cqrs-eda`, `cqrs-saga`, `cqrs-streaming`, or `cqrs-cor`. A skill published this way is released under MIT-0 on ClawHub.
+After the skills are on `master`, publish from that checkout, then install with `clawhub install @<owner>/<slug>`:
 
 ```bash
 npm i -g clawhub
@@ -138,10 +132,6 @@ clawhub whoami
 clawhub sync --root ./skills --all --dry-run
 clawhub sync --root ./skills --all
 ```
-
-Pass `--owner <owner>` on both `sync` commands only when that publisher handle already exists and this account can publish for it. Omit `--owner` to publish as the signed-in user. New skills start at `1.0.0`.
-
-After that publish, an application installs from its root with `clawhub install @<owner>/<slug>`. `<owner>` is the publisher handle from `whoami` or from `--owner`. `<slug>` is the skill folder name. These commands are the maintainer publish and the later install. They are not a claim that ClawHub already lists the skills.
 
 ## Quick Start
 
