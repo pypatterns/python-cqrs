@@ -193,3 +193,15 @@ export CQRS_SUPPRESS_V4_EOL_WARNING=1
 Details: [SECURITY.md](SECURITY.md#eol-migration-notice-after-500).
 
 > **Note for maintainers:** Keep this section in sync on both `master` and `4.x` so contributors checking out either branch see the same guidance.
+
+## 9. Publishing agent skills
+
+From a clone of this repository on `master`, after `npm i -g clawhub` and `clawhub login`:
+
+```bash
+clawhub whoami
+clawhub sync --root ./skills --all --dry-run
+clawhub sync --root ./skills --all
+```
+
+A submitted update can stay pending a security scan before it is public. A skills.sh listing comes from someone running `npx skills add pypatterns/python-cqrs` on a normal machine, not from a publish command.

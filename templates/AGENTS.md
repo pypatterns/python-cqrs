@@ -31,14 +31,22 @@ A missing `message_broker` becomes a broker that discards messages. Pass a real 
 
 ### Agent skills
 
-Install from the application root. The source is the `master` branch of `pypatterns/python-cqrs`, not the tag of the installed package. Cursor copies each skill to `.agents/skills/<name>/`. The files are copies, not symlinks, and they are not in the virtualenv.
+Two registries: [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai). From the application root, not a clone of `pypatterns/python-cqrs`, either block is enough. Files land in `<app>/.agents/skills/<name>/`.
 
 ```bash
-npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-eda -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-saga -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-setup -y
+npx skills add pypatterns/python-cqrs --skill cqrs-eda -y
+npx skills add pypatterns/python-cqrs --skill cqrs-saga -y
+npx skills add pypatterns/python-cqrs --skill cqrs-streaming -y
+npx skills add pypatterns/python-cqrs --skill cqrs-cor -y
+```
+
+```bash
+clawhub install @vadikko2/cqrs-setup
+clawhub install @vadikko2/cqrs-eda
+clawhub install @vadikko2/cqrs-saga
+clawhub install @vadikko2/cqrs-streaming
+clawhub install @vadikko2/cqrs-cor
 ```
 
 - [`.agents/skills/cqrs-setup/SKILL.md`](.agents/skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
@@ -46,7 +54,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
 - [`.agents/skills/cqrs-saga/SKILL.md`](.agents/skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
 - [`.agents/skills/cqrs-streaming/SKILL.md`](.agents/skills/cqrs-streaming/SKILL.md) and [`.agents/skills/cqrs-cor/SKILL.md`](.agents/skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
 
-Start with `cqrs-setup`. Public installation comes from `pypatterns/python-cqrs`. A skills.sh listing appears after installations from that repository. Installing a local checkout does not create that listing, and CI does not publish it. ClawHub publish is the maintainer CLI in the library README, run from a checkout of `master` after merge.
+Start with `cqrs-setup`.
 
 ## Commands and queries
 
