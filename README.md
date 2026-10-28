@@ -113,23 +113,19 @@ Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGE
 
 ## Agent skills
 
-Run these from the application root. They install from `master` of this repository, not from the installed package version. See the [catalog](https://mkdocs.python-cqrs.dev/latest/skills/).
+`pip install python-cqrs` does not install the skills. Run this in your application root, not from a clone of `pypatterns/python-cqrs` and not from an empty directory. `npx` copies `cqrs-setup`, `cqrs-eda`, `cqrs-saga`, `cqrs-streaming`, and `cqrs-cor` from the `master` branch of that GitHub repository, not from the installed package version:
 
 ```bash
-npx skills add pypatterns/python-cqrs --skill cqrs-setup -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-eda -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-saga -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-streaming -a cursor -y
-npx skills add pypatterns/python-cqrs --skill cqrs-cor -a cursor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-setup cqrs-eda cqrs-saga cqrs-streaming cqrs-cor -y
 ```
 
-After the skills are on `master`, publish from that checkout, then install with `clawhub install @<owner>/<slug>`:
+The files land in `<app>/.agents/skills/<name>/`. The coding agent in that project reads them from there. The longer catalog is [Agent skills](https://mkdocs.python-cqrs.dev/latest/skills/).
+
+To add an already published skill to the application, from that same root, run `clawhub install @<owner>/<slug>`. `<slug>` is one of those five names.
+
+A maintainer publishes from a clone of this repository after `clawhub login`:
 
 ```bash
-npm i -g clawhub
-clawhub login
-clawhub whoami
-clawhub sync --root ./skills --all --dry-run
 clawhub sync --root ./skills --all
 ```
 
