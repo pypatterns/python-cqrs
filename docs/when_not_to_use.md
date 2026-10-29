@@ -16,7 +16,7 @@ A mediator, outbox table, and publisher loop would not make that code safer — 
 
 If you persist business state **and** publish to a broker, do not commit the database and then independently produce to Kafka or RabbitMQ. A crash between those two writes loses the message (or duplicates it on retry).
 
-Put the business row and the outbox row in the **same transaction**. A separate process then drains the outbox with at-least-once delivery. See [Transactional Outbox](https://mkdocs.python-cqrs.dev/outbox/).
+Put the business row and the outbox row in the **same transaction**. A separate process then drains the outbox with at-least-once delivery. See [Transactional Outbox](https://mkdocs.python-cqrs.dev/latest/outbox/).
 
 Use Outbox when:
 
@@ -30,7 +30,7 @@ Skip Outbox if nothing is published outside the database transaction.
 
 A local SQL transaction cannot include another service's database. If a flow has several steps across processes or data stores, and a later step can fail, you need **compensation** — not a distributed two-phase commit.
 
-See the [Saga pattern](https://mkdocs.python-cqrs.dev/saga/) when:
+See the [Saga pattern](https://mkdocs.python-cqrs.dev/latest/saga/) when:
 
 - Steps cross process or database boundaries
 - Each completed step can be undone (or otherwise compensated)
@@ -43,11 +43,11 @@ Do not introduce a Saga for a single `UPDATE` in one service. Do not use a Saga 
 | Situation | Use |
 |-----------|-----|
 | Single-service CRUD, no broker | Local database transaction |
-| Dual-write to DB + broker | [Transactional Outbox](https://mkdocs.python-cqrs.dev/outbox/) |
-| Multi-step work + compensation across boundaries | [Orchestrated Saga](https://mkdocs.python-cqrs.dev/saga/) |
+| Dual-write to DB + broker | [Transactional Outbox](https://mkdocs.python-cqrs.dev/latest/outbox/) |
+| Multi-step work + compensation across boundaries | [Orchestrated Saga](https://mkdocs.python-cqrs.dev/latest/saga/) |
 
 Related:
 
-- [Transactional Outbox](https://mkdocs.python-cqrs.dev/outbox/) — store events with the business write, publish later
-- [Saga Pattern](https://mkdocs.python-cqrs.dev/saga/) — orchestrate steps with automatic compensation and recovery
+- [Transactional Outbox](https://mkdocs.python-cqrs.dev/latest/outbox/) — store events with the business write, publish later
+- [Saga Pattern](https://mkdocs.python-cqrs.dev/latest/saga/) — orchestrate steps with automatic compensation and recovery
 - [FastAPI + Outbox example](../examples/outbox/fastapi_outbox.py) — one command, one transaction, publisher stub
