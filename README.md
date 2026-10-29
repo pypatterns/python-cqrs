@@ -38,7 +38,7 @@ Request and event types are plain dataclasses by default, or Pydantic. Storage i
 - [Domain events](#domain-events)
 - [FastAPI](#fastapi)
 - [Testing](#testing)
-- [When NOT to use python-cqrs](#when-not-to-use-python-cqrs)
+- [Which pattern to use](#which-pattern-to-use)
 - [Documentation](#documentation)
 - [Agent skills](#agent-skills)
 - [Contributing](#contributing)
@@ -380,13 +380,18 @@ async def test_create_order() -> None:
 
 `invocations` shows which handlers and saga steps ran, including `compensate`. `handled` holds domain events, `published` holds what reached the broker, and `outbox` holds rows that are not published yet. `sagas` holds status and step history. There is no pytest plugin: the same calls work under unittest. Install with `pip install "python-cqrs[testing]"`. [Testing](https://mkdocs.python-cqrs.dev/latest/testing/) · [`examples/testing/`](https://github.com/pypatterns/python-cqrs/tree/master/examples/testing)
 
-## When NOT to use python-cqrs
+## Which pattern to use
 
-- **One service, one database, no broker.** A plain database transaction is simpler. The mediator adds little.
-- **One write and one message.** Use the outbox, not a saga.
-- **Several services, and a failed step must be undone.** That is a saga.
+Commands, queries, and event handlers fit any service, including a single service with one database. Every use case is one handler, and the mediator wires them together, so the project grows by adding handlers instead of tangling services.
 
-A saga coordinates steps. The outbox makes one dual write reliable. Neither replaces the other. [When NOT to use python-cqrs](docs/when_not_to_use.md)
+The distributed patterns solve one problem each. Add them only when that problem is there:
+
+- **One database, no broker.** Commands, queries, and domain events. One database transaction per command is enough. A saga or an outbox adds nothing.
+- **A write and a broker message.** The outbox, not a saga.
+- **A message from another service that must run once.** The inbox.
+- **Several services, and a failed step must be undone.** A saga.
+
+A saga coordinates steps. The outbox makes one dual write reliable. Neither replaces the other. [Which pattern to use](docs/when_not_to_use.md)
 
 ## Documentation
 
