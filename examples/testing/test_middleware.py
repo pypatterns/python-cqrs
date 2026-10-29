@@ -2,10 +2,8 @@
 Middleware that returns a response and does not call the handler.
 
 Run:
-   python examples/testing/middleware.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_middleware.py
 """
-
-import asyncio
 
 import di
 
@@ -35,18 +33,18 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-async def main() -> None:
+async def test_middleware_answers_without_the_handler() -> None:
+    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
         middlewares=[DenyMiddleware()],
     ) as harness:
+        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         assert result.order_id == "denied"
         harness.invocations.assert_not_entered(CreateOrderHandler)
         assert harness.middlewares.of(DenyMiddleware)[0].called_next is False
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

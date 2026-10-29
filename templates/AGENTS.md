@@ -478,7 +478,7 @@ Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read
 - Kafka and AMQP: a unit test uses `CapturingMessageBroker`. The real adapter stays in the integration test.
 - Mermaid, `ZlibCompressor`, Alembic `rebind_*_model`, and transaction log tailing are not run through `test_harness`.
 
-Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-cqrs.dev/testing/>.
+Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-cqrs.dev/latest/testing/>.
 
 ## Extras
 

@@ -6,4 +6,4 @@ Streaming request-handler examples.
 | `streaming_handler_fallback.py` | Fallback when a streaming handler fails |
 | `fastapi_sse_streaming.py` | FastAPI SSE endpoint over a streaming handler |
 
-Docs: https://mkdocs.python-cqrs.dev/stream_handling/
+Docs: https://mkdocs.python-cqrs.dev/latest/stream_handling/

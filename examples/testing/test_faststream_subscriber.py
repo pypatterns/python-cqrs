@@ -2,13 +2,11 @@
 FastStream TestKafkaBroker delivers a message to EventMediator or only into the inbox.
 
 Run:
-   python examples/testing/faststream_subscriber.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_faststream_subscriber.py
 """
 
-import asyncio
-
 import di
-from faststream.kafka import KafkaBroker, TestKafkaBroker
+from faststream import kafka
 
 import cqrs
 from cqrs.bootstrap import events as events_bootstrap
@@ -44,47 +42,46 @@ def _inbox() -> MemoryInboxRepository:
     return MemoryInboxRepository(message_map=message_map)
 
 
-async def event_mediator_path() -> None:
+async def test_subscriber_sends_the_event_to_event_mediator() -> None:
+    # Arrange
     event_mediator = events_bootstrap.bootstrap(
         di_container=di.Container(),
         events_mapper=events_mapper,
     )
     inbox = _inbox()
-    broker = KafkaBroker()
+    broker = kafka.KafkaBroker()
 
     @broker.subscriber("order_events")
     async def on_order(body: dict) -> None:
         await event_mediator.send(OrderCreated(order_id=body["order_id"]))
 
-    async with TestKafkaBroker(broker) as test_broker:
+    async with kafka.TestKafkaBroker(broker) as test_broker:
         async with test_harness.around(event_mediator, inbox=inbox) as harness:
+            # Act
             await test_broker.publish({"order_id": "1"}, "order_events")
+
+            # Assert
             harness.invocations.assert_entered(AuditHandler)
 
 
-async def inbox_only_path() -> None:
+async def test_subscriber_only_stores_the_message_in_the_inbox() -> None:
+    # Arrange
     event_mediator = events_bootstrap.bootstrap(
         di_container=di.Container(),
         events_mapper=events_mapper,
     )
     inbox = _inbox()
-    broker = KafkaBroker()
+    broker = kafka.KafkaBroker()
 
     @broker.subscriber("order_events")
     async def on_order(body: dict) -> None:
         await inbox.add([("msg-1", CreateOrder(sku=body["order_id"]))])
 
-    async with TestKafkaBroker(broker) as test_broker:
+    async with kafka.TestKafkaBroker(broker) as test_broker:
         async with test_harness.around(event_mediator, inbox=inbox) as harness:
+            # Act
             await test_broker.publish({"order_id": "1"}, "order_events")
+
+            # Assert
             assert harness.inbox.pending_count == 1
             harness.invocations.assert_not_entered(CreateOrderHandler)
-
-
-async def main() -> None:
-    await event_mediator_path()
-    await inbox_only_path()
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

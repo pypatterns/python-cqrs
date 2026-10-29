@@ -2,10 +2,8 @@
 Chain of responsibility: the matching step does not call next.
 
 Run:
-   python examples/testing/chain.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_chain.py
 """
-
-import asyncio
 
 import di
 
@@ -37,14 +35,14 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(PayOrder, [CardHandler, CashHandler])
 
 
-async def main() -> None:
+async def test_matching_step_does_not_call_next() -> None:
+    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:
+        # Act
         result = await harness.mediator.send(PayOrder(method="card"))
+
+        # Assert
         assert result.method == "card"
         harness.invocations.assert_entered(CardHandler)
         harness.invocations.assert_not_entered(CashHandler)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

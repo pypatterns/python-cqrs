@@ -7,4 +7,4 @@ Transactional outbox examples.
 | `fastapi_outbox.py` | FastAPI + one-tx write + publisher stub (needs examples extra) |
 | `protobuf_outbox.py` | Opt-in Protobuf produce + consume (isolated map, no Kafka) |
 
-Docs: https://mkdocs.python-cqrs.dev/outbox/
+Docs: https://mkdocs.python-cqrs.dev/latest/outbox/

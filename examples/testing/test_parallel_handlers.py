@@ -2,10 +2,8 @@
 Parallel domain handlers, ScopeStrategy.SEND order, and ScopeStrategy.NONE set.
 
 Run:
-   python examples/testing/parallel_handlers.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_parallel_handlers.py
 """
-
-import asyncio
 
 import di
 
@@ -57,7 +55,8 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
     mapper.bind(OrderCreated, SearchHandler)
 
 
-async def main() -> None:
+async def test_parallel_handlers_both_enter() -> None:
+    # Arrange
     container = di.Container()
     async with test_harness(
         container,
@@ -66,21 +65,33 @@ async def main() -> None:
         concurrent_event_handle_enable=True,
         scope_strategy=cqrs.ScopeStrategy.HANDLER,
     ) as harness:
+        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         harness.invocations.assert_entered(AuditHandler)
         harness.invocations.assert_entered(SearchHandler)
 
-    di_container = di.Container()
+
+async def test_scope_send_runs_handlers_in_order() -> None:
+    # Arrange
+    container = di.Container()
     async with test_harness(
-        di_container,
+        container,
         commands_mapper=commands_mapper,
         domain_events_mapper=domain_events_mapper,
         scope_strategy=cqrs.ScopeStrategy.SEND,
     ) as harness:
+        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         entered = [item.handler for item in harness.invocations if item.argument_type is OrderCreated]
         assert entered == [AuditHandler, SearchHandler]
 
+
+async def test_scope_none_enters_both_handlers_in_any_order() -> None:
+    # Arrange
     container = di.Container()
     async with test_harness(
         container,
@@ -89,10 +100,9 @@ async def main() -> None:
         concurrent_event_handle_enable=True,
         scope_strategy=cqrs.ScopeStrategy.NONE,
     ) as harness:
+        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         handlers = {item.handler for item in harness.invocations if item.argument_type is OrderCreated}
         assert handlers == {AuditHandler, SearchHandler}
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

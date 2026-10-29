@@ -12,5 +12,5 @@ DI / scoped-dependency examples.
 | `scoped_dependencies_custom_container.py` | Custom `SupportsScope` template |
 | `scoped_dependencies_fastapi.py` | `bind_scope` + SEND; CLI demo works without FastAPI |
 
-Docs: https://mkdocs.python-cqrs.dev/scoped_dependencies/
-Tutorial: https://mkdocs.python-cqrs.dev/scoped_dependencies/tutorial/
+Docs: https://mkdocs.python-cqrs.dev/latest/scoped_dependencies/
+Tutorial: https://mkdocs.python-cqrs.dev/latest/scoped_dependencies/tutorial/

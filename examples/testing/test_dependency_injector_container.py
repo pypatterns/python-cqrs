@@ -4,10 +4,8 @@ dependency-injector container wrapped by test_harness.around.
 The adapter does not implement SupportsScope, so this bootstrap omits scope_strategy.
 
 Run:
-   python examples/testing/dependency_injector_container.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_dependency_injector_container.py
 """
-
-import asyncio
 
 from dependency_injector import containers, providers
 
@@ -38,18 +36,17 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-async def main() -> None:
-    container = Container()
+async def test_around_records_a_mediator_on_dependency_injector() -> None:
+    # Arrange
     adapter = DependencyInjectorCQRSContainer()
-    adapter.attach_external_container(container)
+    adapter.attach_external_container(Container())
     mediator = bootstrap.bootstrap(
         di_container=adapter,
         commands_mapper=commands_mapper,
     )
     async with test_harness.around(mediator) as harness:
+        # Act
         await mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         assert harness.requests.contains(CreateOrder)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

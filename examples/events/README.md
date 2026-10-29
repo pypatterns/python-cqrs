@@ -11,4 +11,4 @@ Requests, domain events, and Kafka consume examples.
 | `kafka_event_consuming.py` | Consume Kafka → event handlers |
 | `fastapi_integration.py` | Wire mediator into FastAPI routes |
 
-Docs: https://mkdocs.python-cqrs.dev/event_handler/
+Docs: https://mkdocs.python-cqrs.dev/latest/event_handler/

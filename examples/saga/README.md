@@ -10,4 +10,4 @@ Saga pattern examples.
 | `saga_fastapi_sse.py` | Saga progress over FastAPI SSE |
 | `saga_mermaid.py` | Generate Mermaid diagrams from a saga |
 
-Docs: https://mkdocs.python-cqrs.dev/saga/
+Docs: https://mkdocs.python-cqrs.dev/latest/saga/
