@@ -462,7 +462,7 @@ Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read
 - Saga fallback: the spare step is on `invocations`. The failed step's last method is `act`, not `compensate`.
 - Saga circuit breaker: the primary step is absent from `invocations`. The fallback is present. Use a fake `ISagaStepCircuitBreaker`.
 - Recovery: `await harness.sagas.recover(...)`. A finished step does not enter `act` a second time.
-- Inbox: a command is on `requests` after `process_available`. An event is on `invocations`. A second `add` of the same `(message_id, message_name)` is `False`.
+- Inbox: a command is on `requests` after `process_available`. An event is on `invocations`. A second `add` of the same `(message_id, message_name)` returns `[False]`.
 - Inbox handler error: status stays `not_processed` and `flush_counter` grows. The caller commits.
 - Outbox: the row is on `outbox`. The notification is absent from `published` until the test calls `produce_available`.
 - Outbox broker error: the row stays `not_produced`. `published` stays empty.

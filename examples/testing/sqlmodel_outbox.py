@@ -1,6 +1,8 @@
 """
 SQLModel outbox on sqlite. The connection rolls back. No Docker.
 
+Requires: pip install "python-cqrs[sqlmodel]" aiosqlite
+
 Run:
    python examples/testing/sqlmodel_outbox.py
 """

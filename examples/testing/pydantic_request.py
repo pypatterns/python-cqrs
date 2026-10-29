@@ -9,7 +9,6 @@ import asyncio
 
 import di
 import pydantic
-import pytest
 
 import cqrs
 from cqrs.testing import test_harness
@@ -35,8 +34,12 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def main() -> None:
-    with pytest.raises(pydantic.ValidationError):
+    try:
         CreateOrder(sku="")
+    except pydantic.ValidationError:
+        pass
+    else:
+        raise AssertionError("CreateOrder(sku='') must fail validation")
 
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:

@@ -14,6 +14,8 @@ Import `from cqrs.testing import test_harness`. It is not in `cqrs.__all__`. The
 
 `async with test_harness(...) as harness` builds the mediators. Arguments match bootstrap. The builder passes `compensation_retry_delay=0` unless the test passes a delay. `async with test_harness.around(...) as harness` wraps mediators the application already built and does not change that delay. `around` puts resolve, the broker, saga storage, and the listener back in `finally`.
 
+If the application mediator has a real broker and no `broker=` argument is passed, `around` forwards each message to that real broker and records it. To keep a unit test isolated, pass a `CapturingMessageBroker` with no inner broker: `async with test_harness.around(mediator, broker=CapturingMessageBroker()) as harness`. The real broker's `send_message` is then redirected to the capture, so no message leaves the process.
+
 `test_harness(...)` creates a memory outbox and a memory inbox on `harness.outbox_repository` and `harness.inbox_repository`. It does not bind them. The test binds the port.
 
 For `ScopeStrategy.SEND`, pass `di.Container`. Do not pass `TestContainer`. `TestContainer` is `register(type, instance)` and `async resolve`.
@@ -22,7 +24,16 @@ Do not read `DevnullMessageBroker.MESSAGE_BUS`. If the mediator holds that broke
 
 An invocation record has `handler`, `method` (`handle`, `act`, or `compensate`), `argument`, `argument_type`, and `handler_instance`.
 
-`contains` is a boolean. `assert_contains`, `assert_one`, and `assert_empty` raise `AssertionError` with the recorded rows. There is no pytest plugin.
+`contains` is a boolean and does not raise. `assert_contains`, `assert_one`, and `assert_empty` raise `AssertionError` with the recorded rows. Those methods are not on every journal:
+
+- `requests`, `handled`, `unhandled`, and `published` have `contains`.
+- `handled` and `unhandled` have `assert_empty`. They do not have `assert_contains` or `assert_one`.
+- `published` has `contains`, `assert_contains`, `assert_one`, and `assert_empty`.
+- `outbox` has `assert_empty`. It does not have `contains`, `assert_contains`, or `assert_one`.
+- `invocations` has `assert_entered` and `assert_not_entered`. It does not have `contains`, `assert_contains`, `assert_one`, or `assert_empty`.
+- `requests` does not have `assert_contains`, `assert_one`, or `assert_empty`.
+
+There is no pytest plugin.
 
 Short shape for a command, a domain event, and a notification: [assets/test_order.py](assets/test_order.py).
 
@@ -49,7 +60,7 @@ Assert `handled` and `invocations`. A follow-up event is also on `handled` and e
 
 Assert `published` (`topic`, `message_name`, `payload`, `message_id`). The notice is not on `handled`.
 
-`assert harness.published.contains(OrderCreated)` is false for a domain event. `assert_contains` names `handled` or `invocations` in the error.
+`published.contains(OrderCreated)` is false for a domain event. `published.assert_contains` names `handled` or `invocations` in the error when the event was recorded there and was not sent to the broker.
 
 ## Parallel domain handlers
 
@@ -103,7 +114,7 @@ Parallel mode is allowed. Both handlers are on `invocations`. Do not assert orde
 
 ## Chain
 
-Assert `invocations` only. The step whose `handle` ran is entered. The step it did not call is absent. There is no separate chain bus. `handled` contains an event only from the step that returned a result.
+Assert `invocations`. The step whose `handle` ran is entered. The step it did not call is absent. There is no separate chain bus. The dispatcher reads `events` from the chain head, so an event added by a later step is not on `handled` unless the head exposes it. Expect `handled` only when the head is the step that returned the result and that event is on the head's `events`.
 
 ```python
 harness.invocations.assert_entered(CardHandler)
@@ -153,7 +164,7 @@ Use a fake `ISagaStepCircuitBreaker`. An open breaker leaves the step off `invoc
 
 ## Inbox
 
-`process_available` sends a `Request` through `RequestMediator` or an event through `EventMediator`. The command is on `requests`. The event is on `invocations`. A second `add` of the same `(message_id, message_name)` is `False`. After success the status is `processed`. The caller commits.
+`process_available` sends a `Request` through `RequestMediator` or an event through `EventMediator`. The command is on `requests`. The event is on `invocations`. A second `add` of the same `(message_id, message_name)` returns `[False]`. After success the status is `processed`. The caller commits.
 
 ## Inbox handler error
 

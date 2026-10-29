@@ -23,7 +23,8 @@ class MemoryOutboxRepository(repository.OutboxedEventRepository):
 
     The id counter and the rows belong to the instance. A row marked
     ``PRODUCED`` stays in the repository with that status. ``get_many``
-    returns ``NEW`` and ``NOT_PRODUCED`` rows only.
+    returns ``NEW`` and ``NOT_PRODUCED`` rows only. ``rollback`` drops rows
+    added since the last ``commit``.
     """
 
     def __init__(
@@ -34,6 +35,7 @@ class MemoryOutboxRepository(repository.OutboxedEventRepository):
     ) -> None:
         self._counter = 0
         self._rows: dict[int, repository.OutboxedEvent] = {}
+        self._staged: list[int] = []
         self._serializer = serializer or JsonEventSerializer()
         self._event_map = event_map
 
@@ -56,6 +58,7 @@ class MemoryOutboxRepository(repository.OutboxedEventRepository):
             payload_bytes=codec.serialize(event),
             content_type=codec.content_type_for(event),
         )
+        self._staged.append(row_id)
 
     async def get_many(
         self,
@@ -82,10 +85,12 @@ class MemoryOutboxRepository(repository.OutboxedEventRepository):
         self._rows[outboxed_event_id] = dataclasses.replace(current, status=new_status)
 
     async def commit(self) -> None:
-        return None
+        self._staged.clear()
 
     async def rollback(self) -> None:
-        return None
+        for row_id in self._staged:
+            self._rows.pop(row_id, None)
+        self._staged.clear()
 
 
 __all__ = ("MemoryOutboxRepository",)

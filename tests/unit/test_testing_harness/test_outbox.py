@@ -59,7 +59,11 @@ async def test_outbox_broker_error_leaves_not_produced() -> None:
         harness.broker.fail_next(ConnectionError("down"))
         await harness.outbox.produce_available()
         assert harness.outbox.not_produced_count == 1
+        assert harness.outbox.pending_count == 1
         harness.published.assert_empty()
+        await harness.outbox.produce_available()
+        assert harness.outbox.pending_count == 0
+        assert harness.outbox.produced_count == 1
 
 
 async def test_memory_outbox_counters_are_per_instance() -> None:
@@ -75,3 +79,19 @@ async def test_memory_outbox_counters_are_per_instance() -> None:
     assert await first.get_many() == []
     assert first._rows[1].status is EventStatus.PRODUCED
     assert (await second.get_many())[0].status is EventStatus.NEW
+
+
+async def test_memory_outbox_rollback_drops_rows_added_since_commit() -> None:
+    repository = MemoryOutboxRepository()
+    repository.add(OrderCreatedNotice())
+    await repository.rollback()
+    assert await repository.get_many() == []
+
+    repository.add(OrderCreatedNotice())
+    await repository.commit()
+    kept = (await repository.get_many())[0]
+    repository.add(OrderCreatedNotice())
+    await repository.rollback()
+    rows = await repository.get_many()
+    assert [row.id for row in rows] == [kept.id]
+    assert rows[0].status is EventStatus.NEW

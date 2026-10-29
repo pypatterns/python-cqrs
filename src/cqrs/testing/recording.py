@@ -318,8 +318,6 @@ class OutboxJournal:
                     self._pending -= 1
                 self._produced += 1
             elif new_status is EventStatus.NOT_PRODUCED:
-                if self._pending:
-                    self._pending -= 1
                 self._not_produced += 1
 
         repository.update_status = update_status

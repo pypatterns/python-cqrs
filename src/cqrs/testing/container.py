@@ -9,10 +9,15 @@ constructs the type with no arguments. ``ScopeStrategy.SEND`` needs a
 
 import inspect
 import typing
+from contextvars import ContextVar
 
 from cqrs.testing.recording import InvocationJournal
 
 _RECORDING = "_cqrs_testing_recording"
+_ACTIVE_JOURNAL: ContextVar[InvocationJournal | None] = ContextVar(
+    "cqrs_testing_active_invocation_journal",
+    default=None,
+)
 _T = typing.TypeVar("_T")
 
 
@@ -56,20 +61,32 @@ def _first_argument(args: tuple[typing.Any, ...], kwargs: dict[str, typing.Any])
     return None
 
 
+def _record_entry(
+    handler_type: type,
+    method_name: str,
+    args: tuple[typing.Any, ...],
+    kwargs: dict[str, typing.Any],
+    instance: typing.Any,
+) -> None:
+    journal = _ACTIVE_JOURNAL.get()
+    if journal is None:
+        return
+    journal.record(
+        handler_type,
+        method_name,
+        _first_argument(args, kwargs),
+        instance,
+    )
+
+
 def _wrap_coroutine(
     original: typing.Callable[..., typing.Awaitable[typing.Any]],
     handler_type: type,
     method_name: str,
     instance: typing.Any,
-    journal: InvocationJournal,
 ) -> typing.Callable[..., typing.Awaitable[typing.Any]]:
     async def wrapped(*args: typing.Any, **kwargs: typing.Any) -> typing.Any:
-        journal.record(
-            handler_type,
-            method_name,
-            _first_argument(args, kwargs),
-            instance,
-        )
+        _record_entry(handler_type, method_name, args, kwargs, instance)
         return await original(*args, **kwargs)
 
     setattr(wrapped, _RECORDING, True)
@@ -81,15 +98,9 @@ def _wrap_async_gen(
     handler_type: type,
     method_name: str,
     instance: typing.Any,
-    journal: InvocationJournal,
 ) -> typing.Callable[..., typing.AsyncIterator[typing.Any]]:
     async def wrapped(*args: typing.Any, **kwargs: typing.Any) -> typing.AsyncIterator[typing.Any]:
-        journal.record(
-            handler_type,
-            method_name,
-            _first_argument(args, kwargs),
-            instance,
-        )
+        _record_entry(handler_type, method_name, args, kwargs, instance)
         async for item in original(*args, **kwargs):
             yield item
 
@@ -97,10 +108,25 @@ def _wrap_async_gen(
     return wrapped
 
 
+def _restore_method(
+    instance: typing.Any,
+    method_name: str,
+    previous: typing.Any,
+    had_attr: bool,
+) -> None:
+    if had_attr:
+        setattr(instance, method_name, previous)
+        return
+    try:
+        delattr(instance, method_name)
+    except AttributeError:
+        return
+
+
 def instrument_instance(
     instance: typing.Any,
     handler_type: type,
-    journal: InvocationJournal,
+    undo: list[typing.Callable[[], None]],
 ) -> None:
     """Record entry into ``handle``, ``act``, and ``compensate`` on ``instance``."""
 
@@ -111,35 +137,58 @@ def instrument_instance(
         if getattr(current, _RECORDING, False):
             continue
         if inspect.isasyncgenfunction(current):
-            replacement = _wrap_async_gen(current, handler_type, method_name, instance, journal)
+            replacement = _wrap_async_gen(current, handler_type, method_name, instance)
         elif inspect.iscoroutinefunction(current):
-            replacement = _wrap_coroutine(current, handler_type, method_name, instance, journal)
+            replacement = _wrap_coroutine(current, handler_type, method_name, instance)
         else:
             continue
+        instance_dict = getattr(instance, "__dict__", None)
+        had_attr = isinstance(instance_dict, dict) and method_name in instance_dict
         setattr(instance, method_name, replacement)
+        undo.append(
+            lambda inst=instance, name=method_name, previous=current, owned=had_attr: _restore_method(
+                inst,
+                name,
+                previous,
+                owned,
+            ),
+        )
 
 
 def wrap_resolve(container: typing.Any, journal: InvocationJournal) -> typing.Callable[[], None]:
     """
     Wrap ``container.resolve`` so each handler records entry.
 
-    Returns a callable that restores the previous ``resolve``.
+    Recording follows the active harness journal. ``restore`` drops instance
+    patches this wrap installed and puts the previous ``resolve`` back.
+    A nested wrap on an already wrapped container only switches that journal.
     """
 
+    token = _ACTIVE_JOURNAL.set(journal)
     original = container.resolve
     if getattr(original, _RECORDING, False):
-        return lambda: None
+
+        def restore_journal() -> None:
+            _ACTIVE_JOURNAL.reset(token)
+
+        return restore_journal
+
+    undo: list[typing.Callable[[], None]] = []
 
     async def resolve(type_: typing.Type[_T]) -> _T:
         instance = await original(type_)
-        instrument_instance(instance, type_, journal)
+        instrument_instance(instance, type_, undo)
         return instance
 
     setattr(resolve, _RECORDING, True)
     container.resolve = resolve
 
     def restore() -> None:
+        for undo_patch in reversed(undo):
+            undo_patch()
+        undo.clear()
         container.resolve = original
+        _ACTIVE_JOURNAL.reset(token)
 
     return restore
 

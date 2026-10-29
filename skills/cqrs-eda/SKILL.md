@@ -109,7 +109,7 @@ Full example: `examples/streaming/streaming_handler_parallel_events.py`.
 
 ## How to test
 
-Assert a domain event on `handled`. It is not on `published`. Assert a notification on `published`. It is not on `handled`. Parallel handlers are both on `invocations`. Do not assert their order. An outbox row is on `outbox` and stays off `published` until `produce_available`. After `process_available`, an inbox command is on `requests` and an inbox event is on `invocations`. A duplicate `add` is `False`. Detail is `cqrs-testing`.
+Assert a domain event on `handled`. It is not on `published`. Assert a notification on `published`. It is not on `handled`. Parallel handlers are both on `invocations`. Do not assert their order. An outbox row is on `outbox` and stays off `published` until `produce_available`. After `process_available`, an inbox command is on `requests` and an inbox event is on `invocations`. A duplicate `add` returns `[False]`. Detail is `cqrs-testing`.
 
 ## Do not
 

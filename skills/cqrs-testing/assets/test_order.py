@@ -40,17 +40,37 @@ class CreateOrderHandler(cqrs.RequestHandler[CreateOrder]):
         return CreatedOrder(order_id="1")
 
 
+class AuditOrderCreated(cqrs.EventHandler[OrderCreated]):
+    async def handle(self, event: OrderCreated) -> None:
+        return None
+
+
 def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-async def place_order() -> None:
+def domain_events_mapper(mapper: cqrs.EventMap) -> None:
+    mapper.bind(OrderCreated, AuditOrderCreated)
+
+
+async def test_place_order() -> None:
     container = di.Container()
-    async with test_harness(container, commands_mapper=commands_mapper) as harness:
+    async with test_harness(
+        container,
+        commands_mapper=commands_mapper,
+        domain_events_mapper=domain_events_mapper,
+    ) as harness:
         result = await harness.mediator.send(CreateOrder(sku="book"))
         assert result.order_id == "1"
         assert harness.requests.contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)
+        harness.invocations.assert_entered(AuditOrderCreated)
         assert harness.handled.contains(OrderCreated)
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")
         assert not harness.handled.contains(OrderCreatedNotice)
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    asyncio.run(test_place_order())
