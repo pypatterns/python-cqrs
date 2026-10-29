@@ -48,6 +48,10 @@ A streaming command and an ordinary command do not share a mediator. Binding the
 
 Skip this skill when the caller needs one answer. The chooser in `cqrs-setup` already says that. This file only builds the stream.
 
+## How to test
+
+Collect the stream and compare it to `yields`, in order. A domain event emitted after a yield is on `handled`. `clear_events` does not remove it from the harness. Detail is `cqrs-testing`.
+
 ## Do not
 
 - Use a stream for a single response. `RequestMediator.send` is that path.

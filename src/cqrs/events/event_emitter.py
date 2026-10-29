@@ -25,6 +25,21 @@ logger = logging.getLogger("cqrs")
 _H: typing.TypeAlias = event_handler.EventHandler
 
 
+class EventEmitterListener(typing.Protocol):
+    """Optional observer for domain-handler failures and events with no handlers."""
+
+    def on_domain_handler_error(
+        self,
+        event: IDomainEvent,
+        handler: type,
+        error: BaseException,
+    ) -> None:
+        """Called when a domain handler error is logged and swallowed."""
+
+    def on_unhandled(self, event: IDomainEvent) -> None:
+        """Called when a domain event has no registered handlers."""
+
+
 class EventEmitter:
     """
     Sends events to registered handlers or to a message broker.
@@ -50,6 +65,7 @@ class EventEmitter:
         scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
         *,
         serializer: EventSerializer | None = None,
+        listener: EventEmitterListener | None = None,
     ) -> None:
         """
         Initialize the event emitter.
@@ -61,6 +77,7 @@ class EventEmitter:
                 when emitting :class:`~cqrs.events.event.INotificationEvent`.
             scope_strategy: DI scope boundary; HANDLER opens a scope per handler.
             serializer: Codec used to fill ``Message.payload_bytes``. Defaults to JSON.
+            listener: Optional observer. ``None`` leaves ``emit`` behavior unchanged.
 
         Example::
 
@@ -78,6 +95,7 @@ class EventEmitter:
         self._message_broker = message_broker
         self._scope_strategy = scope_strategy
         self._serializer = serializer or JsonEventSerializer()
+        self._listener = listener
 
     @functools.singledispatchmethod
     async def emit(self, event: IEvent) -> typing.Sequence[IEvent]:
@@ -222,6 +240,8 @@ class EventEmitter:
                 "Handlers for domain event %s not found",
                 type(event).__name__,
             )
+            if self._listener is not None:
+                self._listener.on_unhandled(event)
             return ()
 
         results = await self._run_handlers(event, handlers_types)
@@ -241,6 +261,11 @@ class EventEmitter:
                     res,
                     exc_info=res,
                 )
+                if self._listener is not None:
+                    handler_type = (
+                        handler_item.primary if isinstance(handler_item, EventHandlerFallback) else handler_item
+                    )
+                    self._listener.on_domain_handler_error(event, handler_type, res)
             elif isinstance(res, BaseException):
                 raise res
             else:

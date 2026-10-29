@@ -107,6 +107,10 @@ Do not use parallel handlers as a saga. There is no compensation here. A flow th
 Short shape: [assets/parallel_handlers.py](assets/parallel_handlers.py).
 Full example: `examples/streaming/streaming_handler_parallel_events.py`.
 
+## How to test
+
+Assert a domain event on `handled`. It is not on `published`. Assert a notification on `published`. It is not on `handled`. Parallel handlers are both on `invocations`. Do not assert their order. An outbox row is on `outbox` and stays off `published` until `produce_available`. After `process_available`, an inbox command is on `requests` and an inbox event is on `invocations`. A duplicate `add` returns `[False]`. Detail is `cqrs-testing`.
+
 ## Do not
 
 - Publish with `broker.send` next to `session.commit()`. A crash between those writes loses the message. Write the outbox row instead.

@@ -16,6 +16,11 @@ Startup is not on this package. Import the submodule:
 - ``cqrs.bootstrap.events.bootstrap`` builds ``EventMediator``.
 - ``cqrs.bootstrap.saga.bootstrap`` builds ``SagaMediator``.
 
+Tests import ``cqrs.testing``. ``from cqrs.testing import test_harness`` runs the
+mediators above and records what they did. ``test_harness`` is not in
+``__all__``: tests are not part of the runtime surface, the same way
+``cqrs.bootstrap`` is not.
+
 Requests and handlers on ``cqrs``: ``Request``, ``DCRequest``, ``Response``,
 ``RequestHandler``, ``StreamingRequestHandler``, ``RequestMediator``,
 ``StreamingRequestMediator``, ``RequestMap``, ``RequestHandlerFallback``.
