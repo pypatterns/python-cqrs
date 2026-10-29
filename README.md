@@ -1042,7 +1042,7 @@ mediator = bootstrap.bootstrap_streaming(
 
 ## Testing
 
-`from cqrs.testing import test_harness` runs the real mediators and records what they did. It is not part of `cqrs.__all__`.
+`from cqrs.testing import test_harness` runs the real mediators and records what they did. It is not part of `cqrs.__all__`. Optional test dependencies install with `pip install python-cqrs[testing]`.
 
 ```python
 from cqrs.testing import test_harness

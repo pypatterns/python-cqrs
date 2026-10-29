@@ -30,13 +30,22 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.3.1"
+version = "5.4.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
 pydantic = ["pydantic==2.*"]
 sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
 sqlmodel = ["sqlmodel>=0.0.22", "sqlalchemy[asyncio]==2.0.*"]
+testing = [
+  "pytest~=7.4.2",
+  "pytest-asyncio~=0.21.1",
+  "pydantic==2.*",
+  "sqlalchemy[asyncio]==2.0.*",
+  "sqlmodel>=0.0.22",
+  "aiosqlite>=0.20.0",
+  "protobuf>=4.25.8",
+]
 dev = [
   # Develope tools
   "pycln==2.5.0",
@@ -47,12 +56,11 @@ dev = [
   "pytest-cov>=4.0.0",
   "pytest-codspeed==4.2.0",
   # Tests
+  "python-cqrs[testing]",
   "aio-pika==9.3.0",        # from rabbit
   "aiokafka==0.10.0",       # from kafka
   "retry-async==0.1.*",     # from kafka
   "requests==2.*",          # from aiokafka
-  "pytest~=7.4.2",
-  "pytest-asyncio~=0.21.1",
   "pytest-env==0.6.2",
   "alembic>=1.13.0",  # from outbox migrations tests
   "cryptography==50.0.0",
@@ -62,12 +70,6 @@ dev = [
   # Circuit breaker for tests
   "aiobreaker>=0.3.0", # from aiobreaker
   "dishka>=1.0",  # scoped-deps dishka adapter tests / examples
-  "protobuf>=4.25.8",  # protobuf codec / deserializer unit tests
-  # Full suite extras
-  "pydantic==2.*",
-  "sqlalchemy[asyncio]==2.0.*",
-  "sqlmodel>=0.0.22",
-  "aiosqlite>=0.20.0",
 ]
 examples = [
   "fastapi==0.109.*",
