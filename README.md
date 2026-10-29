@@ -21,7 +21,7 @@
 
 python-cqrs routes every command and query through one mediator, and builds what a service needs once it talks to other services on top of that:
 
-- **Sagas.** An orchestrated saga with automatic compensation, fallback steps, a circuit breaker, and recovery after a crash.
+- **Sagas.** An orchestrated saga across services, with automatic compensation and recovery after a crash.
 - **Reliable messaging.** A transactional outbox commits the broker message with the business row. A transactional inbox stores the incoming message before the handler runs.
 - **Events.** Domain events are handled in this process, optionally in parallel. Notifications go to Kafka or RabbitMQ.
 - **Streaming and chains.** A handler can yield results as they are ready, for example over SSE. A chain of handlers passes the request along until one takes it.
@@ -34,7 +34,7 @@ Request and event types are plain dataclasses by default, or Pydantic. Storage i
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Saga](#saga)
-- [Transactional outbox](#transactional-outbox)
+- [Outbox and inbox](#outbox-and-inbox)
 - [Domain events](#domain-events)
 - [FastAPI](#fastapi)
 - [Testing](#testing)
@@ -209,56 +209,13 @@ saga failed: card declined
 
 The reservation id travels on the context from `act` to `compensate`. `InventoryClient` and `PaymentClient` are resolved from the container, the same way a request handler gets its dependencies. `ChargeCard` never completed, so it is not compensated.
 
-### Fallback and circuit breaker
+Persistent saga storage, recovery after a crash, and fallback steps with a circuit breaker are in the [Saga](https://mkdocs.python-cqrs.dev/latest/saga/) guide.
 
-When the warehouse is down, the saga can reserve from a backup instead of failing the order. `Fallback` runs the spare step when the primary raises. The circuit breaker counts failures and, once open, skips the primary entirely until the timeout passes.
+## Outbox and inbox
 
-```python
-from cqrs.adapters.circuit_breaker import AioBreakerAdapter
-from cqrs.saga.fallback import Fallback
+A broker delivers between services, but neither side can make the database write and the broker call one transaction. The outbox covers sending, the inbox covers receiving. Both keep the message in a table first.
 
-
-class ReserveFromBackupWarehouse(cqrs.SagaStepHandler[OrderContext, None]):
-    async def act(self, context: OrderContext):
-        context.reservation_id = f"backup-{context.order_id}"
-        return self._generate_step_result(None)
-
-    async def compensate(self, context: OrderContext) -> None:
-        context.reservation_id = None
-
-
-class OrderSaga(cqrs.Saga[OrderContext]):
-    steps = [
-        Fallback(
-            step=ReserveStock,
-            fallback=ReserveFromBackupWarehouse,
-            circuit_breaker=AioBreakerAdapter(fail_max=2, timeout_duration=60),
-        ),
-        ChargeCard,
-    ]
-```
-
-Breaker state can live in Redis so every instance of the service sees the same circuit. [Fallback](https://mkdocs.python-cqrs.dev/latest/saga/fallback/) · [Circuit breaker](https://mkdocs.python-cqrs.dev/latest/saga/fallback/circuit_breaker/)
-
-### Recovery after a crash
-
-If the process dies between steps, the saga is left half-done. With `SqlAlchemySagaStorage` or `SqlModelSagaStorage`, status and step history are stored after every step. `recover_saga` picks the run up again: it continues forward from the last completed step, or keeps compensating if the saga had already failed. A completed step is not run twice.
-
-```python
-from cqrs.saga.recovery import recover_saga
-
-await recover_saga(
-    saga=OrderSaga(),
-    saga_id=saga_id,              # the id passed to execute
-    context_builder=OrderContext,
-    container=container,          # the container the saga mediator was built with
-    storage=storage,
-)
-```
-
-Run it from a scheduler over the interrupted sagas in storage. [Saga](https://mkdocs.python-cqrs.dev/latest/saga/) · [Storage](https://mkdocs.python-cqrs.dev/latest/saga/storage/) · [Recovery](https://mkdocs.python-cqrs.dev/latest/saga/recovery/) · [Mermaid diagrams of a saga](https://mkdocs.python-cqrs.dev/latest/mermaid/saga/)
-
-## Transactional outbox
+### Outbox: publish with the business write
 
 Other services need to hear that the order was placed. Committing the order and then publishing to Kafka is two writes: a crash or a broker outage between them loses the message, and nothing retries it.
 
@@ -282,9 +239,47 @@ class CreateOrderHandler(cqrs.RequestHandler[CreateOrder]):
         return OrderCreated(order_id=order_id)
 ```
 
-`SqlAlchemyOutboxedEventRepository` and `SqlModelOutboxedEventRepository` are bound to the session the handler writes with. The publisher is `EventProducer` over a Kafka or RabbitMQ broker. JSON is the default format, Protobuf is opt-in per event.
+`SqlAlchemyOutboxedEventRepository` and `SqlModelOutboxedEventRepository` are bound to the session the handler writes with. The publisher is `EventProducer` over a Kafka or RabbitMQ broker. JSON is the default format, Protobuf is opt-in per event. [Outbox](https://mkdocs.python-cqrs.dev/latest/outbox/) · [Database support](https://mkdocs.python-cqrs.dev/latest/outbox/databases/) · [`examples/outbox/`](https://github.com/pypatterns/python-cqrs/tree/master/examples/outbox)
 
-On the consuming side, the transactional inbox stores the incoming message first and then runs the handler that is already registered, so a redelivered message is not processed twice. [Outbox](https://mkdocs.python-cqrs.dev/latest/outbox/) · [Database support](https://mkdocs.python-cqrs.dev/latest/outbox/databases/) · [Inbox](https://mkdocs.python-cqrs.dev/latest/inbox/) · [`examples/outbox/`](https://github.com/pypatterns/python-cqrs/tree/master/examples/outbox)
+### Inbox: accept once, process once
+
+The payment service reports back that the order was paid. A broker can redeliver the same message, and the consumer can crash after acking but before the handler has finished.
+
+The subscriber only stores the message and commits, then acks. `add` returns `False` for a `message_id` that is already in the table, so a redelivery is not stored twice.
+
+```python
+class ConfirmPayment(cqrs.Request[None]):
+    order_id: str
+
+
+message_map = cqrs.InboxMessageMap()
+message_map.register("ConfirmPayment", ConfirmPayment)
+
+
+async def on_message(message_id: str, body: dict) -> None:
+    async with session_factory() as session:
+        inbox = cqrs.SqlAlchemyInboxRepository(session, message_map=message_map)
+        await inbox.add([(message_id, ConfirmPayment(order_id=body["order_id"]))])
+        await session.commit()
+```
+
+A worker reads stored rows and runs each one through the mediator, where `ConfirmPayment` is bound to its handler like any other request. The handler writes through the same session, and one commit stores its changes together with the `processed` status.
+
+```python
+async def process_inbox() -> None:
+    async with session_factory() as session:
+        inbox = cqrs.SqlAlchemyInboxRepository(session, message_map=message_map)
+        processor = cqrs.InboxProcessor(
+            inbox,
+            message_map,
+            request_mediator=mediator_for(session),
+        )
+        for row in await inbox.get_many(batch_size=100):
+            await processor.process(row)
+        await session.commit()
+```
+
+`mediator_for(session)` is your bootstrap with that session bound in the container. A failed row stays in the table and is retried up to five times. On PostgreSQL and MySQL, `get_many` locks rows with `SKIP LOCKED`, so several workers can run in parallel. [Inbox](https://mkdocs.python-cqrs.dev/latest/inbox/) · [`examples/inbox/`](https://github.com/pypatterns/python-cqrs/tree/master/examples/inbox)
 
 ## Domain events
 
@@ -400,7 +395,8 @@ Full guides are at **[mkdocs.python-cqrs.dev](https://mkdocs.python-cqrs.dev/lat
 - [Request and response types](https://mkdocs.python-cqrs.dev/latest/request_response_types/): dataclasses, Pydantic, msgspec, attrs, and others
 - [Streaming](https://mkdocs.python-cqrs.dev/latest/stream_handling/): handlers that yield results as they finish
 - [Chain of responsibility](https://mkdocs.python-cqrs.dev/latest/chain_of_responsibility/): several handlers for one request, the first match wins
-- [Fallback for requests and events](https://mkdocs.python-cqrs.dev/latest/request_handler/fallback/): a spare handler behind a circuit breaker
+- [Saga storage and recovery](https://mkdocs.python-cqrs.dev/latest/saga/recovery/): resume a saga after a crash
+- [Fallback and circuit breaker](https://mkdocs.python-cqrs.dev/latest/saga/fallback/): a spare step or handler when the primary fails
 - [Middlewares](https://mkdocs.python-cqrs.dev/latest/bootstrap/middlewares/) and [message brokers](https://mkdocs.python-cqrs.dev/latest/bootstrap/message_brokers/)
 - [Protobuf](https://mkdocs.python-cqrs.dev/latest/protobuf/) and [Mermaid diagrams](https://mkdocs.python-cqrs.dev/latest/mermaid/)
 
