@@ -91,7 +91,6 @@ async def session() -> typing.AsyncIterator[AsyncSession]:
 
 
 async def test_send_stores_a_pending_row(session: AsyncSession) -> None:
-    # Arrange
     event_map = cqrs.OutboxedEventMap()
     event_map.register("order_created", OrderCreatedNotice)
     outbox = cqrs.outbox.sqlmodel.SqlModelOutboxedEventRepository(session, event_map=event_map)
@@ -99,8 +98,6 @@ async def test_send_stores_a_pending_row(session: AsyncSession) -> None:
     bind_outbox(container, outbox)
     mediator = bootstrap.bootstrap(di_container=container, commands_mapper=commands_mapper)
     async with test_harness.around(mediator, outbox=outbox) as harness:
-        # Act
         await mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert harness.outbox.pending_count == 1

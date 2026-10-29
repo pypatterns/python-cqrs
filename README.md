@@ -250,13 +250,10 @@ from cqrs.testing import test_harness
 
 
 async def test_create_order() -> None:
-    # Arrange
     async with test_harness(di.Container(), commands_mapper=commands_mapper) as harness:
 
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book", amount=99.99))
 
-        # Assert
         assert result.order_id == "ord-book"
         assert harness.requests.contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)

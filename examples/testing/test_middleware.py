@@ -34,17 +34,14 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def test_middleware_answers_without_the_handler() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
         middlewares=[DenyMiddleware()],
     ) as harness:
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert result.order_id == "denied"
         harness.invocations.assert_not_entered(CreateOrderHandler)
         assert harness.middlewares.of(DenyMiddleware)[0].called_next is False

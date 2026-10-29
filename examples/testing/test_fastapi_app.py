@@ -58,7 +58,6 @@ async def create_order(
 
 
 async def test_route_sends_the_command_and_stores_the_row() -> None:
-    # Arrange
     mediator = bootstrap.bootstrap(
         di_container=di.Container(),
         commands_mapper=commands_mapper,
@@ -66,10 +65,8 @@ async def test_route_sends_the_command_and_stores_the_row() -> None:
     app.dependency_overrides[mediator_factory] = lambda: mediator
     client = testclient.TestClient(app)
     async with test_harness.around(mediator, outbox=outbox) as harness:
-        # Act
         response = client.post("/orders", json={"sku": "book"})
 
-        # Assert
         assert response.status_code == 201
         assert harness.requests.contains(CreateOrder)
         assert harness.outbox.pending_count == 1

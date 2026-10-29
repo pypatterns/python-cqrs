@@ -43,7 +43,6 @@ def _inbox() -> MemoryInboxRepository:
 
 
 async def test_subscriber_sends_the_event_to_event_mediator() -> None:
-    # Arrange
     event_mediator = events_bootstrap.bootstrap(
         di_container=di.Container(),
         events_mapper=events_mapper,
@@ -57,15 +56,12 @@ async def test_subscriber_sends_the_event_to_event_mediator() -> None:
 
     async with kafka.TestKafkaBroker(broker) as test_broker:
         async with test_harness.around(event_mediator, inbox=inbox) as harness:
-            # Act
             await test_broker.publish({"order_id": "1"}, "order_events")
 
-            # Assert
             harness.invocations.assert_entered(AuditHandler)
 
 
 async def test_subscriber_only_stores_the_message_in_the_inbox() -> None:
-    # Arrange
     event_mediator = events_bootstrap.bootstrap(
         di_container=di.Container(),
         events_mapper=events_mapper,
@@ -79,9 +75,7 @@ async def test_subscriber_only_stores_the_message_in_the_inbox() -> None:
 
     async with kafka.TestKafkaBroker(broker) as test_broker:
         async with test_harness.around(event_mediator, inbox=inbox) as harness:
-            # Act
             await test_broker.publish({"order_id": "1"}, "order_events")
 
-            # Assert
             assert harness.inbox.pending_count == 1
             harness.invocations.assert_not_entered(CreateOrderHandler)

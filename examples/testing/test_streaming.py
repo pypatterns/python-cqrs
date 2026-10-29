@@ -93,30 +93,24 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 async def test_stream_records_yields_and_events() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         streaming_mapper=streaming_mapper,
         domain_events_mapper=domain_events_mapper,
     ) as harness:
-        # Act
         items = [item async for item in harness.streaming_mediator.stream(ExportOrders(batch=2))]
 
-        # Assert
         assert [item.index for item in items] == [0, 1]
         assert items == harness.yields
         assert harness.handled.contains(RowExported)
 
 
 async def test_stream_fallback_restarts_the_stream() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, streaming_mapper=fallback_streaming_mapper) as harness:
-        # Act
         items = [item async for item in harness.streaming_mediator.stream(ExportOrders(batch=2))]
 
-        # Assert
         harness.invocations.assert_entered(FailingExportOrdersHandler)
         harness.invocations.assert_entered(ExportOrdersFallback)
         assert [item.index for item in harness.yields] == [0, 0, 1]

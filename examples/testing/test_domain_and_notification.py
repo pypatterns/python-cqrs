@@ -95,17 +95,14 @@ def failing_domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 async def test_domain_event_and_follow_up_are_handled() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
         domain_events_mapper=domain_events_mapper,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert harness.handled.contains(OrderCreated)
         assert harness.handled.contains(InvoiceRequested)
         harness.invocations.assert_entered(AuditHandler)
@@ -114,13 +111,10 @@ async def test_domain_event_and_follow_up_are_handled() -> None:
 
 
 async def test_notification_is_published_as_json() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=notifying_commands_mapper) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")
         assert not harness.handled.contains(OrderCreatedNotice)
         message = harness.published.one(OrderCreatedNotice)
@@ -129,28 +123,22 @@ async def test_notification_is_published_as_json() -> None:
 
 
 async def test_domain_handler_error_is_swallowed() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
         domain_events_mapper=failing_domain_events_mapper,
     ) as harness:
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert result.order_id == "1"
         assert harness.handler_errors.of(OrderCreated, FailingAuditHandler)
 
 
 async def test_event_without_handler_is_unhandled() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert harness.unhandled.contains(OrderCreated)
         harness.invocations.assert_not_entered(AuditHandler)

@@ -27,12 +27,9 @@ def events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 async def test_event_mediator_enters_handle() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, events_mapper=events_mapper) as harness:
-        # Act
         await harness.event_mediator.send(OrderCreated(order_id="1"))
 
-        # Assert
         harness.invocations.assert_entered(AuditHandler)
         assert harness.invocations.of(AuditHandler)[0].method == "handle"

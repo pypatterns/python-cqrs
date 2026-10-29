@@ -88,7 +88,6 @@ async def session() -> typing.AsyncIterator[AsyncSession]:
 
 
 async def test_produce_publishes_the_stored_row(session: AsyncSession) -> None:
-    # Arrange
     event_map = cqrs.OutboxedEventMap()
     event_map.register("order_created", OrderCreatedNotice)
     outbox = cqrs.SqlAlchemyOutboxedEventRepository(session, event_map=event_map)
@@ -98,8 +97,6 @@ async def test_produce_publishes_the_stored_row(session: AsyncSession) -> None:
     async with test_harness.around(mediator, outbox=outbox) as harness:
         await mediator.send(CreateOrder(sku="book"))
 
-        # Act
         await harness.outbox.produce_available()
 
-        # Assert
         assert harness.outbox.produced_count == 1

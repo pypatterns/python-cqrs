@@ -60,7 +60,6 @@ def _mapper(saga: type[cqrs.Saga[OrderContext]]):
 
 
 async def test_saga_step_acts_and_the_saga_completes() -> None:
-    # Arrange
     ReserveStock = _success_step("ReserveStock")
     ChargeCard = _success_step("ChargeCard")
 
@@ -69,13 +68,11 @@ async def test_saga_step_acts_and_the_saga_completes() -> None:
 
     container = di.Container()
     async with test_harness(container, sagas_mapper=_mapper(OrderSaga)) as harness:
-        # Act
         running_after_reserve = None
         async for step in harness.saga_mediator.execute(OrderContext(order_id="1")):
             if step.step_type is ReserveStock:
                 running_after_reserve = harness.sagas.running_count
 
-        # Assert
         assert running_after_reserve == 1
         assert harness.invocations.of(ReserveStock)[0].method == "act"
         assert harness.sagas.running_count == 0
@@ -84,7 +81,6 @@ async def test_saga_step_acts_and_the_saga_completes() -> None:
 
 
 async def test_failed_step_compensates_finished_steps() -> None:
-    # Arrange
     ReserveStock = _success_step("ReserveStock")
 
     class ChargeCard(cqrs.SagaStepHandler[OrderContext, None]):
@@ -99,12 +95,10 @@ async def test_failed_step_compensates_finished_steps() -> None:
 
     container = di.Container()
     async with test_harness(container, sagas_mapper=_mapper(OrderSaga)) as harness:
-        # Act
         with pytest.raises(CardDeclined):
             async for _ in harness.saga_mediator.execute(OrderContext(order_id="1")):
                 pass
 
-        # Assert
         assert harness.invocations.of(ReserveStock)[-1].method == "compensate"
         saga = harness.sagas.one(OrderSaga)
         assert saga.status is SagaStatus.FAILED
@@ -112,7 +106,6 @@ async def test_failed_step_compensates_finished_steps() -> None:
 
 
 async def test_saga_fallback_replaces_the_failed_step() -> None:
-    # Arrange
     class ReserveStock(cqrs.SagaStepHandler[OrderContext, None]):
         async def act(self, context: OrderContext):
             raise RuntimeError("stock down")
@@ -131,11 +124,9 @@ async def test_saga_fallback_replaces_the_failed_step() -> None:
 
     container = di.Container()
     async with test_harness(container, sagas_mapper=_mapper(OrderSaga)) as harness:
-        # Act
         async for _ in harness.saga_mediator.execute(OrderContext(order_id="1")):
             pass
 
-        # Assert
         harness.invocations.assert_entered(ReserveStock)
         harness.invocations.assert_entered(ReserveStockFallback)
         assert harness.invocations.of(ReserveStock)[-1].method == "act"
@@ -143,7 +134,6 @@ async def test_saga_fallback_replaces_the_failed_step() -> None:
 
 
 async def test_open_saga_breaker_skips_the_step() -> None:
-    # Arrange
     class ReserveStock(cqrs.SagaStepHandler[OrderContext, None]):
         async def act(self, context: OrderContext):
             raise RuntimeError("stock down")
@@ -164,17 +154,14 @@ async def test_open_saga_breaker_skips_the_step() -> None:
 
     container = di.Container()
     async with test_harness(container, sagas_mapper=_mapper(OrderSaga)) as harness:
-        # Act
         async for _ in harness.saga_mediator.execute(OrderContext(order_id="1")):
             pass
 
-        # Assert
         harness.invocations.assert_not_entered(ReserveStock)
         harness.invocations.assert_entered(ReserveStockFallback)
 
 
 async def test_recovery_does_not_repeat_a_finished_step() -> None:
-    # Arrange
     ReserveStock = _success_step("ReserveStock")
     ChargeCard = _success_step("ChargeCard")
 
@@ -188,10 +175,8 @@ async def test_recovery_does_not_repeat_a_finished_step() -> None:
                 break
         saga_id = harness.sagas.one(OrderSaga).saga_id
 
-        # Act
         await harness.sagas.recover(OrderSaga(), saga_id, OrderContext)
 
-        # Assert
         acts = [item for item in harness.invocations.of(ReserveStock) if item.method == "act"]
         assert len(acts) == 1
         assert harness.sagas.one(OrderSaga).status is SagaStatus.COMPLETED

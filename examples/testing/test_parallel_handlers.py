@@ -56,7 +56,6 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 async def test_parallel_handlers_both_enter() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
@@ -65,16 +64,13 @@ async def test_parallel_handlers_both_enter() -> None:
         concurrent_event_handle_enable=True,
         scope_strategy=cqrs.ScopeStrategy.HANDLER,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         harness.invocations.assert_entered(AuditHandler)
         harness.invocations.assert_entered(SearchHandler)
 
 
 async def test_scope_send_runs_handlers_in_order() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
@@ -82,16 +78,13 @@ async def test_scope_send_runs_handlers_in_order() -> None:
         domain_events_mapper=domain_events_mapper,
         scope_strategy=cqrs.ScopeStrategy.SEND,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         entered = [item.handler for item in harness.invocations if item.argument_type is OrderCreated]
         assert entered == [AuditHandler, SearchHandler]
 
 
 async def test_scope_none_enters_both_handlers_in_any_order() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
@@ -100,9 +93,7 @@ async def test_scope_none_enters_both_handlers_in_any_order() -> None:
         concurrent_event_handle_enable=True,
         scope_strategy=cqrs.ScopeStrategy.NONE,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         handlers = {item.handler for item in harness.invocations if item.argument_type is OrderCreated}
         assert handlers == {AuditHandler, SearchHandler}

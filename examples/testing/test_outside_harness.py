@@ -77,45 +77,35 @@ def outbox_model():
 
 
 def test_cor_sequence_diagram_names_each_step() -> None:
-    # Arrange
     diagram = cqrs.CoRMermaid([CardHandler, CashHandler])
 
-    # Act
     sequence = diagram.sequence()
 
-    # Assert
     assert "CardHandler" in sequence
     assert "CashHandler" in sequence
 
 
 def test_zlib_round_trip_returns_the_payload() -> None:
-    # Arrange
     compressor = cqrs.ZlibCompressor()
     payload = b'{"order_id": "1"}'
 
-    # Act
     restored = compressor.decompress(compressor.compress(payload))
 
-    # Assert
     assert restored == payload
 
 
 @pytest.mark.sqlalchemy
 def test_rebind_puts_the_outbox_table_on_the_application_metadata(outbox_model) -> None:
-    # Arrange
     Base = orm.registry().generate_base()
     engine = sqlalchemy.create_engine("sqlite://")
 
-    # Act
     cqrs.rebind_outbox_model(outbox_model, Base, "app_outbox")
     Base.metadata.create_all(engine)
 
-    # Assert
     assert "app_outbox" in sqlalchemy.inspect(engine).get_table_names()
 
 
 async def test_capturing_broker_records_the_notice() -> None:
-    # Arrange
     broker = CapturingMessageBroker()
     mediator = bootstrap.bootstrap(
         di_container=di.Container(),
@@ -123,8 +113,6 @@ async def test_capturing_broker_records_the_notice() -> None:
         commands_mapper=commands_mapper,
     )
     async with test_harness.around(mediator, broker=broker) as harness:
-        # Act
         await mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")

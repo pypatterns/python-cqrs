@@ -36,13 +36,10 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def test_matching_step_does_not_call_next() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:
-        # Act
         result = await harness.mediator.send(PayOrder(method="card"))
 
-        # Assert
         assert result.method == "card"
         harness.invocations.assert_entered(CardHandler)
         harness.invocations.assert_not_entered(CashHandler)

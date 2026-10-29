@@ -37,7 +37,6 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def test_around_records_a_mediator_on_dependency_injector() -> None:
-    # Arrange
     adapter = DependencyInjectorCQRSContainer()
     adapter.attach_external_container(Container())
     mediator = bootstrap.bootstrap(
@@ -45,8 +44,6 @@ async def test_around_records_a_mediator_on_dependency_injector() -> None:
         commands_mapper=commands_mapper,
     )
     async with test_harness.around(mediator) as harness:
-        # Act
         await mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert harness.requests.contains(CreateOrder)

@@ -54,17 +54,14 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 async def test_place_order() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
         domain_events_mapper=domain_events_mapper,
     ) as harness:
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert result.order_id == "1"
         assert harness.requests.contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)

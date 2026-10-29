@@ -70,7 +70,6 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def test_notification_is_published_as_protobuf() -> None:
-    # Arrange
     container = di.Container()
     serializer = cqrs.ProtobufEventSerializer(
         {OrderCreatedNotice: user_joined_pb2.UserJoinedNotification},
@@ -80,10 +79,8 @@ async def test_notification_is_published_as_protobuf() -> None:
         commands_mapper=commands_mapper,
         serializer=serializer,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         message = harness.published.one(OrderCreatedNotice)
         assert message.content_type == "application/x-protobuf"
         assert message.payload_bytes

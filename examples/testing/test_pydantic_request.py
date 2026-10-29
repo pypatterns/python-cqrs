@@ -33,23 +33,17 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 def test_empty_sku_fails_before_send() -> None:
-    # Arrange
     sku = ""
 
-    # Act
     with pytest.raises(pydantic.ValidationError) as raised:
         CreateOrder(sku=sku)
 
-    # Assert
     assert raised.value.error_count() >= 1
 
 
 async def test_valid_request_returns_the_response() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert result.order_id == "1"

@@ -99,41 +99,32 @@ def breaker_commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 async def test_request_fallback_answers_after_the_primary_fails() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=commands_mapper) as harness:
-        # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         assert result.source == "fallback"
         harness.invocations.assert_entered(CreateOrderHandler)
         harness.invocations.assert_entered(CreateOrderFallback)
 
 
 async def test_event_fallback_runs_after_the_primary_fails() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(
         container,
         commands_mapper=emitting_commands_mapper,
         domain_events_mapper=domain_events_mapper,
     ) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         harness.invocations.assert_entered(AuditHandler)
         harness.invocations.assert_entered(AuditFallback)
 
 
 async def test_open_circuit_breaker_skips_the_primary() -> None:
-    # Arrange
     container = di.Container()
     async with test_harness(container, commands_mapper=breaker_commands_mapper) as harness:
-        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
 
-        # Assert
         harness.invocations.assert_not_entered(CreateOrderHandler)
         harness.invocations.assert_entered(CreateOrderFallback)
