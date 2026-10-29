@@ -46,6 +46,7 @@
 - [Producing Events from Outbox to Kafka](#producing-events-from-outbox-to-kafka)
 - [Transaction log tailing](#transaction-log-tailing)
 - [Event Handlers](#event-handlers)
+- [Testing](#testing)
 - [Integration with presentation layers](#integration-with-presentation-layers)
 - [Protobuf messaging](#protobuf-messaging)
 - [Contributing](#contributing)
@@ -113,7 +114,7 @@ Coding agents in an application can follow [`templates/AGENTS.md`](templates/AGE
 
 ## Agent skills
 
-Two registries: [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai). From your service's project root, not a clone of python-cqrs, either block is enough. Files land in `<app>/.agents/skills/<name>/`.
+Two registries: [skills.sh](https://skills.sh) and [ClawHub](https://clawhub.ai). From your service's project root, not a clone of python-cqrs, either block is enough. Files land in `<app>/.agents/skills/<name>/`. `cqrs-testing` is installed with the same commands. Publishing that skill to skills.sh and ClawHub happens after it is on `master`. A local install does not create the skills.sh listing, and CI does not publish it.
 
 ```bash
 npx skills add pypatterns/python-cqrs --skill cqrs-setup -y
@@ -121,6 +122,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-eda -y
 npx skills add pypatterns/python-cqrs --skill cqrs-saga -y
 npx skills add pypatterns/python-cqrs --skill cqrs-streaming -y
 npx skills add pypatterns/python-cqrs --skill cqrs-cor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-testing -y
 ```
 
 ```bash
@@ -129,6 +131,7 @@ clawhub install @vadikko2/cqrs-eda
 clawhub install @vadikko2/cqrs-saga
 clawhub install @vadikko2/cqrs-streaming
 clawhub install @vadikko2/cqrs-cor
+clawhub install @vadikko2/cqrs-testing
 ```
 
 <https://mkdocs.python-cqrs.dev/latest/skills/>
@@ -1036,6 +1039,52 @@ mediator = bootstrap.bootstrap_streaming(
 > - Set `concurrent_event_handle_enable=False` to disable parallel processing and process events sequentially
 > - The default value for `max_concurrent_event_handlers` is `10` for `StreamingRequestMediator` and `1` for `RequestMediator`
 > - `ScopeStrategy.SEND` always uses sequential events (`concurrent=None` → `False`). Passing `concurrent_event_handle_enable=True` with `SEND` raises `ValueError`; use `HANDLER` or `NONE` for parallel events.
+
+## Testing
+
+`from cqrs.testing import test_harness` runs the real mediators and records what they did. It is not part of `cqrs.__all__`.
+
+```python
+from cqrs.testing import test_harness
+
+async with test_harness(container, commands_mapper=commands_mapper) as harness:
+    result = await harness.mediator.send(CreateOrder(sku="book"))
+    assert result.order_id == "1"
+    assert harness.requests.contains(CreateOrder)
+    harness.invocations.assert_entered(CreateOrderHandler)
+```
+
+What each handler kind asserts:
+
+- A command stores the response on `requests`. `send` returns that same result. The handler is on `invocations`.
+- A query uses the same `send`. After the read, `handled`, `published`, and `outbox` are empty.
+- A domain event is on `handled`, and the handler class is on `invocations`. It is not on `published`.
+- A notification is on `published`, with its `topic`. It is not on `handled`.
+- Parallel domain handlers are both on `invocations`. Order is not checked.
+- A swallowed domain-handler error leaves the command result in place. The error is on `handler_errors`.
+- An event with no handler is on `unhandled`. `send` does not raise.
+- `EventMediator` records the handler on `invocations`. That path is not `EventEmitter`.
+- Request and event fallback put both classes on `invocations`. The response on `requests` is the fallback's.
+- An open circuit breaker leaves the primary off `invocations` and enters the fallback.
+- Middleware records the type, the request, and whether `handle` was called.
+- `ScopeStrategy.SEND` runs domain handlers on `invocations` in order.
+- `ScopeStrategy.HANDLER` and `NONE` put both handlers on `invocations`.
+- A chain is on `invocations`: only the steps whose `handle` ran.
+- A stream records `yields` in order. A domain event is on `handled`. `clear_events` does not erase that record.
+- Streaming fallback shows both handlers on `yields` and `invocations`. Values already yielded stay.
+- A saga step records `act` on `invocations`. `sagas` holds status and step history.
+- Compensation records `compensate`. The saga status is `failed`. The step status is `compensated`.
+- Saga fallback runs the spare step. The failed step is not compensated.
+- An open saga circuit breaker enters the fallback and skips the primary.
+- Recovery continues through `harness.sagas.recover`. A finished step does not enter `act` again.
+- Inbox `process_available` puts a command on `requests` or an event on `invocations`.
+- An outbox row is on `outbox` and absent from `published` until `produce_available`.
+
+Models, framework recipes, and the features that are not a harness run are on the same docs section.
+
+Full pages: <https://mkdocs.python-cqrs.dev/testing/>.
+
+Examples: `examples/testing/`.
 
 ## Integration with presentation layers
 

@@ -39,6 +39,7 @@ npx skills add pypatterns/python-cqrs --skill cqrs-eda -y
 npx skills add pypatterns/python-cqrs --skill cqrs-saga -y
 npx skills add pypatterns/python-cqrs --skill cqrs-streaming -y
 npx skills add pypatterns/python-cqrs --skill cqrs-cor -y
+npx skills add pypatterns/python-cqrs --skill cqrs-testing -y
 ```
 
 ```bash
@@ -47,14 +48,16 @@ clawhub install @vadikko2/cqrs-eda
 clawhub install @vadikko2/cqrs-saga
 clawhub install @vadikko2/cqrs-streaming
 clawhub install @vadikko2/cqrs-cor
+clawhub install @vadikko2/cqrs-testing
 ```
 
 - [`.agents/skills/cqrs-setup/SKILL.md`](.agents/skills/cqrs-setup/SKILL.md) picks the feature, then builds a command and a query.
 - [`.agents/skills/cqrs-eda/SKILL.md`](.agents/skills/cqrs-eda/SKILL.md) builds a domain event, a notification, the outbox, the inbox, or parallel domain handlers.
 - [`.agents/skills/cqrs-saga/SKILL.md`](.agents/skills/cqrs-saga/SKILL.md) builds a step, its compensation, and recovery.
 - [`.agents/skills/cqrs-streaming/SKILL.md`](.agents/skills/cqrs-streaming/SKILL.md) and [`.agents/skills/cqrs-cor/SKILL.md`](.agents/skills/cqrs-cor/SKILL.md) are the short how-tos. Parallel domain handlers stay in `cqrs-eda`. Their Use when and Skip when pairs stay in `cqrs-setup`.
+- [`.agents/skills/cqrs-testing/SKILL.md`](.agents/skills/cqrs-testing/SKILL.md) names the journal to assert for each feature.
 
-Start with `cqrs-setup`.
+Start with `cqrs-setup`. `cqrs-testing` is listed on skills.sh and released on ClawHub after that skill is on `master`. This file does not assign it a version.
 
 ## Commands and queries
 
@@ -432,6 +435,50 @@ Middleware (`middlewares=` on bootstrap) wraps every request: timing, tracing, a
 `RequestHandlerFallback` / `EventHandlerFallback` is a second handler when the primary one raises. Use it for a degraded response, not for compensation and not for a retry loop with no limit.
 
 `concurrent_event_handle_enable=True` runs independent domain handlers with `max_concurrent_event_handlers`. Use it when those handlers do not share a session. Leave it off with `ScopeStrategy.SEND`.
+
+## Testing
+
+Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read `DevnullMessageBroker.MESSAGE_BUS`. The harness swaps that broker for `CapturingMessageBroker` during the block and restores it.
+
+- Command: assert `requests` and `invocations`.
+- Query: assert `requests`. `handled` and `published` stay empty. `outbox` stays empty.
+- Domain event: assert `handled` and `invocations`. `published` stays empty.
+- Notification: assert `published`. It is absent from `handled`.
+- Parallel domain handlers: both classes are on `invocations`. Do not assert order.
+- Swallowed domain-handler error: the command result is on `requests`. The error is on `handler_errors`.
+- Event with no handler: the type is on `unhandled`. `send` does not raise.
+- `EventMediator`: assert `invocations`. This path is not `handled` from `EventEmitter`.
+- Request fallback: both classes are on `invocations`. The response on `requests` is the fallback's.
+- Event fallback: both classes are on `invocations`.
+- Circuit breaker: the primary is absent from `invocations`. The fallback is present. Use a fake `ICircuitBreaker`, not the `aiobreaker` extra.
+- Middleware that does not call `handle`: `invocations` does not contain the handler. `middlewares` records `called_next` false. The response on `requests` is the middleware's.
+- `ScopeStrategy.SEND`: domain handlers on `invocations` are in order.
+- `ScopeStrategy.HANDLER` and `NONE`: both handlers are on `invocations`. Order is not required.
+- Chain: assert `invocations` for the step that ran and the step that did not. There is no separate chain bus.
+- Stream: assert `yields` in order. The domain event is on `handled`. `clear_events` does not remove it.
+- Streaming fallback: `yields` and `invocations` show both handlers. Values already yielded stay.
+- Saga step: `act` is on `invocations`. Inside the loop after a non-final step, `sagas.running_count` is 1. After the full run the saga is completed and `running_count` is 0.
+- Compensation: `compensate` is on `invocations`. Saga status is `failed`. The step status is `compensated`. There is no saga status `compensated`.
+- Saga fallback: the spare step is on `invocations`. The failed step's last method is `act`, not `compensate`.
+- Saga circuit breaker: the primary step is absent from `invocations`. The fallback is present. Use a fake `ISagaStepCircuitBreaker`.
+- Recovery: `await harness.sagas.recover(...)`. A finished step does not enter `act` a second time.
+- Inbox: a command is on `requests` after `process_available`. An event is on `invocations`. A second `add` of the same `(message_id, message_name)` is `False`.
+- Inbox handler error: status stays `not_processed` and `flush_counter` grows. The caller commits.
+- Outbox: the row is on `outbox`. The notification is absent from `published` until the test calls `produce_available`.
+- Outbox broker error: the row stays `not_produced`. `published` stays empty.
+- Dataclass request: the response is on `requests`. The harness does not add a validator.
+- Pydantic: a field error is raised by the constructor, before `send`.
+- JSON: `published` message `content_type` is empty. This is the default.
+- Protobuf: the message has `content_type` and `payload_bytes`. The harness does not import protobuf.
+- `di.Container` with `ScopeStrategy.SEND`: the command session and the domain-handler session are the same object. Do not pass `TestContainer` for `SEND`.
+- FastAPI: `TestClient` calls the route. `dependency_overrides` installs the mediator. Assert `requests`, `handled`, `published`, or `outbox`.
+- FastStream: `TestKafkaBroker` delivers. Assert `inbox` or `invocations`.
+- SQLAlchemy and SQLModel: `test_harness.around` wraps the real repository. `produce_available` runs against that repository. Roll the session back.
+- dishka and dependency-injector: `around` wraps a mediator that is already built. dependency-injector does not implement `SupportsScope`, so `scope_strategy` is not `SEND`.
+- Kafka and AMQP: a unit test uses `CapturingMessageBroker`. The real adapter stays in the integration test.
+- Mermaid, `ZlibCompressor`, Alembic `rebind_*_model`, and transaction log tailing are not run through `test_harness`.
+
+Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-cqrs.dev/testing/>.
 
 ## Extras
 

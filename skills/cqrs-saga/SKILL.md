@@ -61,6 +61,10 @@ A fallback (`cqrs.saga.fallback.Fallback`) is a degraded path when `act` fails. 
 
 A step that publishes does not call the broker beside `session.commit()`. It writes the outbox in `cqrs-eda`, in the session the scope already opened.
 
+## How to test
+
+Assert `act` and `compensate` on `invocations`. After a full successful run the saga is `completed` and `running_count` is 0. Compensation leaves the saga `failed` and the step `compensated`. A fallback is a different path: the failed step is not compensated. `harness.sagas.recover` resumes without entering a finished `act` again. Detail is `cqrs-testing`.
+
 ## Files and scope
 
 `app/sagas.py` holds the context, the step classes, the saga class, and `sagas_mapper`. Do not send that context through `RequestMediator`.

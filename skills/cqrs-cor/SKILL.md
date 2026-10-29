@@ -46,6 +46,10 @@ A payment method, a file type, or a tenant policy is the usual split. The condit
 
 Do not reorder the list to "run the important step last" unless that step is the default. Earlier handlers never see a request the default already answered, because the default is last.
 
+## How to test
+
+Assert the step whose `handle` ran with `invocations.assert_entered`. Assert the step it did not call with `assert_not_entered`. There is no separate chain bus. Detail is `cqrs-testing`.
+
 ## Do not
 
 - Use a chain when every step must run. That is one handler, or a command plus domain events. See `cqrs-eda`.

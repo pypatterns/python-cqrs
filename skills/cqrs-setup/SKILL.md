@@ -186,6 +186,10 @@ The route, the worker, or the test is the caller. A handler that needs another u
 
 Build both a `RequestMediator` and a `StreamingRequestMediator` at startup when the service has both shapes. Build a `SagaMediator` only when a saga was the feature you picked. Do not overload one mediator with the other kinds of work.
 
+## How to test
+
+A command and a query both use `from cqrs.testing import test_harness`. Assert the command on `requests` and `invocations`. A query leaves `handled` and `published` empty. The journals for every other feature are `cqrs-testing`.
+
 ## Do not
 
 - Add a `Command` or `Query` base class, or a `CommandBus`.
