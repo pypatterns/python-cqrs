@@ -2,19 +2,19 @@
 Protobuf notification. The harness does not import protobuf.
 
 Run:
-   python examples/testing/protobuf_notification.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_protobuf_notification.py
 """
 
-import asyncio
 import importlib.util
 from pathlib import Path
 
 import di
+import pytest
 
 import cqrs
 from cqrs.testing import test_harness
 
-# protobuf
+pytestmark = pytest.mark.protobuf
 
 
 def _load_user_joined_pb2():
@@ -69,20 +69,21 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-async def main() -> None:
+async def test_notification_is_published_as_protobuf() -> None:
+    # Arrange
     container = di.Container()
+    serializer = cqrs.ProtobufEventSerializer(
+        {OrderCreatedNotice: user_joined_pb2.UserJoinedNotification},
+    )
     async with test_harness(
         container,
         commands_mapper=commands_mapper,
-        serializer=cqrs.ProtobufEventSerializer(
-            {OrderCreatedNotice: user_joined_pb2.UserJoinedNotification},
-        ),
+        serializer=serializer,
     ) as harness:
+        # Act
         await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         message = harness.published.one(OrderCreatedNotice)
         assert message.content_type == "application/x-protobuf"
         assert message.payload_bytes
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

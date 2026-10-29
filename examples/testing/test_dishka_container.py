@@ -2,10 +2,8 @@
 dishka container wrapped by test_harness.around.
 
 Run:
-   python examples/testing/dishka_container.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_dishka_container.py
 """
-
-import asyncio
 
 from dishka import Provider, Scope, make_async_container, provide
 
@@ -36,7 +34,8 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-async def main() -> None:
+async def test_around_records_a_mediator_on_dishka() -> None:
+    # Arrange
     container = make_async_container(AppProvider())
     mediator = bootstrap.bootstrap(
         di_container=DishkaCQRSContainer(container),
@@ -44,9 +43,8 @@ async def main() -> None:
         scope_strategy=cqrs.ScopeStrategy.HANDLER,
     )
     async with test_harness.around(mediator) as harness:
+        # Act
         await mediator.send(CreateOrder(sku="book"))
+
+        # Assert
         harness.invocations.assert_entered(CreateOrderHandler)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())

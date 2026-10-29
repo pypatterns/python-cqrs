@@ -1,21 +1,26 @@
 """
-SQLAlchemy outbox on sqlite. The connection rolls back. No Docker.
+SQLModel outbox on sqlite. The connection rolls back. No Docker.
+
+Requires: pip install "python-cqrs[sqlmodel]" aiosqlite
 
 Run:
-   python examples/testing/sqlalchemy_outbox.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_sqlmodel_outbox.py
 """
 
-import asyncio
+import typing
 
 import di
 import di.dependent
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+import pytest
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 import cqrs
+import cqrs.outbox.sqlmodel
 from cqrs.bootstrap import requests as bootstrap
 from cqrs.testing import test_harness
 
-# sqlalchemy
+pytestmark = pytest.mark.sqlmodel
 
 
 class CreatedOrder(cqrs.Response):
@@ -57,7 +62,6 @@ def bind_outbox(container: di.Container, repository: cqrs.OutboxedEventRepositor
 
 
 def _create_sqlite_outbox_table(sync_connection) -> None:
-    # OutboxModel.id uses Identity(), which SQLite does not autoincrement.
     sync_connection.exec_driver_sql(
         """
         CREATE TABLE IF NOT EXISTS outbox (
@@ -76,27 +80,27 @@ def _create_sqlite_outbox_table(sync_connection) -> None:
     )
 
 
-async def main() -> None:
-    event_map = cqrs.OutboxedEventMap()
-    event_map.register("order_created", OrderCreatedNotice)
-    container = di.Container()
-    mediator = bootstrap.bootstrap(
-        di_container=container,
-        commands_mapper=commands_mapper,
-    )
+@pytest.fixture
+async def session() -> typing.AsyncIterator[AsyncSession]:
     engine = create_async_engine("sqlite+aiosqlite://")
     async with engine.begin() as connection:
         await connection.run_sync(_create_sqlite_outbox_table)
-        session = AsyncSession(bind=connection)
-        outbox = cqrs.SqlAlchemyOutboxedEventRepository(session, event_map=event_map)
-        bind_outbox(container, outbox)
-        async with test_harness.around(mediator, outbox=outbox) as harness:
-            await mediator.send(CreateOrder(sku="book"))
-            await harness.outbox.produce_available()
-            assert harness.outbox.produced_count == 1
+        yield AsyncSession(bind=connection)
         await connection.rollback()
     await engine.dispose()
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+async def test_send_stores_a_pending_row(session: AsyncSession) -> None:
+    # Arrange
+    event_map = cqrs.OutboxedEventMap()
+    event_map.register("order_created", OrderCreatedNotice)
+    outbox = cqrs.outbox.sqlmodel.SqlModelOutboxedEventRepository(session, event_map=event_map)
+    container = di.Container()
+    bind_outbox(container, outbox)
+    mediator = bootstrap.bootstrap(di_container=container, commands_mapper=commands_mapper)
+    async with test_harness.around(mediator, outbox=outbox) as harness:
+        # Act
+        await mediator.send(CreateOrder(sku="book"))
+
+        # Assert
+        assert harness.outbox.pending_count == 1

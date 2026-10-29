@@ -2,14 +2,12 @@
 FastAPI route calls mediator.send. TestClient uses dependency_overrides.
 
 Run:
-   python examples/testing/fastapi_app.py
+   pytest -c tests/pytest-config.ini --rootdir=. examples/testing/test_fastapi_app.py
 """
-
-import asyncio
 
 import di
 import fastapi
-from fastapi.testclient import TestClient
+from fastapi import testclient
 
 import cqrs
 import cqrs.outbox.mock
@@ -59,18 +57,19 @@ async def create_order(
     return {"order_id": result.order_id}
 
 
-async def main() -> None:
+async def test_route_sends_the_command_and_stores_the_row() -> None:
+    # Arrange
     mediator = bootstrap.bootstrap(
         di_container=di.Container(),
         commands_mapper=commands_mapper,
     )
     app.dependency_overrides[mediator_factory] = lambda: mediator
+    client = testclient.TestClient(app)
     async with test_harness.around(mediator, outbox=outbox) as harness:
-        response = TestClient(app).post("/orders", json={"sku": "book"})
+        # Act
+        response = client.post("/orders", json={"sku": "book"})
+
+        # Assert
         assert response.status_code == 201
         assert harness.requests.contains(CreateOrder)
         assert harness.outbox.pending_count == 1
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
