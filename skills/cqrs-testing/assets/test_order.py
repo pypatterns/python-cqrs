@@ -34,7 +34,7 @@ class CreateOrderHandler(cqrs.RequestHandler[CreateOrder]):
     def events(self) -> list[cqrs.Event]:
         return self._events
 
-    async def handle(self, request: CreateOrder) -> CreatedOrder:
+    async def handle(self, request: CreateOrder):
         self._events.append(OrderCreated(order_id="1"))
         self._events.append(OrderCreatedNotice(payload={"order_id": "1"}))
         return CreatedOrder(order_id="1")

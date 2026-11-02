@@ -12,9 +12,11 @@ Read the feature skill before writing the handler. This file only says which jou
 
 Import `from cqrs.testing import test_harness`. It is not in `cqrs.__all__`. The package is already installed. Do not add an install step. Do not copy `examples/testing/` into the application.
 
+Do not subclass `unittest.TestCase`. Do not add a pytest plugin. Do not use `MagicMock` for the mediator, a handler, or the broker. The harness runs the real mediators.
+
 `async with test_harness(...) as harness` builds the mediators. Arguments match bootstrap. The builder passes `compensation_retry_delay=0` unless the test passes a delay. `async with test_harness.around(...) as harness` wraps mediators the application already built and does not change that delay. `around` puts resolve, the broker, saga storage, and the listener back in `finally`.
 
-If the application mediator has a real broker and no `broker=` argument is passed, `around` forwards each message to that real broker and records it. To keep a unit test isolated, pass a `CapturingMessageBroker` with no inner broker: `async with test_harness.around(mediator, broker=CapturingMessageBroker()) as harness`. The real broker's `send_message` is then redirected to the capture, so no message leaves the process.
+If the application mediator has a real broker and no `broker=` argument is passed, `around` forwards each message to that real broker and records it. To keep a unit test isolated, pass a `CapturingMessageBroker` with no inner broker: `async with test_harness.around(mediator, broker=CapturingMessageBroker()) as harness`.
 
 `test_harness(...)` creates a memory outbox and a memory inbox on `harness.outbox_repository` and `harness.inbox_repository`. It does not bind them. The test binds the port.
 
@@ -24,23 +26,46 @@ Do not read `DevnullMessageBroker.MESSAGE_BUS`. If the mediator holds that broke
 
 An invocation record has `handler`, `method` (`handle`, `act`, or `compensate`), `argument`, `argument_type`, and `handler_instance`.
 
-Journals share one language. Prefer `assert_*` in new tests. Boolean `contains` remains valid.
+## Arrange, Act, Assert
+
+One scenario per test. Three comment blocks. One Act. Do not inspect journals between two `send` calls. Do not call `send` on the same line as `test_harness(...)`.
+
+```python
+async def test_command_is_on_requests_and_invocations() -> None:
+    # Arrange
+    container = di.Container()
+    async with test_harness(container, commands_mapper=commands_mapper) as harness:
+        # Act
+        result = await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
+        assert result.order_id == "1"
+        harness.requests.assert_contains(CreateOrder)
+        harness.invocations.assert_entered(CreateOrderHandler)
+        harness.published.assert_empty()
+```
+
+## Journals
+
+Use `assert_*`. Do not write `assert harness.requests.contains(...)`.
 
 | Method | Behavior |
 | --- | --- |
-| `contains(type, *, where=None, **filters)` | `bool`, does not raise |
-| `of(...)` | `list` of matches |
-| `one(...)` | exactly one match, else `AssertionError` |
 | `assert_contains(...)` | no matches → `AssertionError` |
 | `assert_one(...)` | not exactly one → `AssertionError` |
 | `assert_empty()` | any rows → `AssertionError` |
 | `assert_not_contains(...)` | matches → `AssertionError` |
+| `assert_entered(...)` | `invocations` alias of `assert_contains` |
+| `assert_not_entered(...)` | `invocations` alias of `assert_not_contains` |
+| `of(...)` | `list` of matches, for reading a row |
+| `one(...)` | exactly one match, else `AssertionError` |
+| `contains(...)` | `bool`, does not raise. Do not use it as the assertion |
 
 `where=` is a predicate on the journal row. Keyword filters stay: `published(..., topic=)`, `invocations(..., method=)`, `middlewares(..., called_next=)`.
 
-`assert_entered` / `assert_not_entered` on `invocations` are aliases of `assert_contains` / `assert_not_contains`. `yields` stays a `list`; assert `items == harness.yields`. `handler_errors.of(event, handler)` and `inbox.one(message_id)` keep those keys.
+`yields` stays a `list`; assert `items == harness.yields`. `handler_errors.of(event, handler)` and `inbox.one(message_id)` keep those keys.
 
-A failed `assert_*` or `one` raises `AssertionError` whose body is the full harness report: the call, what was looked for, match count, every journal (empty ones included), and hints. If `rich` is installed (`python-cqrs[testing]`), the same report is tables in the exception; otherwise it is plain text. Do not print the report to stderr. There is no pytest plugin. Application tests do not add an install step for `cqrs.testing` itself.
+A failed `assert_*` or `one` raises `AssertionError` whose body is the full harness report: the call, what was looked for, match count, every journal (empty ones included), and hints. Tables if `rich` is installed, otherwise the same text. Do not print the report.
 
 Short shape for a command, a domain event, and a notification: [assets/test_order.py](assets/test_order.py).
 
