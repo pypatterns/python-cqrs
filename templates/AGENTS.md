@@ -440,7 +440,7 @@ Middleware (`middlewares=` on bootstrap) wraps every request: timing, tracing, a
 
 Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read `DevnullMessageBroker.MESSAGE_BUS`. The harness swaps that broker for `CapturingMessageBroker` during the block and restores it.
 
-Journals share `contains` / `of` / `one` / `assert_contains` / `assert_one` / `assert_empty` / `assert_not_contains`. `where=` is a predicate on the row. `invocations.assert_entered` is `assert_contains`. A failed `assert_*` raises `AssertionError` with the full harness report. Color needs `rich` (`python-cqrs[testing]`); without it the same text is plain. There is no pytest plugin. `cqrs.testing` is in the base install.
+Journals share `contains` / `of` / `one` / `assert_contains` / `assert_one` / `assert_empty` / `assert_not_contains`. `where=` is a predicate on the row. `published` accepts `topic=`, `invocations` accepts `method=`, `middlewares` accepts `called_next=`; other journals raise `TypeError` for those keywords. `invocations.assert_entered` is `assert_contains`. A failed `assert_*` raises `AssertionError` with the full harness report. Color needs `rich` (`python-cqrs[testing]`); without it, or if rendering fails, the same text is plain. There is no pytest plugin. `cqrs.testing` is in the base install.
 
 - Command: `requests.assert_contains` and `invocations.assert_entered`.
 - Query: `requests.assert_one`. `handled.assert_empty()`, `published.assert_empty()`, `outbox.assert_empty()`.

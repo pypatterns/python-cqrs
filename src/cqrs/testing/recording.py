@@ -7,7 +7,9 @@ from ``cqrs.testing`` and read the journals from that object. A boolean
 ``assert_one``, ``assert_empty``, ``assert_not_contains``, ``assert_entered``,
 and ``assert_not_entered`` raise ``AssertionError`` with a full harness report.
 ``where=`` is a predicate on the journal item. Keyword filters such as
-``topic=``, ``method=``, and ``called_next=`` stay. ``yields`` is a list.
+``topic=``, ``method=``, and ``called_next=`` stay on the journals that
+support them. A journal raises ``TypeError`` for a keyword it does not
+support. ``yields`` is a list.
 """
 
 import contextlib
@@ -129,6 +131,8 @@ class _Reported:
 class _JournalQuery(_Reported, typing.Generic[_T]):
     """contains / of / assert_* over ``_matching`` and ``where=``."""
 
+    _filters: typing.ClassVar[frozenset[str]] = frozenset()
+
     def _matching(self, item_type: type, **filters: typing.Any) -> list[_T]:
         raise NotImplementedError
 
@@ -144,10 +148,12 @@ class _JournalQuery(_Reported, typing.Generic[_T]):
         method: str | None = None,
         called_next: bool | None = None,
     ) -> list[_T]:
-        return _apply_where(
-            self._matching(item_type, **_query_filters(topic=topic, method=method, called_next=called_next)),
-            where,
-        )
+        active = _query_filters(topic=topic, method=method, called_next=called_next)
+        unsupported = set(active) - self._filters
+        if unsupported:
+            names = ", ".join(sorted(unsupported))
+            raise TypeError(f"{self._journal_name} journal does not support filter(s): {names}")
+        return _apply_where(self._matching(item_type, **active), where)
 
     def contains(
         self,
@@ -305,6 +311,7 @@ class InvocationJournal(_TypedJournal[Invocation]):
     """Handlers that actually entered ``handle``, ``act``, or ``compensate``."""
 
     _journal_name = "invocations"
+    _filters = frozenset({"method"})
 
     def __init__(self) -> None:
         self._items: list[Invocation] = []
@@ -433,6 +440,7 @@ class PublishedJournal(_TypedJournal[PublishedMessage]):
     """Messages that reached ``MessageBroker.send_message``."""
 
     _journal_name = "published"
+    _filters = frozenset({"topic"})
 
     def __init__(self, messages: list[Message]) -> None:
         self._messages = messages
@@ -713,6 +721,7 @@ class MiddlewareJournal(_TypedJournal[MiddlewareCall]):
     """Middleware that saw a request, and whether it called the next handle."""
 
     _journal_name = "middlewares"
+    _filters = frozenset({"called_next"})
 
     def __init__(self) -> None:
         self._items: list[MiddlewareCall] = []

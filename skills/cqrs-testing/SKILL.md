@@ -61,11 +61,11 @@ Use `assert_*`. Do not write `assert harness.requests.contains(...)`.
 | `one(...)` | exactly one match, else `AssertionError` |
 | `contains(...)` | `bool`, does not raise. Do not use it as the assertion |
 
-`where=` is a predicate on the journal row. Keyword filters stay: `published(..., topic=)`, `invocations(..., method=)`, `middlewares(..., called_next=)`.
+`where=` is a predicate on the journal row. Keyword filters stay: `published(..., topic=)`, `invocations(..., method=)`, `middlewares(..., called_next=)`. Other journals raise `TypeError` for those keywords.
 
 `yields` stays a `list`; assert `items == harness.yields`. `handler_errors.of(event, handler)` and `inbox.one(message_id)` keep those keys.
 
-A failed `assert_*` or `one` raises `AssertionError` whose body is the full harness report: the call, what was looked for, match count, every journal (empty ones included), and hints. Tables if `rich` is installed, otherwise the same text. Do not print the report.
+A failed `assert_*` or `one` raises `AssertionError` whose body is the full harness report: the call, what was looked for, match count, every journal (empty ones included), and hints. Tables if `rich` is installed, otherwise the same text. If `rich` is missing or rendering fails, the dump is still that plain text. Do not print the report.
 
 Short shape for a command, a domain event, and a notification: [assets/test_order.py](assets/test_order.py).
 

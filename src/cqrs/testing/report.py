@@ -3,7 +3,8 @@
 [AI Instruction]
 Journals call ``render_failure`` when ``assert_*`` or ``one`` fails. The text
 goes in ``AssertionError.args[0]`` only. Do not print it. ``rich`` is optional:
-tables if it imports, the same sections as plain text if it does not.
+tables if it imports and renders, the same sections as plain text if it is
+missing or if rendering fails. A failed dump stays an ``AssertionError``.
 """
 
 from __future__ import annotations
@@ -84,12 +85,13 @@ def _want_color() -> bool:
 def _load_rich() -> typing.Any | None:
     try:
         from rich.console import Console
+        from rich.markup import escape
         from rich.panel import Panel
         from rich.pretty import Pretty
         from rich.table import Table
-    except ImportError:
+    except Exception:
         return None
-    return Console, Panel, Pretty, Table
+    return Console, Panel, Pretty, Table, escape
 
 
 @dataclasses.dataclass
@@ -147,9 +149,12 @@ class HarnessReport:
         hints = self._hints(journal, looked_for)
         sections = self._sections()
         rich = _load_rich()
-        if rich is None:
-            return self._render_plain(title, looked, filter_text, matches, hints, sections)
-        return self._render_rich(rich, title, looked, filter_text, matches, hints, sections)
+        if rich is not None:
+            try:
+                return self._render_rich(rich, title, looked, filter_text, matches, hints, sections)
+            except Exception:
+                pass
+        return self._render_plain(title, looked, filter_text, matches, hints, sections)
 
     def _hints(self, journal: str, looked_for: typing.Any) -> list[str]:
         hints: list[str] = []
@@ -361,7 +366,7 @@ class HarnessReport:
         hints: list[str],
         sections: list[_Section],
     ) -> str:
-        Console, Panel, Pretty, Table = rich
+        Console, Panel, Pretty, Table, escape = rich
         color = _want_color()
         buffer = io.StringIO()
         console = Console(
@@ -372,23 +377,23 @@ class HarnessReport:
             force_terminal=True if os.environ.get("FORCE_COLOR") and color else None,
         )
         header = f"{title}\n\n" f"looked for  {looked}\n" f"filters     {filter_text}\n" f"matches     {matches}"
-        console.print(Panel(header, title="cqrs.testing"))
+        console.print(Panel(escape(header), title="cqrs.testing"))
         if hints:
             console.print("Hints")
             for hint in hints:
-                console.print(f"  {hint}")
+                console.print(escape(f"  {hint}"))
         for section in sections:
             if not section.rows:
                 if section.empty_note:
-                    console.print(f"{section.title}   {section.empty_note}")
+                    console.print(escape(f"{section.title}   {section.empty_note}"))
                 else:
-                    console.print(section.title)
+                    console.print(escape(section.title))
                 continue
-            table = Table(title=section.title, expand=True)
+            table = Table(title=escape(section.title), expand=True)
             for column in section.columns:
                 table.add_column(column)
             for row in section.rows:
-                table.add_row(*[_rich_cell(cell, Pretty) for cell in row])
+                table.add_row(*[_rich_cell(cell, Pretty, escape) for cell in row])
             console.print(table)
         return console.export_text(styles=color)
 
@@ -399,10 +404,14 @@ def _plain_cell(cell: typing.Any) -> str:
     return _brief(cell)
 
 
-def _rich_cell(cell: typing.Any, pretty: typing.Any) -> typing.Any:
+def _rich_cell(
+    cell: typing.Any,
+    pretty: typing.Any,
+    escape: typing.Callable[[str], str],
+) -> typing.Any:
     if isinstance(cell, (dict, list)):
         return pretty(cell)
-    return str(cell)
+    return escape(str(cell))
 
 
 def render_failure(

@@ -1,5 +1,6 @@
 import dataclasses
 import re
+import typing
 
 import pytest
 
@@ -73,6 +74,11 @@ class RaisingAudit(cqrs.EventHandler[OrderCreated]):
         raise RuntimeError("audit failed")
 
 
+class MarkupAudit(cqrs.EventHandler[OrderCreated]):
+    async def handle(self, event: OrderCreated) -> None:
+        raise RuntimeError("cannot open [/tmp/x]")
+
+
 class DenyMiddleware:
     async def __call__(self, request: CreateOrder, handle) -> CreatedOrder:
         return CreatedOrder(order_id="denied")
@@ -111,6 +117,22 @@ def _domain_events(handler: type):
 
 def _plain_report(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("cqrs.testing.report._load_rich", lambda: None)
+
+
+def _hide_rich(monkeypatch: pytest.MonkeyPatch) -> None:
+    import builtins
+    import sys
+
+    real_import = builtins.__import__
+
+    def hide_rich(name: str, *args: typing.Any, **kwargs: typing.Any) -> typing.Any:
+        if name == "rich" or name.startswith("rich."):
+            raise ImportError("No module named 'rich'")
+        return real_import(name, *args, **kwargs)
+
+    for key in [key for key in sys.modules if key == "rich" or key.startswith("rich.")]:
+        monkeypatch.delitem(sys.modules, key, raising=False)
+    monkeypatch.setattr(builtins, "__import__", hide_rich)
 
 
 def _strip_ansi(text: str) -> str:
@@ -212,9 +234,43 @@ async def test_outbox_records_event_type_until_produce() -> None:
         harness.outbox.assert_one(OrderCreatedNotice)
         assert harness.outbox.contains(OrderCreatedNotice) is True
         harness.published.assert_empty()
+
+
+async def test_outbox_produce_publishes_the_recorded_event() -> None:
+    # Arrange
+    container = TestContainer()
+    async with test_harness(container, commands_mapper=_commands(OutboxHandler)) as harness:
+        container.register(OutboxHandler, OutboxHandler(harness.outbox_repository))
+        await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Act
         await harness.outbox.produce_available()
+
+        # Assert
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")
         harness.outbox.assert_contains(OrderCreatedNotice)
+
+
+async def test_requests_reject_unsupported_topic_filter() -> None:
+    # Arrange
+    async with test_harness(TestContainer()) as harness:
+        # Act
+        with pytest.raises(TypeError, match="requests journal does not support filter") as caught:
+            harness.requests.assert_contains(CreateOrder, topic="x")
+
+        # Assert
+        assert "topic" in str(caught.value)
+
+
+async def test_published_rejects_unsupported_method_filter() -> None:
+    # Arrange
+    async with test_harness(TestContainer()) as harness:
+        # Act
+        with pytest.raises(TypeError, match="published journal does not support filter") as caught:
+            harness.published.assert_contains(OrderCreatedNotice, method="handle")
+
+        # Assert
+        assert "method" in str(caught.value)
 
 
 async def test_inbox_assert_contains_by_type() -> None:
@@ -323,10 +379,9 @@ async def test_assert_failure_report_lists_types_journals_and_hints(
         assert "outbox is empty — this was not waiting for produce_available" in text
 
 
-async def test_plain_report_when_rich_is_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_plain_report_when_rich_is_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
-    monkeypatch.setitem(__import__("sys").modules, "rich", None)
-    _plain_report(monkeypatch)
+    _hide_rich(monkeypatch)
     async with test_harness(TestContainer(), commands_mapper=_commands(CreateOrderHandler)) as harness:
         await harness.mediator.send(CreateOrder(sku="book"))
 
@@ -340,6 +395,29 @@ async def test_plain_report_when_rich_is_hidden(monkeypatch: pytest.MonkeyPatch)
         assert "OrderCreated" in text
         assert "requests" in text
         assert "\x1b[" not in text
+        assert "ImportError" not in type(caught.value).__name__
+        assert "No module named 'rich'" not in text
+
+
+async def test_plain_report_when_rich_render_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    def boom(*_args: typing.Any, **_kwargs: typing.Any) -> str:
+        raise RuntimeError("rich exploded")
+
+    monkeypatch.setattr("cqrs.testing.report.HarnessReport._render_rich", boom)
+    async with test_harness(TestContainer(), commands_mapper=_commands(CreateOrderHandler)) as harness:
+        await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Act
+        with pytest.raises(AssertionError, match="looked for") as caught:
+            harness.unhandled.assert_empty()
+
+        # Assert
+        text = str(caught.value)
+        assert "unhandled.assert_empty() failed" in text
+        assert "OrderCreated" in text
+        assert "requests" in text
+        assert "rich exploded" not in text
 
 
 @pytest.mark.skipif(_load_rich() is None, reason="rich is not installed")
@@ -363,3 +441,24 @@ async def test_rich_report_keeps_english_words() -> None:
         assert "handled" in text
         assert "OrderCreated" in text
         assert "Hints" in text
+
+
+@pytest.mark.skipif(_load_rich() is None, reason="rich is not installed")
+async def test_rich_report_escapes_markup_in_error_text() -> None:
+    # Arrange
+    async with test_harness(
+        TestContainer(),
+        commands_mapper=_commands(CreateOrderHandler),
+        domain_events_mapper=_domain_events(MarkupAudit),
+    ) as harness:
+        await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Act
+        with pytest.raises(AssertionError) as caught:
+            harness.handler_errors.assert_empty()
+
+        # Assert
+        text = _strip_ansi(str(caught.value))
+        assert "cannot open [/tmp/x]" in text
+        assert "MarkupError" not in type(caught.value).__name__
+        assert "MarkupError" not in text
