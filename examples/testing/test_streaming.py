@@ -106,7 +106,7 @@ async def test_stream_records_yields_and_events() -> None:
         # Assert
         assert [item.index for item in items] == [0, 1]
         assert items == harness.yields
-        assert harness.handled.contains(RowExported)
+        harness.handled.assert_contains(RowExported)
 
 
 async def test_stream_fallback_restarts_the_stream() -> None:

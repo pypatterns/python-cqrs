@@ -200,7 +200,7 @@ CONTEXT = {
     "attempts": 3,
     "flag": True,
     "nested": {"items": [1, 2, 3], "none": None},
-    "unicode": "значение",
+    "unicode": "café",
 }
 
 

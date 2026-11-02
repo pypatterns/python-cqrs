@@ -12,9 +12,11 @@ Read the feature skill before writing the handler. This file only says which jou
 
 Import `from cqrs.testing import test_harness`. It is not in `cqrs.__all__`. The package is already installed. Do not add an install step. Do not copy `examples/testing/` into the application.
 
+Do not subclass `unittest.TestCase`. Do not add a pytest plugin. Do not use `MagicMock` for the mediator, a handler, or the broker. The harness runs the real mediators.
+
 `async with test_harness(...) as harness` builds the mediators. Arguments match bootstrap. The builder passes `compensation_retry_delay=0` unless the test passes a delay. `async with test_harness.around(...) as harness` wraps mediators the application already built and does not change that delay. `around` puts resolve, the broker, saga storage, and the listener back in `finally`.
 
-If the application mediator has a real broker and no `broker=` argument is passed, `around` forwards each message to that real broker and records it. To keep a unit test isolated, pass a `CapturingMessageBroker` with no inner broker: `async with test_harness.around(mediator, broker=CapturingMessageBroker()) as harness`. The real broker's `send_message` is then redirected to the capture, so no message leaves the process.
+If the application mediator has a real broker and no `broker=` argument is passed, `around` forwards each message to that real broker and records it. To keep a unit test isolated, pass a `CapturingMessageBroker` with no inner broker: `async with test_harness.around(mediator, broker=CapturingMessageBroker()) as harness`.
 
 `test_harness(...)` creates a memory outbox and a memory inbox on `harness.outbox_repository` and `harness.inbox_repository`. It does not bind them. The test binds the port.
 
@@ -24,29 +26,60 @@ Do not read `DevnullMessageBroker.MESSAGE_BUS`. If the mediator holds that broke
 
 An invocation record has `handler`, `method` (`handle`, `act`, or `compensate`), `argument`, `argument_type`, and `handler_instance`.
 
-`contains` is a boolean and does not raise. `assert_contains`, `assert_one`, and `assert_empty` raise `AssertionError` with the recorded rows. Those methods are not on every journal:
+## Arrange, Act, Assert
 
-- `requests`, `handled`, `unhandled`, and `published` have `contains`.
-- `handled` and `unhandled` have `assert_empty`. They do not have `assert_contains` or `assert_one`.
-- `published` has `contains`, `assert_contains`, `assert_one`, and `assert_empty`.
-- `outbox` has `assert_empty`. It does not have `contains`, `assert_contains`, or `assert_one`.
-- `invocations` has `assert_entered` and `assert_not_entered`. It does not have `contains`, `assert_contains`, `assert_one`, or `assert_empty`.
-- `requests` does not have `assert_contains`, `assert_one`, or `assert_empty`.
+One scenario per test. Three comment blocks. One Act. Do not inspect journals between two `send` calls. Do not call `send` on the same line as `test_harness(...)`.
 
-There is no pytest plugin.
+```python
+async def test_command_is_on_requests_and_invocations() -> None:
+    # Arrange
+    container = di.Container()
+    async with test_harness(container, commands_mapper=commands_mapper) as harness:
+        # Act
+        result = await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
+        assert result.order_id == "1"
+        harness.requests.assert_contains(CreateOrder)
+        harness.invocations.assert_entered(CreateOrderHandler)
+        harness.published.assert_empty()
+```
+
+## Journals
+
+Use `assert_*`. Do not write `assert harness.requests.contains(...)`.
+
+| Method | Behavior |
+| --- | --- |
+| `assert_contains(...)` | no matches → `AssertionError` |
+| `assert_one(...)` | not exactly one → `AssertionError` |
+| `assert_empty()` | any rows → `AssertionError` |
+| `assert_not_contains(...)` | matches → `AssertionError` |
+| `assert_entered(...)` | `invocations` alias of `assert_contains` |
+| `assert_not_entered(...)` | `invocations` alias of `assert_not_contains` |
+| `of(...)` | `list` of matches, for reading a row |
+| `one(...)` | exactly one match, else `AssertionError` |
+| `contains(...)` | `bool`, does not raise. Do not use it as the assertion |
+
+`where=` is a predicate on the journal row. Keyword filters stay: `published(..., topic=)`, `invocations(..., method=)`, `middlewares(..., called_next=)`. Other journals raise `TypeError` for those keywords.
+
+`yields` stays a `list`; assert `items == harness.yields`. `handler_errors.of(event, handler)` and `inbox.one(message_id)` keep those keys.
+
+A failed `assert_*` or `one` raises `AssertionError` whose body is the full harness report: the call, what was looked for, match count, every journal (empty ones included), and hints. Tables if `rich` is installed, otherwise the same text. If `rich` is missing or rendering fails, the dump is still that plain text. Do not print the report.
 
 Short shape for a command, a domain event, and a notification: [assets/test_order.py](assets/test_order.py).
 
 ## Command
 
-Assert `requests` and `invocations`. `send` returns the same result `requests` stored. `published` stays empty unless the command also emits a notification.
+`requests.assert_contains` and `invocations.assert_entered`. `send` returns the same result `requests` stored. `published.assert_empty()` unless the command also emits a notification.
 
 ## Query
 
-Assert `requests`. `handled`, `published`, and `outbox` stay empty.
+`requests.assert_one`. `handled`, `published`, and `outbox` stay empty.
 
 ```python
 view = await harness.mediator.send(ReadOrder(order_id="1"))
+harness.requests.assert_one(ReadOrder)
 harness.handled.assert_empty()
 harness.published.assert_empty()
 harness.outbox.assert_empty()
@@ -54,11 +87,11 @@ harness.outbox.assert_empty()
 
 ## Domain event
 
-Assert `handled` and `invocations`. A follow-up event is also on `handled` and enters the next handler. `published` stays empty.
+`handled.assert_contains` (optional `where=`) and `invocations.assert_entered`. A follow-up event is also on `handled` and enters the next handler. `published.assert_empty()`.
 
 ## Notification
 
-Assert `published` (`topic`, `message_name`, `payload`, `message_id`). The notice is not on `handled`.
+`published.assert_one` (`topic`, `message_name`, `payload`, `message_id`). The notice is not on `handled`: `handled.assert_not_contains`.
 
 `published.contains(OrderCreated)` is false for a domain event. `published.assert_contains` names `handled` or `invocations` in the error when the event was recorded there and was not sent to the broker.
 
@@ -68,16 +101,16 @@ Assert `published` (`topic`, `message_name`, `payload`, `message_id`). The notic
 
 ## Swallowed domain-handler error
 
-`send` returns the command result. The error is on `handler_errors`. `requests` still holds that result.
+`send` returns the command result. `handler_errors.assert_contains(event_type, handler_type)`. `requests` still holds that result.
 
 ```python
 result = await harness.mediator.send(CreateOrder(sku="book"))
-assert harness.handler_errors.of(OrderCreated, AuditHandler)
+harness.handler_errors.assert_contains(OrderCreated, AuditHandler)
 ```
 
 ## Event with no handler
 
-The type is on `unhandled`. `send` does not raise. The missing handler is not on `invocations`.
+`unhandled.assert_contains`. `send` does not raise. The missing handler is not on `invocations`.
 
 ## EventMediator
 
@@ -97,11 +130,11 @@ Use a fake `ICircuitBreaker`. Do not install `aiobreaker`. An open breaker leave
 
 ## Middleware
 
-`middlewares` records the type, the request, and whether `handle` was called. If middleware does not call `handle`, `invocations` does not contain the handler, `called_next` is false, and `requests` holds the middleware's response.
+`middlewares` records the type, the request, and whether `handle` was called. If middleware does not call `handle`, `invocations.assert_not_entered`, `middlewares.assert_contains(..., called_next=False)`, and `requests` holds the middleware's response.
 
 ```python
 harness.invocations.assert_not_entered(CreateOrderHandler)
-assert harness.middlewares.of(DenyMiddleware)[0].called_next is False
+harness.middlewares.assert_contains(DenyMiddleware, called_next=False)
 ```
 
 ## ScopeStrategy.SEND
@@ -127,7 +160,7 @@ harness.invocations.assert_not_entered(CashHandler)
 
 ```python
 assert items == harness.yields
-assert harness.handled.contains(RowExported)
+harness.handled.assert_contains(RowExported)
 ```
 
 ## Streaming fallback
@@ -140,10 +173,10 @@ Primary fails in the middle. Fallback starts the stream again. `yields` and `inv
 
 ## Compensation
 
-The failed step calls `compensate` on finished steps, in reverse. The saga status is `failed`. The step status is `compensated`. There is no saga status `compensated`.
+The failed step calls `compensate` on finished steps, in reverse. `invocations.assert_contains(..., method="compensate")`. The saga status is `failed`. The step status is `compensated`. There is no saga status `compensated`.
 
 ```python
-assert harness.invocations.of(ReserveStock)[-1].method == "compensate"
+harness.invocations.assert_contains(ReserveStock, method="compensate")
 assert saga.status is SagaStatus.FAILED
 assert saga.step_status("ReserveStock") is SagaStepStatus.COMPENSATED
 ```
@@ -164,7 +197,7 @@ Use a fake `ISagaStepCircuitBreaker`. An open breaker leaves the step off `invoc
 
 ## Inbox
 
-`process_available` sends a `Request` through `RequestMediator` or an event through `EventMediator`. The command is on `requests`. The event is on `invocations`. A second `add` of the same `(message_id, message_name)` returns `[False]`. After success the status is `processed`. The caller commits.
+`process_available` sends a `Request` through `RequestMediator` or an event through `EventMediator`. The command is on `requests`. The event is on `invocations`. `inbox.assert_contains` by message type; `inbox.one(message_id)` stays. A second `add` of the same `(message_id, message_name)` returns `[False]`. After success the status is `processed`. The caller commits.
 
 ## Inbox handler error
 
@@ -172,10 +205,10 @@ Status stays `not_processed`. `flush_counter` grows. The caller commits.
 
 ## Outbox
 
-The handler calls `repository.add`. The row is on `outbox`. It is absent from `published` until the test calls `produce_available`. That call does `get_many` and `EventProducer.send_message` once, then `commit`. Status becomes `produced` and the message is on `published`.
+The handler calls `repository.add`. `outbox.assert_contains` the event type. It is absent from `published` until the test calls `produce_available`. That call does `get_many` and `EventProducer.send_message` once, then `commit`. Status becomes `produced` and the message is on `published`.
 
 ```python
-assert harness.outbox.pending_count == 1
+harness.outbox.assert_contains(OrderCreatedNotice)
 harness.published.assert_empty()
 await harness.outbox.produce_available()
 harness.published.assert_one(OrderCreatedNotice, topic="order_events")
@@ -183,7 +216,7 @@ harness.published.assert_one(OrderCreatedNotice, topic="order_events")
 
 ## Outbox broker error
 
-`harness.broker.fail_next(...)` leaves the row `not_produced`. `published` stays empty.
+`harness.broker.fail_next(...)` leaves the row `not_produced`. `published.assert_empty()`.
 
 ## Dataclass request
 

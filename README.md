@@ -258,7 +258,7 @@ async def test_create_order() -> None:
 
         # Assert
         assert result.order_id == "ord-book"
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)
         harness.published.assert_empty()
 ```

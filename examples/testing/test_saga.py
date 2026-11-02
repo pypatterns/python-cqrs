@@ -77,9 +77,10 @@ async def test_saga_step_acts_and_the_saga_completes() -> None:
 
         # Assert
         assert running_after_reserve == 1
-        assert harness.invocations.of(ReserveStock)[0].method == "act"
+        harness.invocations.assert_contains(ReserveStock, method="act")
         assert harness.sagas.running_count == 0
         assert harness.sagas.completed_count == 1
+        harness.sagas.assert_one(OrderSaga)
         assert harness.sagas.one(OrderSaga).completed_steps == ["ReserveStock", "ChargeCard"]
 
 
@@ -105,7 +106,7 @@ async def test_failed_step_compensates_finished_steps() -> None:
                 pass
 
         # Assert
-        assert harness.invocations.of(ReserveStock)[-1].method == "compensate"
+        harness.invocations.assert_contains(ReserveStock, method="compensate")
         saga = harness.sagas.one(OrderSaga)
         assert saga.status is SagaStatus.FAILED
         assert saga.step_status("ReserveStock") is SagaStepStatus.COMPENSATED

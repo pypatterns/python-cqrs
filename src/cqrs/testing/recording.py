@@ -3,8 +3,13 @@
 [AI Instruction]
 These types are the journals on ``TestHarness``. Tests import ``test_harness``
 from ``cqrs.testing`` and read the journals from that object. A boolean
-``contains`` does not raise. ``assert_contains``, ``assert_one``, ``assert_empty``,
-``assert_entered``, and ``assert_not_entered`` raise ``AssertionError``.
+``contains`` does not raise. ``of`` returns matches. ``one``, ``assert_contains``,
+``assert_one``, ``assert_empty``, ``assert_not_contains``, ``assert_entered``,
+and ``assert_not_entered`` raise ``AssertionError`` with a full harness report.
+``where=`` is a predicate on the journal item. Keyword filters such as
+``topic=``, ``method=``, and ``called_next=`` stay on the journals that
+support them. A journal raises ``TypeError`` for a keyword it does not
+support. ``yields`` is a list.
 """
 
 import contextlib
@@ -62,6 +67,235 @@ def _event_names(event_type: type) -> set[str]:
     return names
 
 
+_T = typing.TypeVar("_T")
+
+
+def _apply_where(
+    items: list[_T],
+    where: typing.Callable[[_T], bool] | None,
+) -> list[_T]:
+    if where is None:
+        return list(items)
+    return [item for item in items if where(item)]
+
+
+def _query_filters(
+    *,
+    topic: str | None = None,
+    method: str | None = None,
+    called_next: bool | None = None,
+) -> dict[str, typing.Any]:
+    filters: dict[str, typing.Any] = {}
+    if topic is not None:
+        filters["topic"] = topic
+    if method is not None:
+        filters["method"] = method
+    if called_next is not None:
+        filters["called_next"] = called_next
+    return filters
+
+
+class _Reported:
+    """Journals that raise ``AssertionError`` with a full harness dump."""
+
+    _journal_name: str = ""
+    _report: typing.Any | None = None
+
+    def bind_report(self, report: typing.Any) -> None:
+        self._report = report
+
+    def _raise_report(
+        self,
+        method: str,
+        *,
+        looked_for: typing.Any = None,
+        filters: dict[str, typing.Any] | None = None,
+        has_where: bool = False,
+        matches: int = 0,
+    ) -> typing.NoReturn:
+        from cqrs.testing.report import render_failure
+
+        raise AssertionError(
+            render_failure(
+                self._report,
+                journal=self._journal_name,
+                method=method,
+                looked_for=looked_for,
+                filters=filters or {},
+                has_where=has_where,
+                matches=matches,
+            ),
+        )
+
+
+class _JournalQuery(_Reported, typing.Generic[_T]):
+    """contains / of / assert_* over ``_matching`` and ``where=``."""
+
+    _filters: typing.ClassVar[frozenset[str]] = frozenset()
+
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[_T]:
+        raise NotImplementedError
+
+    def _is_empty(self) -> bool:
+        return not len(self)  # type: ignore[arg-type]
+
+    def of(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> list[_T]:
+        active = _query_filters(topic=topic, method=method, called_next=called_next)
+        unsupported = set(active) - self._filters
+        if unsupported:
+            names = ", ".join(sorted(unsupported))
+            raise TypeError(f"{self._journal_name} journal does not support filter(s): {names}")
+        return _apply_where(self._matching(item_type, **active), where)
+
+    def contains(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> bool:
+        return bool(self.of(item_type, where=where, topic=topic, method=method, called_next=called_next))
+
+    def _one(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> _T:
+        matches = self.of(item_type, where=where, topic=topic, method=method, called_next=called_next)
+        if len(matches) != 1:
+            self._fail_query(
+                "one",
+                item_type,
+                matches,
+                where=where,
+                topic=topic,
+                method=method,
+                called_next=called_next,
+            )
+        return matches[0]
+
+    def assert_contains(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> None:
+        matches = self.of(item_type, where=where, topic=topic, method=method, called_next=called_next)
+        if matches:
+            return
+        self._fail_query(
+            "assert_contains",
+            item_type,
+            matches,
+            where=where,
+            topic=topic,
+            method=method,
+            called_next=called_next,
+        )
+
+    def assert_one(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> None:
+        matches = self.of(item_type, where=where, topic=topic, method=method, called_next=called_next)
+        if len(matches) == 1:
+            return
+        self._fail_query(
+            "assert_one",
+            item_type,
+            matches,
+            where=where,
+            topic=topic,
+            method=method,
+            called_next=called_next,
+        )
+
+    def assert_not_contains(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> None:
+        matches = self.of(item_type, where=where, topic=topic, method=method, called_next=called_next)
+        if not matches:
+            return
+        self._fail_query(
+            "assert_not_contains",
+            item_type,
+            matches,
+            where=where,
+            topic=topic,
+            method=method,
+            called_next=called_next,
+        )
+
+    def assert_empty(self) -> None:
+        if self._is_empty():
+            return
+        try:
+            count = len(self)  # type: ignore[arg-type]
+        except TypeError:
+            count = 1
+        self._raise_report("assert_empty", matches=count)
+
+    def _fail_query(
+        self,
+        method_name: str,
+        item_type: type,
+        matches: list[_T],
+        *,
+        where: typing.Callable[[_T], bool] | None,
+        topic: str | None,
+        method: str | None,
+        called_next: bool | None,
+    ) -> typing.NoReturn:
+        self._raise_report(
+            method_name,
+            looked_for=item_type,
+            filters=_query_filters(topic=topic, method=method, called_next=called_next),
+            has_where=where is not None,
+            matches=len(matches),
+        )
+
+
+class _TypedJournal(_JournalQuery[_T]):
+    def one(
+        self,
+        item_type: type,
+        *,
+        where: typing.Callable[[_T], bool] | None = None,
+        topic: str | None = None,
+        method: str | None = None,
+        called_next: bool | None = None,
+    ) -> _T:
+        return self._one(item_type, where=where, topic=topic, method=method, called_next=called_next)
+
+
 @dataclasses.dataclass(frozen=True)
 class Invocation:
     """One entry into ``handle``, ``act``, or ``compensate``."""
@@ -73,8 +307,11 @@ class Invocation:
     handler_instance: typing.Any
 
 
-class InvocationJournal:
+class InvocationJournal(_TypedJournal[Invocation]):
     """Handlers that actually entered ``handle``, ``act``, or ``compensate``."""
+
+    _journal_name = "invocations"
+    _filters = frozenset({"method"})
 
     def __init__(self) -> None:
         self._items: list[Invocation] = []
@@ -102,21 +339,30 @@ class InvocationJournal:
     def __len__(self) -> int:
         return len(self._items)
 
-    def of(self, handler_type: type) -> list[Invocation]:
-        return [item for item in self._items if item.handler is handler_type]
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[Invocation]:
+        found = [item for item in self._items if item.handler is item_type]
+        method = filters.get("method")
+        if method is not None:
+            found = [item for item in found if item.method == method]
+        return found
 
-    def assert_entered(self, handler_type: type) -> None:
-        if self.of(handler_type):
-            return
-        seen = [item.handler.__name__ for item in self._items]
-        raise AssertionError(f"{handler_type.__name__} was not entered. Invocations: {seen or '[]'}")
+    def assert_entered(
+        self,
+        handler_type: type,
+        *,
+        method: str | None = None,
+        where: typing.Callable[[Invocation], bool] | None = None,
+    ) -> None:
+        self.assert_contains(handler_type, method=method, where=where)
 
-    def assert_not_entered(self, handler_type: type) -> None:
-        found = self.of(handler_type)
-        if not found:
-            return
-        methods = [item.method for item in found]
-        raise AssertionError(f"{handler_type.__name__} was entered ({methods})")
+    def assert_not_entered(
+        self,
+        handler_type: type,
+        *,
+        method: str | None = None,
+        where: typing.Callable[[Invocation], bool] | None = None,
+    ) -> None:
+        self.assert_not_contains(handler_type, method=method, where=where)
 
     def contains_argument(self, event_type: type) -> bool:
         return any(item.argument_type is event_type for item in self._items)
@@ -131,8 +377,10 @@ class RequestCall:
     exception: BaseException | None = None
 
 
-class RequestJournal:
+class RequestJournal(_TypedJournal[RequestCall]):
     """Every ``send``: the request, and the response or the exception."""
+
+    _journal_name = "requests"
 
     def __init__(self) -> None:
         self._items: list[RequestCall] = []
@@ -146,36 +394,28 @@ class RequestJournal:
     ) -> None:
         self._items.append(RequestCall(request=request, response=response, exception=exception))
 
-    def contains(self, request_type: type) -> bool:
-        return any(type(item.request) is request_type for item in self._items)
-
-    def of(self, request_type: type) -> list[RequestCall]:
-        return [item for item in self._items if type(item.request) is request_type]
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[RequestCall]:
+        return [item for item in self._items if type(item.request) is item_type]
 
     def __iter__(self) -> typing.Iterator[RequestCall]:
         return iter(self._items)
 
+    def __len__(self) -> int:
+        return len(self._items)
 
-class EventJournal:
+
+class EventJournal(_TypedJournal[typing.Any]):
     """Domain events delivered to handlers, or events that had no handler."""
 
-    def __init__(self) -> None:
+    def __init__(self, name: str = "handled") -> None:
+        self._journal_name = name
         self._events: list[typing.Any] = []
 
     def add(self, event: typing.Any) -> None:
         self._events.append(event)
 
-    def contains(self, event_type: type) -> bool:
-        return any(type(event) is event_type for event in self._events)
-
-    def of(self, event_type: type) -> list[typing.Any]:
-        return [event for event in self._events if type(event) is event_type]
-
-    def assert_empty(self) -> None:
-        if not self._events:
-            return
-        names = [type(event).__name__ for event in self._events]
-        raise AssertionError(f"expected no events, found {names}")
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[typing.Any]:
+        return [event for event in self._events if type(event) is item_type]
 
     def __iter__(self) -> typing.Iterator[typing.Any]:
         return iter(self._events)
@@ -196,17 +436,14 @@ class PublishedMessage:
     content_type: str | None
 
 
-class PublishedJournal:
+class PublishedJournal(_TypedJournal[PublishedMessage]):
     """Messages that reached ``MessageBroker.send_message``."""
+
+    _journal_name = "published"
+    _filters = frozenset({"topic"})
 
     def __init__(self, messages: list[Message]) -> None:
         self._messages = messages
-        self._handled: EventJournal | None = None
-        self._invocations: InvocationJournal | None = None
-
-    def bind(self, handled: EventJournal, invocations: InvocationJournal) -> None:
-        self._handled = handled
-        self._invocations = invocations
 
     def _view(self, message: Message) -> PublishedMessage:
         return PublishedMessage(
@@ -232,61 +469,21 @@ class PublishedJournal:
             return False
         return True
 
-    def _matching(self, event_type: type, topic: str | None) -> list[PublishedMessage]:
-        return [self._view(message) for message in self._messages if self._matches(message, event_type, topic)]
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[PublishedMessage]:
+        topic = filters.get("topic")
+        return [self._view(message) for message in self._messages if self._matches(message, item_type, topic)]
 
-    def contains(self, event_type: type, *, topic: str | None = None) -> bool:
-        return any(self._matches(message, event_type, topic) for message in self._messages)
+    def __iter__(self) -> typing.Iterator[PublishedMessage]:
+        return (self._view(message) for message in self._messages)
 
-    def of(self, event_type: type, *, topic: str | None = None) -> list[PublishedMessage]:
-        return self._matching(event_type, topic)
-
-    def one(self, event_type: type, *, topic: str | None = None) -> PublishedMessage:
-        matches = self._matching(event_type, topic)
-        if len(matches) != 1:
-            self._fail(event_type, topic, matches)
-        return matches[0]
-
-    def assert_contains(self, event_type: type, *, topic: str | None = None) -> None:
-        if self.contains(event_type, topic=topic):
-            return
-        self._fail(event_type, topic, [])
-
-    def assert_one(self, event_type: type, *, topic: str | None = None) -> None:
-        matches = self._matching(event_type, topic)
-        if len(matches) != 1:
-            self._fail(event_type, topic, matches)
-
-    def assert_empty(self) -> None:
-        if not self._messages:
-            return
-        recorded = [f"{message.message_name} topic={message.topic}" for message in self._messages]
-        raise AssertionError(f"expected no published messages, found {recorded}")
-
-    def _fail(
-        self,
-        event_type: type,
-        topic: str | None,
-        matches: list[PublishedMessage],
-    ) -> None:
-        recorded = [f"{message.message_name} topic={message.topic}" for message in self._messages]
-        lines = [
-            f"expected {event_type.__name__} on the broker",
-        ]
-        if topic is not None:
-            lines.append(f"topic={topic}")
-        lines.append(f"published: {recorded or '[]'}")
-        if matches:
-            lines.append(f"matches: {len(matches)}")
-        if self._handled is not None and self._handled.contains(event_type):
-            lines.append(f"{event_type.__name__} is in handled but was not sent to the broker")
-        if self._invocations is not None and self._invocations.contains_argument(event_type):
-            lines.append(f"{event_type.__name__} is in invocations but was not sent to the broker")
-        raise AssertionError("\n".join(lines))
+    def __len__(self) -> int:
+        return len(self._messages)
 
 
-class OutboxJournal:
+class OutboxJournal(_TypedJournal[typing.Any]):
     """Rows a handler added, and the batch ``produce_available`` publishes."""
+
+    _journal_name = "outbox"
 
     def __init__(self, repository: typing.Any, broker: typing.Any) -> None:
         self._repository = repository
@@ -294,6 +491,7 @@ class OutboxJournal:
         self._pending = 0
         self._produced = 0
         self._not_produced = 0
+        self._events: list[typing.Any] = []
         self._restorers: list[typing.Callable[[], None]] = []
         if repository is not None:
             self._install()
@@ -305,6 +503,7 @@ class OutboxJournal:
         def add(event: typing.Any) -> None:
             original_add(event)
             self._pending += 1
+            self._events.append(event)
 
         repository.add = add
         self._restorers.append(lambda: setattr(repository, "add", original_add))
@@ -340,12 +539,28 @@ class OutboxJournal:
     def not_produced_count(self) -> int:
         return self._not_produced
 
+    @property
+    def events(self) -> list[typing.Any]:
+        return list(self._events)
+
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[typing.Any]:
+        return [event for event in self._events if type(event) is item_type]
+
+    def _is_empty(self) -> bool:
+        return self._pending == 0 and self._produced == 0 and self._not_produced == 0
+
+    def __iter__(self) -> typing.Iterator[typing.Any]:
+        return iter(self._events)
+
+    def __len__(self) -> int:
+        return len(self._events)
+
     def assert_empty(self) -> None:
-        if self._pending == 0 and self._produced == 0 and self._not_produced == 0:
+        if self._is_empty():
             return
-        raise AssertionError(
-            "outbox is not empty: "
-            f"pending={self._pending} produced={self._produced} not_produced={self._not_produced}",
+        self._raise_report(
+            "assert_empty",
+            matches=self._pending + self._produced + self._not_produced,
         )
 
     async def produce_available(self) -> None:
@@ -362,8 +577,10 @@ class OutboxJournal:
         await self._repository.commit()
 
 
-class InboxJournal:
+class InboxJournal(_JournalQuery[InboxMessage]):
     """Insert and process inbox rows through the real repository and processor."""
+
+    _journal_name = "inbox"
 
     def __init__(
         self,
@@ -376,6 +593,7 @@ class InboxJournal:
         self._processor = processor
         self._rows: dict[str, InboxMessage] = {}
         self._ids: dict[int, str] = {}
+        self._types: dict[str, type] = {}
         self._restorers: list[typing.Callable[[], None]] = []
         if repository is not None:
             self._install()
@@ -421,9 +639,10 @@ class InboxJournal:
         self._restorers.clear()
 
     def _register(self, messages: typing.Sequence[typing.Tuple[str, typing.Any]]) -> None:
-        if self._map is None:
-            return
-        for _, message in messages:
+        for message_id, message in messages:
+            self._types[message_id] = type(message)
+            if self._map is None:
+                continue
             name = message_name(message)
             if self._map.get(name) is None:
                 self._map.register(name, type(message))
@@ -456,10 +675,29 @@ class InboxJournal:
             await self._processor.process(row)
 
     def one(self, message_id: str) -> InboxMessage:
-        try:
-            return self._rows[message_id]
-        except KeyError:
-            raise AssertionError(f"inbox has no message {message_id!r}") from None
+        if message_id not in self._rows:
+            self._raise_report(
+                "one",
+                looked_for=message_id,
+                filters={"message_id": message_id},
+                matches=0,
+            )
+        return self._rows[message_id]
+
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[InboxMessage]:
+        names = _event_names(item_type)
+        found: list[InboxMessage] = []
+        for row in self._rows.values():
+            recorded = self._types.get(row.message_id)
+            if recorded is item_type or row.message_name in names:
+                found.append(row)
+        return found
+
+    def __iter__(self) -> typing.Iterator[InboxMessage]:
+        return iter(self._rows.values())
+
+    def __len__(self) -> int:
+        return len(self._rows)
 
     @property
     def pending_count(self) -> int:
@@ -479,8 +717,11 @@ class MiddlewareCall:
     called_next: bool
 
 
-class MiddlewareJournal:
+class MiddlewareJournal(_TypedJournal[MiddlewareCall]):
     """Middleware that saw a request, and whether it called the next handle."""
+
+    _journal_name = "middlewares"
+    _filters = frozenset({"called_next"})
 
     def __init__(self) -> None:
         self._items: list[MiddlewareCall] = []
@@ -494,8 +735,18 @@ class MiddlewareJournal:
             ),
         )
 
-    def of(self, middleware_type: type) -> list[MiddlewareCall]:
-        return [item for item in self._items if item.middleware is middleware_type]
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[MiddlewareCall]:
+        found = [item for item in self._items if item.middleware is item_type]
+        called_next = filters.get("called_next")
+        if called_next is not None:
+            found = [item for item in found if item.called_next is called_next]
+        return found
+
+    def __iter__(self) -> typing.Iterator[MiddlewareCall]:
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -505,8 +756,10 @@ class HandlerErrorRecord:
     error: BaseException
 
 
-class HandlerErrorJournal:
+class HandlerErrorJournal(_Reported):
     """Domain handler errors that ``send`` logged and swallowed."""
+
+    _journal_name = "handler_errors"
 
     def __init__(self) -> None:
         self._items: list[HandlerErrorRecord] = []
@@ -514,8 +767,98 @@ class HandlerErrorJournal:
     def add(self, event: typing.Any, handler: type, error: BaseException) -> None:
         self._items.append(HandlerErrorRecord(event=event, handler=handler, error=error))
 
-    def of(self, event_type: type, handler_type: type) -> list[HandlerErrorRecord]:
-        return [item for item in self._items if type(item.event) is event_type and item.handler is handler_type]
+    def of(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> list[HandlerErrorRecord]:
+        found = [item for item in self._items if type(item.event) is event_type and item.handler is handler_type]
+        return _apply_where(found, where)
+
+    def contains(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> bool:
+        return bool(self.of(event_type, handler_type, where=where))
+
+    def one(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> HandlerErrorRecord:
+        matches = self.of(event_type, handler_type, where=where)
+        if len(matches) != 1:
+            self._fail_pair("one", event_type, handler_type, matches, where)
+        return matches[0]
+
+    def assert_contains(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> None:
+        matches = self.of(event_type, handler_type, where=where)
+        if matches:
+            return
+        self._fail_pair("assert_contains", event_type, handler_type, matches, where)
+
+    def assert_one(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> None:
+        matches = self.of(event_type, handler_type, where=where)
+        if len(matches) == 1:
+            return
+        self._fail_pair("assert_one", event_type, handler_type, matches, where)
+
+    def assert_not_contains(
+        self,
+        event_type: type,
+        handler_type: type,
+        *,
+        where: typing.Callable[[HandlerErrorRecord], bool] | None = None,
+    ) -> None:
+        matches = self.of(event_type, handler_type, where=where)
+        if not matches:
+            return
+        self._fail_pair("assert_not_contains", event_type, handler_type, matches, where)
+
+    def assert_empty(self) -> None:
+        if not self._items:
+            return
+        self._raise_report("assert_empty", matches=len(self._items))
+
+    def _fail_pair(
+        self,
+        method: str,
+        event_type: type,
+        handler_type: type,
+        matches: list[HandlerErrorRecord],
+        where: typing.Callable[[HandlerErrorRecord], bool] | None,
+    ) -> typing.NoReturn:
+        self._raise_report(
+            method,
+            looked_for=(event_type, handler_type),
+            has_where=where is not None,
+            matches=len(matches),
+        )
+
+    def __iter__(self) -> typing.Iterator[HandlerErrorRecord]:
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        return len(self._items)
 
 
 class _HarnessListener:
@@ -636,8 +979,10 @@ class SagaSnapshot:
         return status
 
 
-class SagaJournal:
+class SagaJournal(_TypedJournal[SagaSnapshot]):
     """Saga status read from storage calls made during the block."""
+
+    _journal_name = "sagas"
 
     def __init__(
         self,
@@ -672,13 +1017,15 @@ class SagaJournal:
     def completed_count(self) -> int:
         return sum(1 for state in self._cache.by_id.values() if state.status is SagaStatus.COMPLETED)
 
-    def one(self, saga_type: type) -> SagaSnapshot:
-        name = saga_type.__name__
-        matches = [state for state in self._cache.by_id.values() if state.name == name]
-        if len(matches) != 1:
-            found = [state.name for state in self._cache.by_id.values()]
-            raise AssertionError(f"expected one {name}, found {found or '[]'}")
-        return SagaSnapshot(matches[0])
+    def _matching(self, item_type: type, **filters: typing.Any) -> list[SagaSnapshot]:
+        name = item_type.__name__
+        return [SagaSnapshot(state) for state in self._cache.by_id.values() if state.name == name]
+
+    def __iter__(self) -> typing.Iterator[SagaSnapshot]:
+        return (SagaSnapshot(state) for state in self._cache.by_id.values())
+
+    def __len__(self) -> int:
+        return len(self._cache.by_id)
 
     async def recover(
         self,

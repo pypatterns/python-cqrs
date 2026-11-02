@@ -11,7 +11,7 @@ from cqrs.outbox import sqlalchemy
 dotenv.load_dotenv()
 DATABASE_DSN = os.environ.get("DATABASE_DSN", "")
 
-# DSN для тестов саги: отдельные переменные для MySQL и PostgreSQL (задаются в pytest-config.ini / env).
+# DSN for saga tests: separate MySQL and PostgreSQL variables (set in pytest-config.ini / env).
 DATABASE_DSN_MYSQL = os.environ.get("DATABASE_DSN_MYSQL", "")
 DATABASE_DSN_POSTGRESQL = os.environ.get("DATABASE_DSN_POSTGRESQL", "")
 
@@ -44,12 +44,12 @@ async def session(init_orm):
         yield session
 
 
-# --- Outbox: PostgreSQL (DATABASE_DSN указывает на MySQL, поэтому нужен отдельный сплит) ---
+# --- Outbox: PostgreSQL (DATABASE_DSN points at MySQL, so this is a separate split) ---
 
 
 @pytest.fixture(scope="function")
 async def init_orm_postgres():
-    """Поднять схему outbox на живом PostgreSQL (DATABASE_DSN_POSTGRESQL)."""
+    """Create the outbox schema on live PostgreSQL (DATABASE_DSN_POSTGRESQL)."""
     if not DATABASE_DSN_POSTGRESQL:
         pytest.skip("DATABASE_DSN_POSTGRESQL not set")
     engine = create_async_engine(
@@ -59,8 +59,8 @@ async def init_orm_postgres():
         max_overflow=30,
         echo=False,
     )
-    # DDL в PostgreSQL транзакционный, поэтому схему коммитим до yield:
-    # иначе открытая транзакция держит блокировку таблицы и тесты повиснут.
+    # PostgreSQL DDL is transactional, so commit the schema before yield:
+    # otherwise the open transaction holds a table lock and tests hang.
     async with engine.begin() as connect:
         await connect.run_sync(sqlalchemy.Base.metadata.drop_all)
         await connect.run_sync(sqlalchemy.Base.metadata.create_all)
@@ -83,12 +83,12 @@ async def session_postgres(init_orm_postgres):
     await engine.dispose()
 
 
-# --- Saga storage: MySQL (отдельные фикстуры, поднимают схему и всё необходимое) ---
+# --- Saga storage: MySQL (separate fixtures; they create the schema and everything needed) ---
 
 
 @pytest.fixture(scope="session")
 async def init_saga_orm_mysql():
-    """Поднять схему саги для MySQL (DATABASE_DSN_MYSQL)."""
+    """Create the saga schema for MySQL (DATABASE_DSN_MYSQL)."""
     from cqrs.saga.storage.sqlalchemy import Base
 
     if not DATABASE_DSN_MYSQL:
@@ -109,7 +109,7 @@ async def init_saga_orm_mysql():
 
 @pytest.fixture(scope="session")
 def saga_session_factory_mysql(init_saga_orm_mysql):
-    """Session factory для тестов саги на MySQL."""
+    """Session factory for saga tests on MySQL."""
     return async_sessionmaker(
         init_saga_orm_mysql,
         expire_on_commit=False,
@@ -117,12 +117,12 @@ def saga_session_factory_mysql(init_saga_orm_mysql):
     )
 
 
-# --- Saga storage: PostgreSQL (отдельные фикстуры, поднимают схему и всё необходимое) ---
+# --- Saga storage: PostgreSQL (separate fixtures; they create the schema and everything needed) ---
 
 
 @pytest.fixture(scope="session")
 async def init_saga_orm_postgres():
-    """Поднять схему саги для PostgreSQL (DATABASE_DSN_POSTGRESQL)."""
+    """Create the saga schema for PostgreSQL (DATABASE_DSN_POSTGRESQL)."""
     from cqrs.saga.storage.sqlalchemy import Base
 
     if not DATABASE_DSN_POSTGRESQL:
@@ -143,7 +143,7 @@ async def init_saga_orm_postgres():
 
 @pytest.fixture(scope="session")
 def saga_session_factory_postgres(init_saga_orm_postgres):
-    """Session factory для тестов саги на PostgreSQL."""
+    """Session factory for saga tests on PostgreSQL."""
     return async_sessionmaker(
         init_saga_orm_postgres,
         expire_on_commit=False,

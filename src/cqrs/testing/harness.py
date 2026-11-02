@@ -44,6 +44,7 @@ from cqrs.testing.recording import (
     wrap_send,
     wrap_stream,
 )
+from cqrs.testing.report import HarnessReport
 
 
 class TestHarness:
@@ -255,12 +256,12 @@ def _attach(
     saga_storage: typing.Any,
 ) -> tuple[TestHarness, list[typing.Callable[[], None]]]:
     invocations = InvocationJournal()
-    handled = EventJournal()
+    handled = EventJournal("handled")
     requests = RequestJournal()
     yields: list[typing.Any] = []
     middlewares = MiddlewareJournal()
     handler_errors = HandlerErrorJournal()
-    unhandled = EventJournal()
+    unhandled = EventJournal("unhandled")
     restorers: list[typing.Callable[[], None]] = []
 
     mediators = _mediators(
@@ -273,7 +274,6 @@ def _attach(
     chosen, broker_restorers = _connect_brokers(emitters, broker)
     restorers.extend(broker_restorers)
     published = PublishedJournal(chosen.messages)
-    published.bind(handled, invocations)
 
     for container in _containers(mediators):
         restorers.append(wrap_resolve(container, invocations))
@@ -322,6 +322,33 @@ def _attach(
         )
     inbox = InboxJournal(inbox_repository, inbox_message_map, processor)
     restorers.append(inbox.restore)
+
+    report = HarnessReport(
+        requests=requests,
+        invocations=invocations,
+        handled=handled,
+        unhandled=unhandled,
+        published=published,
+        outbox=outbox,
+        inbox=inbox,
+        sagas=sagas,
+        middlewares=middlewares,
+        handler_errors=handler_errors,
+        yields=yields,
+    )
+    for journal in (
+        requests,
+        invocations,
+        handled,
+        unhandled,
+        published,
+        outbox,
+        inbox,
+        sagas,
+        middlewares,
+        handler_errors,
+    ):
+        journal.bind_report(report)
 
     harness = TestHarness(
         mediator=request_mediator,

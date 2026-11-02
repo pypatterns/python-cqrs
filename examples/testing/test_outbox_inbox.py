@@ -83,6 +83,7 @@ async def test_inbox_rejects_a_duplicate_message() -> None:
         # Assert
         assert inserted == [True]
         assert duplicate == [False]
+        harness.inbox.assert_contains(CreateOrder)
 
 
 async def test_inbox_processes_the_command() -> None:
@@ -95,8 +96,9 @@ async def test_inbox_processes_the_command() -> None:
         await harness.inbox.process_available()
 
         # Assert
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)
         assert harness.inbox.one("msg-1").status is cqrs.InboxStatus.PROCESSED
+        harness.inbox.assert_contains(CreateOrder)
 
 
 async def test_inbox_keeps_a_failed_row_not_processed() -> None:
@@ -124,6 +126,7 @@ async def test_outbox_holds_the_row_until_produce() -> None:
         await harness.mediator.send(CreateOrder(sku="book"))
 
         # Assert
+        harness.outbox.assert_contains(OrderCreatedNotice)
         assert harness.outbox.pending_count == 1
         harness.published.assert_empty()
 

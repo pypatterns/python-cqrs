@@ -49,4 +49,4 @@ async def test_around_records_a_mediator_on_dependency_injector() -> None:
         await mediator.send(CreateOrder(sku="book"))
 
         # Assert
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)

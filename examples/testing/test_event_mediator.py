@@ -35,4 +35,4 @@ async def test_event_mediator_enters_handle() -> None:
 
         # Assert
         harness.invocations.assert_entered(AuditHandler)
-        assert harness.invocations.of(AuditHandler)[0].method == "handle"
+        harness.invocations.assert_contains(AuditHandler, method="handle")
