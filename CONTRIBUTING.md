@@ -111,6 +111,52 @@ pytest -c ./tests/pytest-config.ini ./tests/integration
 docker compose -f docker-compose-test.yml down
 ```
 
+### Test style (Arrange-Act-Assert)
+
+Every test in `tests/unit`, `tests/integration`, and `examples/testing` is one scenario in three blocks: **Arrange** (container, mapper, `async with test_harness`), **Act** (one `send` / `stream` / `execute` / repository call), **Assert** (journal `assert_*`, result).
+
+`# Arrange`, `# Act`, `# Assert` comments are required in `examples/testing/` and in new harness unit tests.
+
+Do not mix Act and Assert: do not inspect journals between two `send` calls.
+
+Do not hide Act inside Arrange (do not call `send` on the same line as `test_harness(...)`).
+
+Unrelated checks are separate tests, not one long function.
+
+**Don't:**
+
+```python
+async def test_order():
+    async with test_harness(di.Container(), commands_mapper=commands_mapper) as harness:
+        r = await harness.mediator.send(CreateOrder(sku="book"))
+        assert r.order_id == "1"
+        assert harness.requests.contains(CreateOrder)
+        await harness.mediator.send(ReadOrder(order_id="1"))
+        assert harness.handled.contains(OrderCreated)
+        harness.invocations.assert_entered(CreateOrderHandler)
+```
+
+This fails as a test because it has no AAA boundaries, two Acts in one test, boolean `contains` instead of `assert_*`, and a mixed command and query. A failure cannot point at one step, and the harness report merges both `send` calls.
+
+**Do:**
+
+```python
+async def test_command_is_on_requests_and_invocations() -> None:
+    # Arrange
+    container = di.Container()
+    async with test_harness(container, commands_mapper=commands_mapper) as harness:
+        # Act
+        result = await harness.mediator.send(CreateOrder(sku="book"))
+
+        # Assert
+        assert result.order_id == "1"
+        harness.requests.assert_contains(CreateOrder)
+        harness.invocations.assert_entered(CreateOrderHandler)
+        harness.published.assert_empty()
+```
+
+A query is a separate test with its own Arrange/Act/Assert, not the second half of `test_order`.
+
 ---
 
 ## 5. Pull Request Guidelines
@@ -127,6 +173,8 @@ Before opening a PR, ensure:
 - [ ] Linter checks pass without errors (`ruff check`).
 - [ ] Type checks pass (`pyright`).
 - [ ] Unit tests pass locally (`pytest -c ./tests/pytest-config.ini ./tests/unit`).
+- [ ] Tests follow Arrange-Act-Assert.
+- [ ] New and edited repository files are English.
 - [ ] Commits have clear and descriptive messages.
 
 ---

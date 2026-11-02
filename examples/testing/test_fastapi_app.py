@@ -71,5 +71,5 @@ async def test_route_sends_the_command_and_stores_the_row() -> None:
 
         # Assert
         assert response.status_code == 201
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)
         assert harness.outbox.pending_count == 1

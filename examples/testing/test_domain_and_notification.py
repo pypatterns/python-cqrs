@@ -106,11 +106,16 @@ async def test_domain_event_and_follow_up_are_handled() -> None:
         await harness.mediator.send(CreateOrder(sku="book"))
 
         # Assert
-        assert harness.handled.contains(OrderCreated)
-        assert harness.handled.contains(InvoiceRequested)
+        harness.handled.assert_contains(OrderCreated)
+        harness.handled.assert_contains(
+            OrderCreated,
+            where=lambda event: event.order_id == "1",
+        )
+        harness.handled.assert_contains(InvoiceRequested)
         harness.invocations.assert_entered(AuditHandler)
         harness.invocations.assert_entered(InvoiceHandler)
         harness.published.assert_empty()
+        harness.published.assert_not_contains(OrderCreated)
 
 
 async def test_notification_is_published_as_json() -> None:
@@ -122,10 +127,11 @@ async def test_notification_is_published_as_json() -> None:
 
         # Assert
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")
-        assert not harness.handled.contains(OrderCreatedNotice)
         message = harness.published.one(OrderCreatedNotice)
+        assert message.payload["payload"]["order_id"] == "1"
         assert message.content_type is None
         assert message.payload["event_name"] == "order_created"
+        harness.handled.assert_not_contains(OrderCreatedNotice)
 
 
 async def test_domain_handler_error_is_swallowed() -> None:
@@ -141,7 +147,8 @@ async def test_domain_handler_error_is_swallowed() -> None:
 
         # Assert
         assert result.order_id == "1"
-        assert harness.handler_errors.of(OrderCreated, FailingAuditHandler)
+        harness.handler_errors.assert_contains(OrderCreated, FailingAuditHandler)
+        harness.requests.assert_contains(CreateOrder)
 
 
 async def test_event_without_handler_is_unhandled() -> None:
@@ -152,5 +159,5 @@ async def test_event_without_handler_is_unhandled() -> None:
         await harness.mediator.send(CreateOrder(sku="book"))
 
         # Assert
-        assert harness.unhandled.contains(OrderCreated)
+        harness.unhandled.assert_contains(OrderCreated)
         harness.invocations.assert_not_entered(AuditHandler)

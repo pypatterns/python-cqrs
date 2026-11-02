@@ -30,22 +30,15 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.4.0"
+version = "5.5.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
 pydantic = ["pydantic==2.*"]
 sqlalchemy = ["sqlalchemy[asyncio]==2.0.*"]
 sqlmodel = ["sqlmodel>=0.0.22", "sqlalchemy[asyncio]==2.0.*"]
-testing = [
-  "pytest~=7.4.2",
-  "pytest-asyncio~=0.21.1",
-  "pydantic==2.*",
-  "sqlalchemy[asyncio]==2.0.*",
-  "sqlmodel>=0.0.22",
-  "aiosqlite>=0.20.0",
-  "protobuf>=4.25.8",
-]
+# cqrs.testing imports only the core package. Install this extra for Rich assertion dumps.
+testing = ["rich>=13"]
 dev = [
   # Develope tools
   "pycln==2.5.0",
@@ -53,10 +46,17 @@ dev = [
   "pyright==1.1.408",
   "ruff==0.6.2",
   "vermin>=1.6.0",
+  "pytest~=7.4.2",
+  "rich>=13",  # from testing extra; colored harness AssertionError dumps
+  "pytest-asyncio~=0.21.1",
   "pytest-cov>=4.0.0",
   "pytest-codspeed==4.2.0",
   # Tests
-  "python-cqrs[testing]",
+  "pydantic==2.*",
+  "sqlalchemy[asyncio]==2.0.*",
+  "sqlmodel>=0.0.22",
+  "aiosqlite>=0.20.0",
+  "protobuf>=4.25.8",
   "aio-pika==9.3.0",        # from rabbit
   "aiokafka==0.10.0",       # from kafka
   "retry-async==0.1.*",     # from kafka

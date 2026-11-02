@@ -47,4 +47,4 @@ async def test_middleware_answers_without_the_handler() -> None:
         # Assert
         assert result.order_id == "denied"
         harness.invocations.assert_not_entered(CreateOrderHandler)
-        assert harness.middlewares.of(DenyMiddleware)[0].called_next is False
+        harness.middlewares.assert_contains(DenyMiddleware, called_next=False)

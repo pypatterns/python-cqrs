@@ -440,32 +440,34 @@ Middleware (`middlewares=` on bootstrap) wraps every request: timing, tracing, a
 
 Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read `DevnullMessageBroker.MESSAGE_BUS`. The harness swaps that broker for `CapturingMessageBroker` during the block and restores it.
 
-- Command: assert `requests` and `invocations`.
-- Query: assert `requests`. `handled` and `published` stay empty. `outbox` stays empty.
-- Domain event: assert `handled` and `invocations`. `published` stays empty.
-- Notification: assert `published`. It is absent from `handled`.
-- Parallel domain handlers: both classes are on `invocations`. Do not assert order.
-- Swallowed domain-handler error: the command result is on `requests`. The error is on `handler_errors`.
-- Event with no handler: the type is on `unhandled`. `send` does not raise.
-- `EventMediator`: assert `invocations`. This path is not `handled` from `EventEmitter`.
-- Request fallback: both classes are on `invocations`. The response on `requests` is the fallback's.
-- Event fallback: both classes are on `invocations`.
-- Circuit breaker: the primary is absent from `invocations`. The fallback is present. Use a fake `ICircuitBreaker`, not the `aiobreaker` extra.
-- Middleware that does not call `handle`: `invocations` does not contain the handler. `middlewares` records `called_next` false. The response on `requests` is the middleware's.
+Journals share `contains` / `of` / `one` / `assert_contains` / `assert_one` / `assert_empty` / `assert_not_contains`. `where=` is a predicate on the row. `invocations.assert_entered` is `assert_contains`. A failed `assert_*` raises `AssertionError` with the full harness report. Color needs `rich` (`python-cqrs[testing]`); without it the same text is plain. There is no pytest plugin. `cqrs.testing` is in the base install.
+
+- Command: `requests.assert_contains` and `invocations.assert_entered`.
+- Query: `requests.assert_one`. `handled.assert_empty()`, `published.assert_empty()`, `outbox.assert_empty()`.
+- Domain event: `handled.assert_contains` (optional `where=`) and `invocations.assert_entered`. `published.assert_empty()`.
+- Notification: `published.assert_one`. `handled.assert_not_contains`.
+- Parallel domain handlers: both classes `assert_entered` on `invocations`. Do not assert order.
+- Swallowed domain-handler error: `requests.assert_contains` holds the command result. `handler_errors.assert_contains(event_type, handler_type)`.
+- Event with no handler: `unhandled.assert_contains`. `send` does not raise.
+- `EventMediator`: `invocations.assert_entered`. This path is not `handled` from `EventEmitter`.
+- Request fallback: both classes `assert_entered` on `invocations`. The response on `requests` is the fallback's.
+- Event fallback: both classes `assert_entered` on `invocations`.
+- Circuit breaker: `invocations.assert_not_entered` for the primary. The fallback is `assert_entered`. Use a fake `ICircuitBreaker`, not the `aiobreaker` extra.
+- Middleware that does not call `handle`: `invocations.assert_not_entered`. `middlewares.assert_contains(..., called_next=False)`. The response on `requests` is the middleware's.
 - `ScopeStrategy.SEND`: domain handlers on `invocations` are in order.
-- `ScopeStrategy.HANDLER` and `NONE`: both handlers are on `invocations`. Order is not required.
-- Chain: assert `invocations` for the step that ran and the step that did not. There is no separate chain bus.
-- Stream: assert `yields` in order. The domain event is on `handled`. `clear_events` does not remove it.
+- `ScopeStrategy.HANDLER` and `NONE`: both handlers `assert_entered` on `invocations`. Order is not required.
+- Chain: `invocations.assert_entered` for the step that ran and `assert_not_entered` for the step that did not. There is no separate chain bus.
+- Stream: `assert items == harness.yields`. The domain event is `handled.assert_contains`. `clear_events` does not remove it.
 - Streaming fallback: `yields` and `invocations` show both handlers. Values already yielded stay.
-- Saga step: `act` is on `invocations`. Inside the loop after a non-final step, `sagas.running_count` is 1. After the full run the saga is completed and `running_count` is 0.
-- Compensation: `compensate` is on `invocations`. Saga status is `failed`. The step status is `compensated`. There is no saga status `compensated`.
-- Saga fallback: the spare step is on `invocations`. The failed step's last method is `act`, not `compensate`.
-- Saga circuit breaker: the primary step is absent from `invocations`. The fallback is present. Use a fake `ISagaStepCircuitBreaker`.
+- Saga step: `invocations.assert_contains(..., method="act")`. Inside the loop after a non-final step, `sagas.running_count` is 1. After the full run the saga is completed and `running_count` is 0.
+- Compensation: `invocations.assert_contains(..., method="compensate")`. Saga status is `failed`. The step status is `compensated`. There is no saga status `compensated`.
+- Saga fallback: the spare step is `assert_entered` on `invocations`. The failed step's last method is `act`, not `compensate`.
+- Saga circuit breaker: `invocations.assert_not_entered` for the primary step. The fallback is `assert_entered`. Use a fake `ISagaStepCircuitBreaker`.
 - Recovery: `await harness.sagas.recover(...)`. A finished step does not enter `act` a second time.
-- Inbox: a command is on `requests` after `process_available`. An event is on `invocations`. A second `add` of the same `(message_id, message_name)` returns `[False]`.
+- Inbox: a command is on `requests` after `process_available`. An event is on `invocations`. `inbox.assert_contains` by message type. A second `add` of the same `(message_id, message_name)` returns `[False]`.
 - Inbox handler error: status stays `not_processed` and `flush_counter` grows. The caller commits.
-- Outbox: the row is on `outbox`. The notification is absent from `published` until the test calls `produce_available`.
-- Outbox broker error: the row stays `not_produced`. `published` stays empty.
+- Outbox: `outbox.assert_contains`. `published.assert_empty()` until the test calls `produce_available`.
+- Outbox broker error: the row stays `not_produced`. `published.assert_empty()`.
 - Dataclass request: the response is on `requests`. The harness does not add a validator.
 - Pydantic: a field error is raised by the constructor, before `send`.
 - JSON: `published` message `content_type` is empty. This is the default.
@@ -484,4 +486,4 @@ Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-
 
 Install extras explicitly. They are not core dependencies.
 
-`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `dishka`, `aiobreaker`. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`.
+`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `dishka`, `aiobreaker`, `testing`. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`. `cqrs.testing` is in the base install; `[testing]` only adds `rich` for colored harness dumps. `rich` is not a `cqrs` attribute.

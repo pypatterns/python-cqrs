@@ -66,12 +66,16 @@ async def test_place_order() -> None:
 
         # Assert
         assert result.order_id == "1"
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)
         harness.invocations.assert_entered(AuditOrderCreated)
-        assert harness.handled.contains(OrderCreated)
+        harness.handled.assert_contains(OrderCreated)
+        harness.handled.assert_contains(
+            OrderCreated,
+            where=lambda event: event.order_id == "1",
+        )
         harness.published.assert_one(OrderCreatedNotice, topic="order_events")
-        assert not harness.handled.contains(OrderCreatedNotice)
+        harness.handled.assert_not_contains(OrderCreatedNotice)
 
 
 if __name__ == "__main__":

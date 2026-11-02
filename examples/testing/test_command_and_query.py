@@ -66,8 +66,12 @@ async def test_command_is_on_requests_and_invocations() -> None:
 
         # Assert
         assert result.order_id == "1"
-        assert harness.requests.contains(CreateOrder)
+        harness.requests.assert_contains(CreateOrder)
         harness.invocations.assert_entered(CreateOrderHandler)
+        call = harness.requests.one(CreateOrder)
+        assert call.response == CreatedOrder(order_id="1")
+        harness.published.assert_empty()
+        harness.outbox.assert_empty()
 
 
 async def test_dataclass_response_is_on_requests() -> None:
@@ -78,7 +82,7 @@ async def test_dataclass_response_is_on_requests() -> None:
         await harness.mediator.send(CreateOrder(sku="book"))
 
         # Assert
-        assert harness.requests.of(CreateOrder)[0].response == CreatedOrder(order_id="1")
+        assert harness.requests.one(CreateOrder).response == CreatedOrder(order_id="1")
 
 
 async def test_query_leaves_delivery_journals_empty() -> None:
@@ -90,6 +94,8 @@ async def test_query_leaves_delivery_journals_empty() -> None:
 
         # Assert
         assert view.order_id == "1"
+        harness.requests.assert_one(ReadOrder)
         harness.handled.assert_empty()
         harness.published.assert_empty()
         harness.outbox.assert_empty()
+        harness.invocations.assert_entered(ReadOrderHandler)
