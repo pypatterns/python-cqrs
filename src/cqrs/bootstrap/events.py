@@ -1,19 +1,23 @@
+from __future__ import annotations
+
 import typing
 from typing import overload
 
-import di
-
 import cqrs
 from cqrs import events
-from cqrs.container import di as di_container_impl
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.container.protocol import Container as CQRSContainer
 from cqrs.container.scope import ScopeStrategy
+from cqrs.container.simple import as_container
+
+if typing.TYPE_CHECKING:
+    import di
+    from cqrs.container.di import DIContainer
 
 
 @overload
 def setup_mediator(
-    container: di_container_impl.DIContainer,
+    container: DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
@@ -30,7 +34,7 @@ def setup_mediator(
 
 
 def setup_mediator(
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: DIContainer | CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
@@ -84,7 +88,7 @@ def setup_mediator(
 
 @overload
 def bootstrap(
-    di_container: di.Container,
+    di_container: di.Container | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
@@ -94,7 +98,7 @@ def bootstrap(
 
 @overload
 def bootstrap(
-    di_container: CQRSContainer,
+    di_container: CQRSContainer | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
@@ -103,7 +107,7 @@ def bootstrap(
 
 
 def bootstrap(
-    di_container: di.Container | CQRSContainer,
+    di_container: di.Container | CQRSContainer | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     on_startup: typing.List[typing.Callable[[], None]] | None = None,
@@ -112,12 +116,16 @@ def bootstrap(
     """
     Bootstrap an event mediator with optional middlewares and event bindings.
 
-    If ``di_container`` is a :class:`di.Container`, it is wrapped in
-    :class:`cqrs.container.di.DIContainer`. Logging middleware is appended
-    to the middleware list. Runs all ``on_startup`` callables before setup.
+    Omit ``di_container`` to use :class:`cqrs.SimpleContainer`, which
+    constructs handlers that take no constructor arguments. If
+    ``di_container`` is a :class:`di.Container`, it is wrapped in
+    :class:`cqrs.container.di.DIContainer` (extra ``di``). Logging middleware
+    is appended to the middleware list. Runs all ``on_startup`` callables
+    before setup.
 
     Args:
-        di_container: DI container from the ``di`` package or a CQRS container.
+        di_container: Optional. ``None`` uses ``SimpleContainer``. Otherwise a
+            ``di.Container`` or a CQRS container.
         middlewares: Optional list of middlewares (e.g. logging, metrics).
         events_mapper: Optional callable that receives an :class:`~cqrs.events.map.EventMap`
             and binds event types to handler types.
@@ -131,16 +139,14 @@ def bootstrap(
         def bind_events(event_map: events.EventMap) -> None:
             event_map.bind(OrderCreatedEvent, OrderCreatedEventHandler)
 
-        mediator = bootstrap(
-            di_container=di.Container(),
-            events_mapper=bind_events,
-        )
+        mediator = bootstrap(events_mapper=bind_events)
         await mediator.send(OrderCreatedEvent(order_id="1"))
 
     [AI Instruction]
     Build an ``EventMediator`` for events that arrive from outside this
     process. ``events_mapper`` calls ``EventMap.bind``. The application then
-    ``await mediator.send(event)``. Commands and queries use
+    ``await mediator.send(event)``. Omit ``di_container`` when handlers take
+    no constructor arguments. Commands and queries use
     ``cqrs.bootstrap.requests.bootstrap``.
     """
     if on_startup is None:
@@ -149,15 +155,7 @@ def bootstrap(
     for fun in on_startup:
         fun()
 
-    # If the provided container is a container implemented using di package,
-    # we need to wrap it into our own container
-    if isinstance(di_container, di.Container):
-        container = di_container_impl.DIContainer()
-        container.attach_external_container(di_container)
-
-    # Otherwise, we can use the provided container directly
-    else:
-        container = di_container
+    container = as_container(di_container)
 
     middlewares_list: typing.List[mediator_middlewares.Middleware] = list(
         middlewares or [],

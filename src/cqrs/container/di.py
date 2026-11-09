@@ -3,8 +3,15 @@ from __future__ import annotations
 import contextlib
 import typing
 
-import di
-from di import dependent, executors
+try:
+    import di
+    from di import dependent, executors
+except ImportError:
+    raise ImportError(
+        "You are trying to use the di container adapter, "
+        "but 'di' is not installed. "
+        "Please install it using: pip install python-cqrs[di]",
+    ) from None
 
 from cqrs.container.protocol import Container
 
@@ -20,9 +27,10 @@ class DIContainer(Container[di.Container]):
     opens a one-shot scope (previous behaviour).
 
     [AI Instruction]
-    Wrap a ``di.Container`` when bootstrap is not doing it. ``bootstrap``
-    wraps a raw ``di.Container`` itself. Implement ``open_scope`` behavior
-    through this class when ``ScopeStrategy`` is ``SEND`` or ``HANDLER``.
+    Wrap a ``di.Container`` when bootstrap is not doing it. Install
+    ``python-cqrs[di]``. ``bootstrap`` wraps a raw ``di.Container`` itself.
+    Implement ``open_scope`` behavior through this class when
+    ``ScopeStrategy`` is ``SEND`` or ``HANDLER``.
     Other containers (``dependency-injector``, Dishka) have their own
     adapters; do not force those through ``DIContainer``.
     """

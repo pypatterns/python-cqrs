@@ -3,8 +3,6 @@
 Full demo: examples/cor/typed_cor_request_handler.py.
 """
 
-import di
-
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 from cqrs.handlers import CORRequestHandler
@@ -37,7 +35,4 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 def build_mediator() -> cqrs.RequestMediator:
-    return bootstrap.bootstrap(
-        di_container=di.Container(),
-        commands_mapper=commands_mapper,
-    )
+    return bootstrap.bootstrap(commands_mapper=commands_mapper)

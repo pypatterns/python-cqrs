@@ -3,8 +3,6 @@
 Full demos: examples/testing/test_command_and_query.py, examples/testing/test_domain_and_notification.py.
 """
 
-import di
-
 import cqrs
 from cqrs.testing import test_harness
 
@@ -55,9 +53,7 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 async def test_place_order() -> None:
     # Arrange
-    container = di.Container()
     async with test_harness(
-        container,
         commands_mapper=commands_mapper,
         domain_events_mapper=domain_events_mapper,
     ) as harness:

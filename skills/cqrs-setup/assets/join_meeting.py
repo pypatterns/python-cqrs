@@ -3,9 +3,6 @@
 Full demo: examples/events/request_handler.py.
 """
 
-import di
-from di import dependent
-
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 
@@ -66,9 +63,9 @@ def queries_mapper(mapper: cqrs.RequestMap) -> None:
 def build_mediator(rooms: dict[str, list[str]]) -> cqrs.RequestMediator:
     reader = MeetingReader(rooms)
     writer = MeetingWriter(rooms)
-    container = di.Container()
-    container.bind(di.bind_by_type(dependent.Dependent(lambda: reader, scope="request"), MeetingReader))
-    container.bind(di.bind_by_type(dependent.Dependent(lambda: writer, scope="request"), MeetingWriter))
+    container = cqrs.SimpleContainer()
+    container.register(ReadMeetingQueryHandler, ReadMeetingQueryHandler(reader))
+    container.register(JoinMeetingCommandHandler, JoinMeetingCommandHandler(writer))
     return bootstrap.bootstrap(
         di_container=container,
         commands_mapper=commands_mapper,

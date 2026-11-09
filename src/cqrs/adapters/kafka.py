@@ -54,7 +54,8 @@ SaslMechanism: typing.TypeAlias = typing.Literal[
 logger = logging.getLogger("cqrs")
 logger.setLevel(logging.DEBUG)
 
-Serializer = typing.Callable[[typing.Any], typing.ByteString | None]
+# typing.ByteString (bytes | bytearray | memoryview) warns on Python 3.15.
+Serializer = typing.Callable[[typing.Any], bytes | bytearray | memoryview | None]
 
 
 class KafkaProducer(protocol.KafkaProducer):

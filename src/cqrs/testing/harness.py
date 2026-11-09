@@ -437,11 +437,13 @@ class test_harness:
     Async context manager that builds mediators and records what they do.
 
     ``test_harness.around`` wraps mediators the application already built.
+    Omit ``container`` when handlers take no constructor arguments. Bootstrap
+    then uses ``cqrs.SimpleContainer``.
     """
 
     def __init__(
         self,
-        container: typing.Any,
+        container: typing.Any | None = None,
         *,
         commands_mapper: typing.Callable[..., None] | None = None,
         queries_mapper: typing.Callable[..., None] | None = None,

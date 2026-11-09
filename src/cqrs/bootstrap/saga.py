@@ -1,13 +1,13 @@
+from __future__ import annotations
+
 import typing
 from typing import overload
 
-import di
-
 import cqrs
 from cqrs import events
-from cqrs.container import di as di_container_impl
 from cqrs.container.protocol import Container as CQRSContainer
 from cqrs.container.scope import ScopeStrategy
+from cqrs.container.simple import as_container
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.bootstrap.requests import setup_event_emitter
@@ -15,13 +15,17 @@ from cqrs.mapping.requests import SagaMap
 from cqrs.saga.storage.protocol import ISagaStorage
 from cqrs.serializers.protocol import EventSerializer
 
+if typing.TYPE_CHECKING:
+    import di
+    from cqrs.container.di import DIContainer
+
 DEFAULT_MESSAGE_BROKER = devnull.DevnullMessageBroker()
 
 
 @overload
 def setup_saga_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer,
+    container: DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
     event_map: events.EventMap | None = None,
@@ -48,7 +52,7 @@ def setup_saga_mediator(
 
 def setup_saga_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: DIContainer | CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
     event_map: events.EventMap | None = None,
@@ -112,7 +116,7 @@ def setup_saga_mediator(
 
 @overload
 def bootstrap(
-    di_container: di.Container,
+    di_container: di.Container | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
@@ -129,7 +133,7 @@ def bootstrap(
 
 @overload
 def bootstrap(
-    di_container: CQRSContainer,
+    di_container: CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
@@ -145,7 +149,7 @@ def bootstrap(
 
 
 def bootstrap(
-    di_container: di.Container | CQRSContainer,
+    di_container: di.Container | CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     sagas_mapper: typing.Callable[[SagaMap], None] | None = None,
@@ -176,7 +180,6 @@ def bootstrap(
             mapper.bind(InventoryReservedEvent, InventoryReservedEventHandler)
 
         mediator = cqrs.bootstrap.saga.bootstrap(
-            di_container=di.Container(),
             sagas_mapper=saga_mapper,
             domain_events_mapper=events_mapper,
             saga_storage=MemorySagaStorage(),
@@ -187,7 +190,8 @@ def bootstrap(
             print(f"Step: {result.step_type.__name__}")
 
     Args:
-        di_container: DI container (di.Container or CQRSContainer)
+        di_container: Optional. ``None`` uses ``SimpleContainer``. Otherwise a
+            ``di.Container`` (extra ``di``) or a CQRS container.
         message_broker: Message broker for event publishing. Defaults to DevnullMessageBroker
         middlewares: List of middlewares to apply
         sagas_mapper: Function to register sagas in SagaMap
@@ -218,8 +222,9 @@ def bootstrap(
     Build a ``SagaMediator`` for a process whose steps must be undone across
     services. ``sagas_mapper`` binds each context class to one ``Saga``.
     ``domain_events_mapper`` binds reactions to events those steps produce.
-    Pass a durable ``saga_storage`` when a crash must be recoverable; the
-    default keeps state in memory. The caller iterates ``mediator.execute``.
+    Omit ``di_container`` when steps take no constructor arguments. Pass a
+    durable ``saga_storage`` when a crash must be recoverable; the default
+    keeps state in memory. The caller iterates ``mediator.execute``.
     A single-service command uses ``cqrs.bootstrap.requests.bootstrap``.
     """
     if message_broker is None:
@@ -232,18 +237,9 @@ def bootstrap(
     for fun in on_startup:
         fun()
 
-    # If the provided container is a container implemented using di package,
-    # we need to wrap it into our own container
-    if isinstance(di_container, di.Container):
-        container = di_container_impl.DIContainer()
-        container.attach_external_container(di_container)
-        # Note: If saga_storage is provided, it should be registered in di_container
-        # manually before calling bootstrap, or sagas should handle storage
-        # registration themselves when creating instances.
-
-    # Otherwise, we can use the provided container directly
-    else:
-        container = di_container
+    # A raw di.Container is wrapped. None becomes SimpleContainer.
+    # Register saga_storage on that container when steps resolve it.
+    container = as_container(di_container)
 
     event_emitter = setup_event_emitter(
         container,

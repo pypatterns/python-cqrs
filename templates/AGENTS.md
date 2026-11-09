@@ -1,6 +1,6 @@
 # Agents using python-cqrs
 
-Copy this file into an application that depends on `python-cqrs` 5.2 or newer. It describes which feature to use, which to skip, and how to wire the frameworks this library supports. It does not describe how to change the library.
+Copy this file into an application that depends on `python-cqrs` 5.6 or newer. It describes which feature to use, which to skip, and how to wire the frameworks this library supports. It does not describe how to change the library.
 
 Full write-ups live at [mkdocs.python-cqrs.dev](https://mkdocs.python-cqrs.dev/). Examples live under `examples/` in the library repository.
 
@@ -101,6 +101,7 @@ class JoinMeetingCommandHandler(cqrs.RequestHandler[JoinMeetingCommand]):
         return self._events
 
     async def handle(self, request: JoinMeetingCommand):
+        self._events = []
         await self._meetings.join(request.user_id, request.meeting_id)
         self._events.append(UserJoined(user_id=request.user_id, meeting_id=request.meeting_id))
 ```
@@ -301,15 +302,19 @@ Use the same family for a request and its response. A pydantic command returns a
 
 ## Dependency injection
 
-Handlers receive ports through `__init__`. Bootstrap resolves them. Three containers are supported.
+Handlers receive ports through `__init__`. Bootstrap resolves them. With no container, bootstrap uses `cqrs.SimpleContainer` and calls `Handler()`. That is enough when the constructor takes no arguments. `register` pins an instance when it does. `SimpleContainer.resolve` returns that same instance on every send, including concurrent sends. `ScopeStrategy.SEND` and `HANDLER` need a container that implements `SupportsScope`. `SimpleContainer` does not. A container without `SupportsScope` opens no scope and raises nothing.
 
 | Container | When | Skip when |
 | --- | --- | --- |
-| `di.Container` | Default. Small and medium apps. Pass it to `di_container=`. Bootstrap wraps it. | The app already standardized on dishka or dependency-injector |
-| `cqrs.container.dishka.DishkaCQRSContainer` | The app already uses dishka. Extra: `python-cqrs[dishka]`. Register every handler with `provide(..., scope=Scope.REQUEST)` | You would add dishka only for CQRS. Use `di` |
-| `cqrs.container.dependency_injector.DependencyInjectorCQRSContainer` | The app needs dependency-injector's config, resources, or nested containers. `attach_external_container`, then pass the adapter | You need a CQRS request scope. This adapter does not implement `SupportsScope` |
+| `cqrs.SimpleContainer` | Default. No extra. Handlers have no constructor dependencies, or a few instances can be registered. Omit `di_container`, or pass this container | Handlers need type-based injection or a generator unit of work |
+| `di.Container` | Small and medium apps that want type-based injection and `ScopeStrategy.SEND`. Extra: `python-cqrs[di]`. Pass it to `di_container=`. Bootstrap wraps it. | The app already standardized on dishka or dependency-injector |
+| `cqrs.container.dishka.DishkaCQRSContainer` | The app already uses dishka. Extra: `python-cqrs[dishka]`. Register every handler with `provide(..., scope=Scope.REQUEST)` | You would add dishka only for CQRS. Use `di` or `SimpleContainer` |
+| `cqrs.container.dependency_injector.DependencyInjectorCQRSContainer` | The app needs dependency-injector's config, resources, or nested containers. Extra: `python-cqrs[dependency-injector]`. `attach_external_container`, then pass the adapter | You need a CQRS request scope. This adapter does not implement `SupportsScope` |
+
+Shared session (`python-cqrs[di]`):
 
 ```python
+import di
 from di import dependent
 
 container = di.Container()
@@ -349,7 +354,6 @@ Build the mediator once at startup. A mediator is safe to reuse. The per-request
 
 ```python
 import functools
-import di
 import fastapi
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
@@ -372,7 +376,7 @@ async def create_order(
     return await mediator.send(command)
 ```
 
-`app_container()` returns the process-wide `di.Container` (or a dishka / dependency-injector adapter), created once. For a path id, construct the request in the route (`UpdateOrder(order_id=order_id, **body)`) so the handler sees one immutable value.
+`app_container()` returns the process-wide container, created once: `cqrs.SimpleContainer` when handlers need no injection, or a `di` / dishka / dependency-injector adapter when they do. `ScopeStrategy.SEND` needs `di` or dishka. For a path id, construct the request in the route (`UpdateOrder(order_id=order_id, **body)`) so the handler sees one immutable value.
 
 Streaming routes depend on a separately cached `StreamingRequestMediator` from `bootstrap_streaming` and iterate `stream`. Saga routes depend on a `SagaMediator`. Do not send a saga context through `RequestMediator`.
 
@@ -391,7 +395,7 @@ FastStream is the consumer (and, if you publish without the outbox, a place to l
 `mediator.send` stays the path when this delivery must finish the handler before ack. When the subscriber only accepts work, open a session, pass the Kafka batch (`batch=True`) to `InboxRepository.add`, commit, and ack after that commit. A duplicate in the batch is still ack. The processor calls the mediator later. `open_scope` is only when that transaction also writes another row.
 
 ```python
-import di
+import functools
 import faststream
 from faststream import kafka
 import cqrs
@@ -402,9 +406,7 @@ broker = kafka.KafkaBroker(bootstrap_servers=["localhost:9092"])
 @functools.lru_cache(maxsize=1)
 def event_mediator_factory() -> cqrs.EventMediator:
     return events_bootstrap.bootstrap(
-        di_container=di.Container(),
         events_mapper=events_mapper,
-        scope_strategy=cqrs.ScopeStrategy.HANDLER,
     )
 
 @broker.subscriber("order_events", group_id="billing", auto_commit=False)
@@ -486,4 +488,4 @@ Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-
 
 Install extras explicitly. They are not core dependencies.
 
-`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `dishka`, `aiobreaker`, `testing`. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`. `cqrs.testing` is in the base install; `[testing]` only adds `rich` for colored harness dumps. `rich` is not a `cqrs` attribute.
+`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `di`, `dependency-injector`, `dishka`, `aiobreaker`, `testing`. 5.6.0 is a breaking change: `di` and `dependency-injector` left the base install. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`. `cqrs.DIContainer` needs `python-cqrs[di]`. `cqrs.SimpleContainer` and `cqrs.testing` are in the base install; `[testing]` only adds `rich` for colored harness dumps. `rich` is not a `cqrs` attribute.

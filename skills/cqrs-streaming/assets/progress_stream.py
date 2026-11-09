@@ -1,7 +1,5 @@
 """One request that yields progress. Full demo: examples/streaming/typed_streaming_handler.py."""
 
-import di
-
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 
@@ -41,10 +39,7 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
 
 
 def build_streaming_mediator() -> cqrs.StreamingRequestMediator:
-    return bootstrap.bootstrap_streaming(
-        di_container=di.Container(),
-        commands_mapper=commands_mapper,
-    )
+    return bootstrap.bootstrap_streaming(commands_mapper=commands_mapper)
 
 
 async def read_progress(mediator: cqrs.StreamingRequestMediator, item_ids: list[str]) -> list[ItemProgress]:

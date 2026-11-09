@@ -8,10 +8,11 @@ if typing.TYPE_CHECKING:
     from cqrs.message_brokers.protocol import Message
 
 
-Serializer = typing.Callable[[typing.Any], typing.ByteString | None]
+# typing.ByteString (bytes | bytearray | memoryview) warns on Python 3.15.
+Serializer = typing.Callable[[typing.Any], bytes | bytearray | memoryview | None]
 
 
-def default_serializer(message: typing.Any) -> typing.ByteString:
+def default_serializer(message: typing.Any) -> bytes:
     """
     Default serializer for messages.
 
@@ -61,7 +62,7 @@ def passthrough_value_serializer(
     """
     inner = value_serializer or default_serializer
 
-    def _serialize(message: typing.Any) -> typing.ByteString | None:
+    def _serialize(message: typing.Any) -> bytes | bytearray | memoryview | None:
         if isinstance(message, (bytes, bytearray, memoryview)):
             return bytes(message)
         return inner(message)
