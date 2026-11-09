@@ -1,24 +1,28 @@
+from __future__ import annotations
+
 import typing
 from typing import overload
 
-import di
-
 import cqrs
 from cqrs import events
-from cqrs.container import di as di_container_impl
 from cqrs.container.protocol import Container as CQRSContainer
 from cqrs.container.scope import ScopeStrategy
+from cqrs.container.simple import as_container
 from cqrs.message_brokers import devnull, protocol
 from cqrs.middlewares import base as mediator_middlewares, logging as logging_middleware
 from cqrs.mapping.requests import RequestMap
 from cqrs.serializers.protocol import EventSerializer
+
+if typing.TYPE_CHECKING:
+    import di
+    from cqrs.container.di import DIContainer
 
 DEFAULT_MESSAGE_BROKER = devnull.DevnullMessageBroker()
 
 
 @overload
 def setup_event_emitter(
-    container: di_container_impl.DIContainer,
+    container: DIContainer,
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     message_broker: protocol.MessageBroker | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
@@ -39,7 +43,7 @@ def setup_event_emitter(
 
 
 def setup_event_emitter(
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: DIContainer | CQRSContainer,
     domain_events_mapper: typing.Callable[[events.EventMap], None] | None = None,
     message_broker: protocol.MessageBroker | None = None,
     scope_strategy: ScopeStrategy = ScopeStrategy.NONE,
@@ -72,7 +76,7 @@ def setup_event_emitter(
 @overload
 def setup_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer,
+    container: DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
     queries_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -99,7 +103,7 @@ def setup_mediator(
 
 def setup_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: DIContainer | CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
     queries_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -143,7 +147,7 @@ def setup_mediator(
 
 @overload
 def bootstrap(
-    di_container: di.Container,
+    di_container: di.Container | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -160,7 +164,7 @@ def bootstrap(
 
 @overload
 def bootstrap(
-    di_container: CQRSContainer,
+    di_container: CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -176,7 +180,7 @@ def bootstrap(
 
 
 def bootstrap(
-    di_container: di.Container | CQRSContainer,
+    di_container: di.Container | CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -192,6 +196,13 @@ def bootstrap(
     """
     Create a ``RequestMediator``.
 
+    Omit ``di_container`` when handlers take no constructor arguments.
+    That path uses :class:`cqrs.SimpleContainer`. Pass a ``di.Container``
+    (extra ``di``), a dependency-injector adapter (extra
+    ``dependency-injector``), or a Dishka adapter (extra ``dishka``) when
+    handlers need dependencies. ``register`` on ``SimpleContainer`` pins an
+    instance, and every ``resolve`` returns that same object.
+
     [AI Instruction]
     Build the ``RequestMediator`` an application calls for commands and
     queries. Pass ``commands_mapper`` and ``queries_mapper`` that call
@@ -200,8 +211,10 @@ def bootstrap(
     handlers produce. Logging middleware is added when the list does not
     already contain it. A missing broker becomes a broker that discards
     messages; pass a real broker when notifications must leave the process.
-    Install optional integrations explicitly (``pydantic``, ``sqlalchemy``,
-    ``sqlmodel``, ``kafka``, and the others in ``pyproject.toml``).
+    Omit ``di_container`` for handlers with no constructor dependencies.
+    Install optional integrations explicitly (``di``, ``dependency-injector``,
+    ``dishka``, ``pydantic``, ``sqlalchemy``, ``sqlmodel``, ``kafka``, and
+    the others in ``pyproject.toml``).
     """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
@@ -211,15 +224,7 @@ def bootstrap(
     for fun in on_startup:
         fun()
 
-    # If the provided container is a container implemented using di package,
-    # we need to wrap it into our own container
-    if isinstance(di_container, di.Container):
-        container = di_container_impl.DIContainer()
-        container.attach_external_container(di_container)
-
-    # Otherwise, we can use the provided container directly
-    else:
-        container = di_container
+    container = as_container(di_container)
 
     event_emitter = setup_event_emitter(
         container,
@@ -249,7 +254,7 @@ def bootstrap(
 @overload
 def setup_streaming_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer,
+    container: DIContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
     queries_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -276,7 +281,7 @@ def setup_streaming_mediator(
 
 def setup_streaming_mediator(
     event_emitter: events.EventEmitter,
-    container: di_container_impl.DIContainer | CQRSContainer,
+    container: DIContainer | CQRSContainer,
     middlewares: typing.Iterable[mediator_middlewares.Middleware],
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
     queries_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -320,7 +325,7 @@ def setup_streaming_mediator(
 
 @overload
 def bootstrap_streaming(
-    di_container: di.Container,
+    di_container: di.Container | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -337,7 +342,7 @@ def bootstrap_streaming(
 
 @overload
 def bootstrap_streaming(
-    di_container: CQRSContainer,
+    di_container: CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -353,7 +358,7 @@ def bootstrap_streaming(
 
 
 def bootstrap_streaming(
-    di_container: di.Container | CQRSContainer,
+    di_container: di.Container | CQRSContainer | None = None,
     message_broker: protocol.MessageBroker | None = None,
     middlewares: typing.Sequence[mediator_middlewares.Middleware] | None = None,
     commands_mapper: typing.Callable[[RequestMap], None] | None = None,
@@ -372,7 +377,8 @@ def bootstrap_streaming(
     handlers through ``commands_mapper`` or ``queries_mapper`` with
     ``mapper.bind``, the same as a normal request. The caller iterates
     ``mediator.stream``, it does not ``await send``. Use ``bootstrap`` when
-    each request returns one value.
+    each request returns one value. Omit ``di_container`` for handlers with
+    no constructor dependencies; that uses ``cqrs.SimpleContainer``.
     """
     if message_broker is None:
         message_broker = DEFAULT_MESSAGE_BROKER
@@ -382,15 +388,7 @@ def bootstrap_streaming(
     for fun in on_startup:
         fun()
 
-    # If the provided container is a container implemented using di package,
-    # we need to wrap it into our own container
-    if isinstance(di_container, di.Container):
-        container = di_container_impl.DIContainer()
-        container.attach_external_container(di_container)
-
-    # Otherwise, we can use the provided container directly
-    else:
-        container = di_container
+    container = as_container(di_container)
 
     event_emitter = setup_event_emitter(
         container,

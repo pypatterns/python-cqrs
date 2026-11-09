@@ -64,12 +64,17 @@ Brokers are not on ``cqrs``. Kafka is
 ``cqrs.message_brokers.kafka.KafkaMessageBroker`` (extra ``kafka``). AMQP is
 ``cqrs.message_brokers.amqp.AMQPMessageBroker`` (extra ``rabbit``).
 
-Containers: pass one into bootstrap. ``cqrs.DIContainer`` wraps the ``di``
-package, and bootstrap wraps a raw ``di.Container`` itself.
-``cqrs.container.dependency_injector.DependencyInjectorCQRSContainer`` wraps
-dependency-injector. ``cqrs.container.dishka.DishkaCQRSContainer`` needs the
-``dishka`` extra. Scope helpers on ``cqrs`` are ``ScopeStrategy``,
-``bind_scope``, ``enter_scope``, and ``current_container``.
+Containers: omit one and bootstrap uses ``cqrs.SimpleContainer``, which
+constructs a handler with no constructor arguments. ``register`` pins an
+instance when a handler needs arguments. ``cqrs.DIContainer`` wraps the
+``di`` package (extra ``di``) and is lazy. Bootstrap wraps a raw
+``di.Container`` itself. ``DependencyInjectorCQRSContainer`` is
+``cqrs.container.dependency_injector`` (extra ``dependency-injector``).
+5.6.0 no longer installs either package with the base install.
+``cqrs.container.dishka.DishkaCQRSContainer`` needs the ``dishka`` extra.
+Scope helpers on ``cqrs`` are ``ScopeStrategy``, ``bind_scope``,
+``enter_scope``, and ``current_container``. ``SimpleContainer`` does not
+open a scope.
 
 Middleware is ``cqrs.middlewares.Middleware``. Logging is
 ``cqrs.middlewares.logging.LoggingMiddleware``; bootstrap adds it when the
@@ -85,6 +90,7 @@ without its extra raises ``ImportError``.
 import typing
 
 if typing.TYPE_CHECKING:
+    from cqrs.container.di import DIContainer
     from cqrs.models.pydantic import (
         PydanticDomainEvent,
         PydanticEvent,
@@ -113,8 +119,8 @@ if typing.TYPE_CHECKING:
 
 
 from cqrs.compressors import Compressor, ZlibCompressor
-from cqrs.container.di import DIContainer
 from cqrs.container.protocol import Container, SupportsScope
+from cqrs.container.simple import SimpleContainer
 from cqrs.container.scope import (
     ScopeAwareContainer,
     ScopeStrategy,
@@ -239,6 +245,7 @@ __all__ = (
     "DeserializeProtobufError",
     "Container",
     "SupportsScope",
+    "SimpleContainer",
     "DIContainer",
     "ScopeAwareContainer",
     "ScopeStrategy",
@@ -294,6 +301,10 @@ _LAZY_SQLALCHEMY = {
     "PayloadBinary": ("cqrs.sqlalchemy_types", "PayloadBinary"),
 }
 
+_LAZY_DI = {
+    "DIContainer": ("cqrs.container.di", "DIContainer"),
+}
+
 _LAZY_SQLMODEL = {
     "SqlModelOutboxedEventRepository": (
         "cqrs.outbox.sqlmodel",
@@ -317,6 +328,11 @@ def __getattr__(name: str) -> typing.Any:
     if name in _LAZY_SQLALCHEMY:
         module_name, attr = _LAZY_SQLALCHEMY[name]
         # ImportError message is raised by the sqlalchemy modules themselves.
+        module = __import__(module_name, fromlist=[attr])
+        return getattr(module, attr)
+    if name in _LAZY_DI:
+        module_name, attr = _LAZY_DI[name]
+        # ImportError message is raised by the di adapter itself.
         module = __import__(module_name, fromlist=[attr])
         return getattr(module, attr)
     if name in _LAZY_SQLMODEL:

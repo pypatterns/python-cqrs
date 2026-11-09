@@ -20,7 +20,7 @@ If the application mediator has a real broker and no `broker=` argument is passe
 
 `test_harness(...)` creates a memory outbox and a memory inbox on `harness.outbox_repository` and `harness.inbox_repository`. It does not bind them. The test binds the port.
 
-For `ScopeStrategy.SEND`, pass `di.Container`. Do not pass `TestContainer`. `TestContainer` is `register(type, instance)` and `async resolve`.
+For `ScopeStrategy.SEND`, pass `di.Container` (`python-cqrs[di]`). Do not pass `TestContainer` or `SimpleContainer`. `TestContainer` is `register(type, instance)` and `async resolve`. Omit `container` when the test does not need a scope.
 
 Do not read `DevnullMessageBroker.MESSAGE_BUS`. If the mediator holds that broker, the harness replaces it with `CapturingMessageBroker` for the block and restores it afterwards.
 
@@ -33,8 +33,7 @@ One scenario per test. Three comment blocks. One Act. Do not inspect journals be
 ```python
 async def test_command_is_on_requests_and_invocations() -> None:
     # Arrange
-    container = di.Container()
-    async with test_harness(container, commands_mapper=commands_mapper) as harness:
+    async with test_harness(commands_mapper=commands_mapper) as harness:
         # Act
         result = await harness.mediator.send(CreateOrder(sku="book"))
 
@@ -236,7 +235,7 @@ Marker `protobuf`. The message has `content_type` and `payload_bytes`. The harne
 
 ## di.Container
 
-`ScopeStrategy.SEND` shares the command session with the domain handler. Read `handler_instance` on `invocations`. Pass `di.Container`, not `TestContainer`.
+`ScopeStrategy.SEND` shares the command session with the domain handler. Read `handler_instance` on `invocations`. Pass `di.Container` (`python-cqrs[di]`), not `TestContainer` or `SimpleContainer`.
 
 ## FastAPI
 

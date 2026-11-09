@@ -1,8 +1,16 @@
 from typing import TypeVar, Optional, cast
 import inspect
 import functools
-from dependency_injector import providers
-from dependency_injector.containers import Container as DependencyInjectorContainer
+
+try:
+    from dependency_injector import providers
+    from dependency_injector.containers import Container as DependencyInjectorContainer
+except ImportError:
+    raise ImportError(
+        "You are trying to use the dependency-injector adapter, "
+        "but 'dependency-injector' is not installed. "
+        "Please install it using: pip install python-cqrs[dependency-injector]",
+    ) from None
 from cqrs.container.protocol import Container as CQRSContainerProtocol
 
 T = TypeVar("T")
@@ -52,9 +60,10 @@ class DependencyInjectorCQRSContainer(
 
     [AI Instruction]
     Wrap a dependency-injector declarative container and pass this object to
-    ``bootstrap``. Call ``attach_external_container`` before the first
-    resolve. Providers are discovered by type. This is not ``DIContainer``,
-    which wraps the ``di`` package.
+    ``bootstrap``. Install ``python-cqrs[dependency-injector]``. Call
+    ``attach_external_container`` before the first resolve. Providers are
+    discovered by type. This is not ``DIContainer``, which wraps the ``di``
+    package (extra ``di``).
     """
 
     def __init__(self) -> None:

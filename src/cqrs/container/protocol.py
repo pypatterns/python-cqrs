@@ -10,9 +10,10 @@ class Container(typing.Protocol[C]):
 
     [AI Instruction]
     The mediator resolves handlers from this. Pass the application's
-    container to ``bootstrap``. Implement ``resolve`` so a handler type
-    returns a constructed instance with its dependencies. Scope boundaries
-    are ``ScopeStrategy`` on bootstrap, not a method the handler calls.
+    container to ``bootstrap``, or omit it to use ``cqrs.SimpleContainer``.
+    Implement ``resolve`` so a handler type returns a constructed instance
+    with its dependencies. Scope boundaries are ``ScopeStrategy`` on
+    bootstrap, not a method the handler calls.
     """
 
     @property

@@ -3,8 +3,6 @@
 Full demo: examples/streaming/streaming_handler_parallel_events.py.
 """
 
-import di
-
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 
@@ -49,11 +47,12 @@ def domain_events_mapper(mapper: cqrs.EventMap) -> None:
 
 
 def build_mediator() -> cqrs.RequestMediator:
+    # The default container does not implement SupportsScope. HANDLER opens
+    # no scope on it and raises nothing. NONE is the matching strategy.
     return bootstrap.bootstrap(
-        di_container=di.Container(),
         commands_mapper=commands_mapper,
         domain_events_mapper=domain_events_mapper,
-        scope_strategy=cqrs.ScopeStrategy.HANDLER,
+        scope_strategy=cqrs.ScopeStrategy.NONE,
         concurrent_event_handle_enable=True,
         max_concurrent_event_handlers=2,
     )

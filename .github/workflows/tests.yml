@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
     - uses: actions/checkout@v4
@@ -68,13 +68,66 @@ jobs:
       run: |
         vermin --target=3.10- --violations --eval-annotations --backport typing_extensions --exclude=venv --exclude=build --exclude=.git --exclude=.venv src examples tests
 
+  base:
+    name: base install (py ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.15"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install the base package
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pyright==1.1.408
+
+    - name: Bootstrap a handler with no extras
+      run: |
+        python - << 'PY'
+        import asyncio
+
+        import cqrs
+        from cqrs.bootstrap import requests as bootstrap
+
+        class Ping(cqrs.Request[None]):
+            pass
+
+        class PingHandler(cqrs.RequestHandler[Ping]):
+            async def handle(self, request: Ping) -> None:
+                return None
+
+        def commands_mapper(mapper: cqrs.RequestMap) -> None:
+            mapper.bind(Ping, PingHandler)
+
+        async def main() -> None:
+            mediator = bootstrap.bootstrap(commands_mapper=commands_mapper)
+            await mediator.send(Ping())
+
+        asyncio.run(main())
+        PY
+
+    - name: Typecheck library sources without di
+      run: |
+        pip install -e ".[dev,examples]"
+        pip uninstall -y di dependency-injector
+        pyright -p pyrightconfig.base.json --pythonversion ${{ matrix.python-version }} src
+
   test:
     name: test (py ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
 
     steps:
     - uses: actions/checkout@v4

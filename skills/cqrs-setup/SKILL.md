@@ -10,7 +10,7 @@ description: >-
 
 Pick the feature with the Use when and Skip when pairs in this file. Both a command and a query are `cqrs.Request`. Event steps are cqrs-eda. Saga steps are cqrs-saga.
 
-The package is already installed. Do not add an install step. Do not copy `examples/` into the application. Open the linked file when the short shape is not enough.
+The base package is already installed. Extras are not. Do not add an install step for the base package. 5.6.0 no longer installs `di` or `dependency-injector` with that package. Name the extra when a container needs one: `python-cqrs[di]`, `python-cqrs[dependency-injector]`, or `python-cqrs[dishka]`. Do not copy `examples/` into the application. Open the linked file when the short shape is not enough.
 
 Say which feature you picked and which neighbor you skipped, in one sentence, before writing the handler.
 
@@ -172,7 +172,7 @@ For a meeting service the write model is `JoinMeetingCommand(cqrs.Request[None])
 
 Handlers live in `app/handlers.py`. `JoinMeetingCommandHandler` takes a writer port and calls `join`. `ReadMeetingQueryHandler` takes a reader port and returns `ReadMeetingQueryResult`. Neither annotates `handle` with a return type. The query handler does not append events.
 
-`app/bootstrap.py` binds each request once and calls `cqrs.bootstrap.requests.bootstrap` with `commands_mapper`, `queries_mapper`, and the process container. The caller then `await mediator.send(...)`.
+`app/bootstrap.py` binds each request once and calls `cqrs.bootstrap.requests.bootstrap` with `commands_mapper` and `queries_mapper`. Omit `di_container` when handlers take no constructor arguments. When a handler takes ports, register the constructed handler on `cqrs.SimpleContainer` (`container.register(JoinMeetingCommandHandler, JoinMeetingCommandHandler(writer))`). `di` is the `python-cqrs[di]` extra, dependency-injector is `python-cqrs[dependency-injector]`, and dishka is `python-cqrs[dishka]`. The caller then `await mediator.send(...)`.
 
 A chain is still one registration: `mapper.bind` receives the ordered list. A second `bind` of the same request type raises `KeyError`, including when `commands_mapper` and `queries_mapper` both bind it.
 

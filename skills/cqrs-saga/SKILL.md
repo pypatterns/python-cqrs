@@ -18,7 +18,7 @@ The package is already installed. Do not add an install step.
 2. One class per step, subclassing `cqrs.SagaStepHandler[Context, cqrs.Response]`. `act` does the work and returns `self._generate_step_result(...)`. `compensate` undoes that step.
 3. Subclass `cqrs.Saga[Context]` and set `steps` to those classes, in forward order.
 4. Register with `mapper.bind(Context, SagaClass)` inside `sagas_mapper`.
-5. Build `cqrs.bootstrap.saga.bootstrap(..., sagas_mapper=sagas_mapper, saga_storage=storage)` once. Production storage is `SqlAlchemySagaStorage` or `SqlModelSagaStorage`. `MemorySagaStorage` does not survive a restart.
+5. Build `cqrs.bootstrap.saga.bootstrap(..., sagas_mapper=sagas_mapper, saga_storage=storage)` once. When a step takes ports, register the step instances on `cqrs.SimpleContainer` or pass a `di` container (`python-cqrs[di]`), and pass that same container to `recover_saga`. Production storage is `SqlAlchemySagaStorage` or `SqlModelSagaStorage`. `MemorySagaStorage` does not survive a restart.
 6. Run `async for step in mediator.execute(context)`. Pass the same `scope_strategy` the application uses for `recover_saga`.
 7. After a crash, call `cqrs.saga.recovery.recover_saga` with that storage and the same `scope_strategy`. Do not start a second saga for the same business id.
 

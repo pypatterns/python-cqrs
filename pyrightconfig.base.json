@@ -1,0 +1,10 @@
+{
+  "include": ["src"],
+  "exclude": ["**/__pycache__", "**/*_pb2.py"],
+  "reportMissingImports": "error",
+  "reportMissingTypeStubs": false,
+  "reportMissingModuleSource": "none",
+  "pythonVersion": "3.10",
+  "pythonPlatform": "Linux",
+  "stubPath": "stubs/base-install"
+}

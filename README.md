@@ -41,12 +41,11 @@ pip install python-cqrs
 pip install "python-cqrs[pydantic,sqlalchemy,kafka]"  # add what you use
 ```
 
-Extras: `pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `aiobreaker`, `dishka`, `testing`. Details: [installation](https://mkdocs.python-cqrs.dev/latest/installation/). From 4.x: [migration guide](https://mkdocs.python-cqrs.dev/latest/migration/4-to-5/).
+Extras: `pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `aiobreaker`, `di`, `dependency-injector`, `dishka`, `testing`. **5.6.0 is a breaking change:** `pip install python-cqrs` no longer installs `di` or `dependency-injector`. Install `python-cqrs[di]` and `python-cqrs[dependency-injector]`. `cqrs.SimpleContainer` is the default and does not need them. Details: [installation](https://mkdocs.python-cqrs.dev/latest/installation/). From 4.x: [migration guide](https://mkdocs.python-cqrs.dev/latest/migration/4-to-5/).
 
 ## Quick start
 
 ```python
-import di
 import cqrs
 from cqrs.bootstrap import requests as bootstrap
 
@@ -69,11 +68,11 @@ def commands_mapper(mapper: cqrs.RequestMap) -> None:
     mapper.bind(CreateOrder, CreateOrderHandler)
 
 
-mediator = bootstrap.bootstrap(di_container=di.Container(), commands_mapper=commands_mapper)
+mediator = bootstrap.bootstrap(commands_mapper=commands_mapper)
 result = await mediator.send(CreateOrder(sku="book", amount=99.99))  # OrderCreated(order_id="ord-book")
 ```
 
-`result` is typed as `OrderCreated`. Queries use the same shape. Handler dependencies come from `di`, dependency-injector, or dishka. [Request handlers](https://mkdocs.python-cqrs.dev/latest/request_handler/) · [Bootstrap](https://mkdocs.python-cqrs.dev/latest/bootstrap/) · [Dependency injection](https://mkdocs.python-cqrs.dev/latest/di/)
+`result` is typed as `OrderCreated`. Queries use the same shape. A handler with no constructor arguments is built by `cqrs.SimpleContainer`. Register an instance on that container, or pass `di` (`python-cqrs[di]`), dependency-injector (`python-cqrs[dependency-injector]`), or dishka (`python-cqrs[dishka]`) when the handler takes ports. [Request handlers](https://mkdocs.python-cqrs.dev/latest/request_handler/) · [Bootstrap](https://mkdocs.python-cqrs.dev/latest/bootstrap/) · [Dependency injection](https://mkdocs.python-cqrs.dev/latest/di/)
 
 ## Saga
 
@@ -124,7 +123,10 @@ def sagas_mapper(mapper: cqrs.SagaMap) -> None:
     mapper.bind(OrderContext, OrderSaga)
 
 
-mediator = saga_bootstrap.bootstrap(di_container=di.Container(), sagas_mapper=sagas_mapper)
+container = cqrs.SimpleContainer()
+container.register(ReserveStock, ReserveStock(inventory))
+container.register(ChargeCard, ChargeCard(payments))
+mediator = saga_bootstrap.bootstrap(di_container=container, sagas_mapper=sagas_mapper)
 
 # if ChargeCard raises, ReserveStock.compensate releases the stock
 async for step in mediator.execute(OrderContext(order_id="ord-1", amount=99.99)):
