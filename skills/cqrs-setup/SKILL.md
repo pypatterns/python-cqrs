@@ -172,7 +172,7 @@ For a meeting service the write model is `JoinMeetingCommand(cqrs.Request[None])
 
 Handlers live in `app/handlers.py`. `JoinMeetingCommandHandler` takes a writer port and calls `join`. `ReadMeetingQueryHandler` takes a reader port and returns `ReadMeetingQueryResult`. Neither annotates `handle` with a return type. The query handler does not append events.
 
-`app/bootstrap.py` binds each request once and calls `cqrs.bootstrap.requests.bootstrap` with `commands_mapper` and `queries_mapper`. Omit `di_container` when handlers take no constructor arguments. When a handler takes ports, register the constructed handler on `cqrs.SimpleContainer` (`container.register(JoinMeetingCommandHandler, JoinMeetingCommandHandler(writer))`). `di` is the `python-cqrs[di]` extra, dependency-injector is `python-cqrs[dependency-injector]`, and dishka is `python-cqrs[dishka]`. The caller then `await mediator.send(...)`.
+`app/bootstrap.py` binds each request once and calls `cqrs.bootstrap.requests.bootstrap` with `commands_mapper` and `queries_mapper`. Omit `di_container` when handlers take no constructor arguments. When a handler takes ports, register one constructed handler on `cqrs.SimpleContainer` (`container.register(JoinMeetingCommandHandler, JoinMeetingCommandHandler(writer))`). Every send resolves that same instance. `handle` assigns `self._events = []` before it appends. `di` is the `python-cqrs[di]` extra, dependency-injector is `python-cqrs[dependency-injector]`, and dishka is `python-cqrs[dishka]`. The caller then `await mediator.send(...)`.
 
 A chain is still one registration: `mapper.bind` receives the ordered list. A second `bind` of the same request type raises `KeyError`, including when `commands_mapper` and `queries_mapper` both bind it.
 

@@ -1,6 +1,6 @@
 # Agents using python-cqrs
 
-Copy this file into an application that depends on `python-cqrs` 5.2 or newer. It describes which feature to use, which to skip, and how to wire the frameworks this library supports. It does not describe how to change the library.
+Copy this file into an application that depends on `python-cqrs` 5.6 or newer. It describes which feature to use, which to skip, and how to wire the frameworks this library supports. It does not describe how to change the library.
 
 Full write-ups live at [mkdocs.python-cqrs.dev](https://mkdocs.python-cqrs.dev/). Examples live under `examples/` in the library repository.
 
