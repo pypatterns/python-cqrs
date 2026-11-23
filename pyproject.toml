@@ -29,7 +29,7 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.6.0"
+version = "5.7.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
