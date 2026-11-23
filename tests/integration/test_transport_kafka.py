@@ -73,8 +73,8 @@ async def _commit_shared_groups_at_end() -> None:
             enable_auto_commit=False,
             auto_offset_reset="latest",
         )
-        await consumer.start()
         try:
+            await consumer.start()
             await _wait_until_assigned(consumer, topic)
             positioned = await consumer.seek_to_end()
             if positioned is False:

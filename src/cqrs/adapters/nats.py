@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 
 import nats
 import nats.errors
@@ -90,6 +91,15 @@ class JetStreamConsumer:
         except Exception:
             logger.debug("nats pull unsubscribe failed", exc_info=True)
 
+    async def max_deliver(self) -> int | None:
+        """Delivery limit stored on the durable, or ``None`` when it is unset."""
+
+        info = await self._subscription.consumer_info()
+        limit = info.config.max_deliver
+        if limit is None or limit < 1:
+            return None
+        return limit
+
 
 class JetStreamSession:
     """
@@ -109,8 +119,9 @@ class JetStreamSession:
         self._nc: NATSClient | None = None
         self._js: JetStreamContext | None = None
         self._lock: asyncio.Lock | None = None
-        self._ensured: set[str] = set()
+        self._ensured: set[tuple[str, str]] = set()
         self._owned: set[str] = set()
+        self._owner_token = f"cqrs:{uuid.uuid4().hex}"
 
     async def connect(self) -> None:
         async with self._mutex():
@@ -127,10 +138,11 @@ class JetStreamSession:
         """Create ``stream`` for ``subject``, or keep it when it already captures that subject."""
 
         await self.connect()
-        if stream in self._ensured:
+        pair = (stream, subject)
+        if pair in self._ensured:
             return
         async with self._mutex():
-            if stream in self._ensured:
+            if pair in self._ensured:
                 return
             jetstream = self._jetstream()
             created = False
@@ -140,23 +152,27 @@ class JetStreamSession:
                 info = None
             if info is None:
                 try:
-                    await jetstream.add_stream(
+                    info = await jetstream.add_stream(
                         name=stream,
                         subjects=[subject],
                         storage=self._storage,
+                        description=self._owner_token,
                     )
                 except APIError as exc:
-                    if exc.err_code != _STREAM_ALREADY_IN_USE and "already in use" not in (exc.description or ""):
+                    if not _stream_already_in_use(exc):
                         raise
+                    info = await jetstream.stream_info(stream)
                 else:
-                    created = True
-            else:
-                subjects = list(info.config.subjects or [])
-                if subject not in subjects:
-                    raise TransportError(
-                        f"JetStream stream {stream!r} does not include subject {subject!r}",
-                    )
-            self._ensured.add(stream)
+                    # An identical add can succeed without this session being
+                    # the creator. Own the stream only when the stored
+                    # description is the token from this add.
+                    created = _stream_description(info) == self._owner_token
+            subjects = list(info.config.subjects or [])
+            if subject not in subjects:
+                raise TransportError(
+                    f"JetStream stream {stream!r} does not include subject {subject!r}",
+                )
+            self._ensured.add(pair)
             if created:
                 self._owned.add(stream)
 
@@ -228,6 +244,22 @@ class JetStreamSession:
         if self._lock is None:
             self._lock = asyncio.Lock()
         return self._lock
+
+
+def _stream_description(info: object) -> str | None:
+    config = getattr(info, "config", None)
+    if config is None:
+        return None
+    description = getattr(config, "description", None)
+    if description is None:
+        return None
+    return str(description)
+
+
+def _stream_already_in_use(exc: APIError) -> bool:
+    if exc.err_code == _STREAM_ALREADY_IN_USE:
+        return True
+    return "already in use" in (exc.description or "")
 
 
 __all__ = (

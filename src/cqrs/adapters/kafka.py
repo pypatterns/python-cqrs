@@ -160,7 +160,7 @@ def _decode_bytes(value: bytes | str | None) -> str | None:
     if value is None:
         return None
     if isinstance(value, bytes):
-        return value.decode("utf-8")
+        return value.decode("utf-8", errors="replace")
     return value
 
 
@@ -234,18 +234,14 @@ class KafkaTopicConsumer:
         )
         try:
             await consumer.start()
-            self._consumer = consumer
             # Leave the position alone. ``auto_offset_reset`` applies only when
             # this group has no committed offset. Seeking would skip a committed
             # position or replay records the group already acknowledged.
-            await self._wait_for_assignment()
-        except Exception:
-            self._consumer = consumer
-            try:
-                await self.stop()
-            except Exception:
-                logger.debug("kafka consumer cleanup failed", exc_info=True)
+            await self._wait_for_assignment(consumer)
+        except BaseException:
+            await stop_client(consumer)
             raise
+        self._consumer = consumer
 
     async def stop(self) -> None:
         consumer = self._consumer
@@ -262,7 +258,7 @@ class KafkaTopicConsumer:
                 headers: dict[str, str] = {}
                 for header_key, header_value in record.headers or ():
                     if isinstance(header_value, bytes):
-                        headers[header_key] = header_value.decode("utf-8")
+                        headers[header_key] = header_value.decode("utf-8", errors="replace")
                     elif header_value is None:
                         headers[header_key] = ""
                     else:
@@ -286,8 +282,13 @@ class KafkaTopicConsumer:
         topic_partition = aiokafka.TopicPartition(self._topic, partition)
         await consumer.commit({topic_partition: next_offset})
 
-    async def _wait_for_assignment(self) -> None:
-        consumer = self._require()
+    def assigned_partitions(self) -> set[int]:
+        consumer = self._consumer
+        if consumer is None:
+            return set()
+        return {topic_partition.partition for topic_partition in consumer.assignment()}
+
+    async def _wait_for_assignment(self, consumer: aiokafka.AIOKafkaConsumer) -> None:
         loop = asyncio.get_running_loop()
         deadline = loop.time() + 30
         while not consumer.assignment():
@@ -299,3 +300,20 @@ class KafkaTopicConsumer:
         if self._consumer is None:
             raise RuntimeError("Kafka consumer is not started")
         return self._consumer
+
+
+async def stop_client(client: typing.Any) -> None:
+    """Stop a client that ``start`` may have left running, including on cancel."""
+
+    async def _stop() -> None:
+        try:
+            await client.stop()
+        except Exception:
+            logger.debug("kafka client stop failed", exc_info=True)
+
+    task = asyncio.create_task(_stop())
+    try:
+        await asyncio.shield(task)
+    except asyncio.CancelledError:
+        await task
+        raise

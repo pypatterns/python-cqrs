@@ -9,9 +9,9 @@ and consumer types live in ``cqrs.adapters.amqp``.
 ``AMQPTransport`` is the publish/subscribe transport. Construct it with a
 parsed URL (``create_transport("amqp://guest:guest@localhost:5672/")``), a
 URL string, or rely on that default. ``topic`` is the direct-exchange
-routing key. The queue name is derived from the topic and the group, so two
-topics can use the same group without sharing a queue. The subscriber
-declares and binds that queue. ``send_message`` publishes to the exchange
+routing key. The queue name is derived from the exchange, the topic, and
+the group, so two topics or two exchanges can share a group name without
+sharing a queue. The subscriber declares and binds that queue. ``send_message`` publishes to the exchange
 and does not replace ``AMQPMessageBroker``. A set ``key`` is the reserved
 header ``cqrs-key`` and does not change the route. A user header named
 ``key`` is left untouched. Do not define ``__bool__`` or ``__len__``.
@@ -97,6 +97,8 @@ class _AMQPIncoming(IncomingMessage):
         self._delivery_attempt = delivery_attempt
         self._message_id = delivery.message_id
         self._settled = False
+        self._dlq_published = False
+        self._settle_lock = asyncio.Lock()
         self._accounted = False
 
     @property
@@ -124,18 +126,37 @@ class _AMQPIncoming(IncomingMessage):
         return self._delivery_attempt
 
     async def ack(self) -> None:
-        if self._settled:
-            return
-        await self._delivery.ack()
-        self._settled = True
-        self._transport._forget(self._attempt_key())
-        self._transport._finish_incoming(self)
+        async with self._settle_lock:
+            if self._settled:
+                return
+            await self._delivery.ack()
+            self._settled = True
+            self._transport._forget(self._attempt_key())
+            self._transport._finish_incoming(self)
 
     async def nack(self, *, requeue: bool = True) -> None:
-        if self._settled:
-            return
-        final = (not requeue) or self._delivery_attempt >= self._subscription.options.max_deliveries
-        if final:
+        async with self._settle_lock:
+            if self._settled:
+                return
+            final = (not requeue) or self._delivery_attempt >= self._subscription.options.max_deliveries
+            if final:
+                await self._finish_final(requeue)
+                return
+            attempt_key = self._attempt_key()
+            if attempt_key is not None:
+                self._transport._attempts[attempt_key] = self._delivery_attempt + 1
+            await self._delivery.nack(requeue=True)
+            self._settled = True
+
+    async def _finish_final(self, requeue: bool) -> None:
+        """Publish the dead letter once, then settle the original.
+
+        The lock is held by ``nack``. A failed publish leaves the flag clear
+        so the next attempt can publish. A publish that succeeded is kept
+        when settling the original still has to be retried.
+        """
+
+        if not self._dlq_published:
             try:
                 await self._transport._dead_letter(self)
             except Exception:
@@ -143,19 +164,14 @@ class _AMQPIncoming(IncomingMessage):
                 await self._delivery.nack(requeue=True)
                 self._settled = True
                 return
-            if requeue:
-                await self._delivery.ack()
-            else:
-                await self._delivery.nack(requeue=False)
-            self._settled = True
-            self._transport._forget(self._attempt_key())
-            self._transport._finish_incoming(self)
-            return
-        attempt_key = self._attempt_key()
-        if attempt_key is not None:
-            self._transport._attempts[attempt_key] = self._delivery_attempt + 1
-        await self._delivery.nack(requeue=True)
+            self._dlq_published = True
+        if requeue:
+            await self._delivery.ack()
+        else:
+            await self._delivery.nack(requeue=False)
         self._settled = True
+        self._transport._forget(self._attempt_key())
+        self._transport._finish_incoming(self)
 
     def _attempt_key(self) -> tuple[str, str, str] | None:
         if not self._message_id:
@@ -205,9 +221,10 @@ class AMQPTransport(Transport):
 
     ``topic`` is the routing key on a direct exchange (default name
     ``cqrs``, or ``?exchange=`` on the URL). The queue name comes from the
-    topic and the group together. Competing subscribers of that pair share
-    the queue. The same group name on another topic is a different queue.
-    A different group is another queue and gets its own copy.
+    exchange, the topic, and the group together. Competing subscribers of
+    that triple share the queue. The same group on another topic or another
+    exchange is a different queue. A different group is another queue and
+    gets its own copy.
     ``ordering_per_key`` is false. ``native_dlq`` is false: after
     ``max_deliveries``, or on ``nack(requeue=False)``, the bytes are
     republished to ``{topic}.dlq``. ``ack`` and ``nack`` call aio_pika.
@@ -223,7 +240,7 @@ class AMQPTransport(Transport):
         native_dlq=False,
         delayed_redelivery=False,
         headers=True,
-        topic="direct-exchange routing key; the queue is named from the topic and the group",
+        topic="direct-exchange routing key; the queue is named from the exchange, the topic, and the group",
     )
 
     def __init__(
@@ -241,7 +258,6 @@ class AMQPTransport(Transport):
         self._groups: dict[tuple[str, str], _AMQPGroup] = {}
         self._outstanding: dict[str, int] = {}
         self._attempts: dict[tuple[str, str, str], int] = {}
-        self._purged: set[tuple[str, str]] = set()
         self._in_flight = 0
         self._idle = asyncio.Event()
         self._idle.set()
@@ -269,23 +285,22 @@ class AMQPTransport(Transport):
             self._groups[(topic, options.group)] = group
         subscription = _AMQPSubscription(self, group, handler, options)
         group.subscriptions.append(subscription)
-        pair = (topic, options.group)
-        purge = options.start_from == "latest" and pair not in self._purged
-        if purge:
-            self._purged.add(pair)
 
         async def on_delivery(delivery: AMQPDelivery) -> None:
             await self._on_delivery(subscription, delivery)
 
-        subscription.session = await self._client.consume(
-            on_delivery,
-            exchange_name=self._exchange_name,
-            queue_name=_queue_name(topic, options.group),
-            routing_key=topic,
-            prefetch=options.concurrency * options.prefetch,
-            concurrency=options.concurrency,
-            purge=purge,
-        )
+        try:
+            subscription.session = await self._client.consume(
+                on_delivery,
+                exchange_name=self._exchange_name,
+                queue_name=_queue_name(self._exchange_name, topic, options.group),
+                routing_key=topic,
+                prefetch=options.concurrency * options.prefetch,
+                concurrency=options.concurrency,
+            )
+        except BaseException:
+            self._drop_subscription(topic, options.group, subscription)
+            raise
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:
@@ -423,6 +438,15 @@ class AMQPTransport(Transport):
             return header_attempt
         return 1
 
+    def _drop_subscription(self, topic: str, group_name: str, subscription: _AMQPSubscription) -> None:
+        group = self._groups.get((topic, group_name))
+        if group is None:
+            return
+        if subscription in group.subscriptions:
+            group.subscriptions.remove(subscription)
+        if not group.subscriptions:
+            self._groups.pop((topic, group_name), None)
+
     def _forget(self, attempt_key: tuple[str, str, str] | None) -> None:
         if attempt_key is not None:
             self._attempts.pop(attempt_key, None)
@@ -471,10 +495,10 @@ class AMQPTransport(Transport):
         return "drain timed out: " + "; ".join(parts)
 
 
-def _queue_name(topic: str, group: str) -> str:
-    """One queue per topic and group. The length prefix keeps the pairs distinct."""
+def _queue_name(exchange: str, topic: str, group: str) -> str:
+    """One queue per exchange, topic, and group. Length prefixes keep the parts distinct."""
 
-    return f"{len(topic)}.{topic}.{group}"
+    return f"{len(exchange)}.{exchange}.{len(topic)}.{topic}.{group}"
 
 
 def _amqp_endpoint(url: urllib.parse.ParseResult | str | None) -> tuple[str, str]:

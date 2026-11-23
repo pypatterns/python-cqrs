@@ -83,6 +83,7 @@ class _Group:
         self.key_locks: dict[str, _KeyUse] = {}
         self.outstanding = 0
         self.running = 0
+        self.delivery_limit: int | None = None
         self.tasks: set[asyncio.Task[None]] = set()
         self.loop_task: asyncio.Task[None] | None = None
         self.consumer: JetStreamConsumer | None = None
@@ -121,6 +122,7 @@ class _NATSIncoming(IncomingMessage):
         self._wire = wire
         self._parsed = parsed
         self.settled = False
+        self._dlq_published = False
 
     @property
     def topic(self) -> str:
@@ -159,24 +161,34 @@ class _NATSIncoming(IncomingMessage):
     async def nack(self, *, requeue: bool = True) -> None:
         if self.settled:
             return
-        if requeue and self.delivery_attempt < self._slot.options.max_deliveries:
+        limit = self._group.delivery_limit
+        if limit is None:
+            limit = self._slot.options.max_deliveries
+        if requeue and self.delivery_attempt < limit:
             await self._wire.nak()
             self.settled = True
             return
         try:
-            await self._transport._dead_letter(self)
+            if not self._dlq_published:
+                await self._transport._dead_letter(self)
+                self._dlq_published = True
         except Exception:
             logger.exception("nats dead-letter publish failed for topic %s", self.topic)
-            if self.delivery_attempt < self._slot.options.max_deliveries:
+            if self.delivery_attempt < limit:
                 await self._wire.nak()
                 self.settled = True
                 return
-            # The last delivery could not be copied aside. Leave it unacked for
-            # JetStream, but release this publish so ``drain`` can finish.
-            self.settled = True
-            self._transport._settle(self._group)
-            raise
-        await self._wire.term()
+            # JetStream will not redeliver after the durable's limit. Keep the
+            # original unacked and let ``drain`` retry the copy without running
+            # the handler again.
+            self._transport._hold(self)
+            return
+        try:
+            await self._wire.term()
+        except Exception:
+            logger.exception("nats term failed for topic %s", self.topic)
+            self._transport._hold(self)
+            return
         self.settled = True
         self._transport._settle(self._group)
 
@@ -237,6 +249,8 @@ class NATSTransport(Transport):
         self._closed = False
         self._groups: dict[tuple[str, str], _Group] = {}
         self._tasks: set[asyncio.Task[None]] = set()
+        self._recover: list[_NATSIncoming] = []
+        self._recover_error: Exception | None = None
         self._idle = asyncio.Event()
         self._idle.set()
 
@@ -269,6 +283,8 @@ class NATSTransport(Transport):
         group = self._ensure_group(topic, durable, wire, stream)
         slot = _Slot(handler, options)
         group.slots.append(slot)
+        if group.delivery_limit is None:
+            group.delivery_limit = options.max_deliveries
         if group.loop_task is None or group.loop_task.done():
             group.ready = asyncio.Event()
             group.loop_task = asyncio.create_task(self._fetch_loop(group, options))
@@ -286,6 +302,12 @@ class NATSTransport(Transport):
         in-flight count.
         """
 
+        await self._retry_recoveries()
+        if self._recover:
+            detail = f": {self._recover_error}" if self._recover_error is not None else ""
+            raise TransportError(
+                "dead-letter publish failed and the JetStream message is still unacknowledged" + detail,
+            )
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while not self._is_idle():
@@ -369,8 +391,15 @@ class NATSTransport(Transport):
                 stream=group.stream,
                 durable=group.durable,
                 start_from=options.start_from,
-                max_deliver=options.max_deliveries,
+                max_deliver=group.delivery_limit or options.max_deliveries,
             )
+            try:
+                reported = await consumer.max_deliver()
+            except Exception:
+                logger.debug("nats consumer info failed for topic %s", group.topic, exc_info=True)
+                reported = None
+            if reported is not None:
+                group.delivery_limit = reported
         except asyncio.CancelledError:
             group.ready.set()
             raise
@@ -437,10 +466,14 @@ class NATSTransport(Transport):
             entry.users += 1
             try:
                 async with entry.lock:
-                    if self._closed or not slot.active:
-                        await self._drop(group, message)
+                    if self._closed:
+                        await self._return_pending(message)
                         return
-                    await self._run(group, slot, message, parsed)
+                    target = slot if slot.active else self._pick(group)
+                    if target is None:
+                        await self._return_pending(message)
+                        return
+                    await self._run(group, target, message, parsed)
             finally:
                 entry.users -= 1
                 if entry.users == 0 and group.key_locks.get(parsed.key) is entry:
@@ -547,6 +580,39 @@ class NATSTransport(Transport):
             self._tasks.discard(finished)
 
         task.add_done_callback(_done)
+
+    def _hold(self, incoming: _NATSIncoming) -> None:
+        if incoming not in self._recover:
+            self._recover.append(incoming)
+        self._note_work()
+
+    async def _retry_recoveries(self) -> None:
+        """Copy held finals to the dead-letter subject without running handlers."""
+
+        pending: list[_NATSIncoming] = []
+        for incoming in self._recover:
+            try:
+                if not incoming._dlq_published:
+                    await self._dead_letter(incoming)
+                    incoming._dlq_published = True
+                await incoming._wire.term()
+            except Exception as exc:
+                self._recover_error = exc
+                pending.append(incoming)
+                continue
+            incoming.settled = True
+            self._settle(incoming._group)
+        self._recover = pending
+        if not pending:
+            self._recover_error = None
+
+    async def _return_pending(self, message: JetStreamMessage) -> None:
+        """Leave the delivery eligible for another subscriber. Do not term it."""
+
+        try:
+            await message.nak()
+        except Exception:
+            logger.debug("nats nak failed", exc_info=True)
 
     def _settle(self, group: _Group) -> None:
         if group.outstanding > 0:

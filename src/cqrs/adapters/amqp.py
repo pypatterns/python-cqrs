@@ -267,7 +267,6 @@ class NeutralAMQPClient:
         routing_key: str,
         prefetch: int,
         concurrency: int,
-        purge: bool,
     ) -> AMQPConsumeSession:
         """
         Declare ``queue_name``, bind it to ``routing_key``, and consume.
@@ -275,31 +274,36 @@ class NeutralAMQPClient:
         ``prefetch`` is how many deliveries the broker may leave unacked.
         ``concurrency`` is how many handlers run at once. Extra prefetched
         deliveries stay queued until a handler slot is free. The session is
-        cancelled with ``AMQPConsumeSession.close``.
+        cancelled with ``AMQPConsumeSession.close``. A new queue is empty.
+        An existing queue keeps whatever it already holds: declare counts are
+        a snapshot, so purging from them can delete a message that arrived
+        after the snapshot.
         """
 
         await self.connect()
         if self._connection is None:
             raise RuntimeError("AMQP connection is closed")
         channel = await self._connection.channel()
-        await channel.set_qos(prefetch_count=max(1, prefetch))
-        exchange = await _declare_direct(channel, exchange_name)
-        queue = await channel.declare_queue(
-            queue_name,
-            durable=False,
-            auto_delete=True,
-            exclusive=False,
-        )
-        await queue.bind(exchange, routing_key=routing_key)
-        if purge and _queue_has_no_pending_work(queue):
-            await queue.purge()
-
         incoming: asyncio.Queue[abc.AbstractIncomingMessage] = asyncio.Queue()
 
         async def _enqueue(message: abc.AbstractIncomingMessage) -> None:
             await incoming.put(message)
 
-        consumer_tag = await queue.consume(_enqueue)
+        try:
+            await channel.set_qos(prefetch_count=max(1, prefetch))
+            exchange = await _declare_direct(channel, exchange_name)
+            queue = await channel.declare_queue(
+                queue_name,
+                durable=False,
+                auto_delete=True,
+                exclusive=False,
+            )
+            await queue.bind(exchange, routing_key=routing_key)
+            consumer_tag = await queue.consume(_enqueue)
+        except BaseException:
+            await _close_channel(channel)
+            raise
+
         session = AMQPConsumeSession()
         limit = asyncio.Semaphore(max(1, concurrency))
 
@@ -344,20 +348,11 @@ async def _invoke(
         limit.release()
 
 
-def _queue_has_no_pending_work(queue: aio_pika.abc.AbstractQueue) -> bool:
-    """True when declare reported an empty queue and no existing consumer.
-
-    ``start_from="latest"`` may purge only that queue. A queue that already
-    has ready messages or consumers is an existing group; purging it would
-    drop work another transport is waiting on.
-    """
-
-    result = getattr(queue, "declaration_result", None)
-    if result is None:
-        return True
-    messages = int(getattr(result, "message_count", 0) or 0)
-    consumers = int(getattr(result, "consumer_count", 0) or 0)
-    return messages == 0 and consumers == 0
+async def _close_channel(channel: aio_pika.abc.AbstractChannel) -> None:
+    try:
+        await channel.close()
+    except Exception:
+        logger.debug("amqp channel cleanup failed", exc_info=True)
 
 
 async def _declare_direct(

@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from typing import cast
 
 import pytest
 
 from cqrs.message_brokers.protocol import Message
 from cqrs.transport import InMemoryTransport, IncomingMessage, SubscribeOptions, UnsupportedCapability
+from cqrs.transport.memory import _Batch, _Subscription
 
 
 def _message(topic: str, body: bytes, *, key: str | None = None) -> Message:
@@ -18,6 +20,55 @@ def _message(topic: str, body: bytes, *, key: str | None = None) -> Message:
         payload_bytes=body,
         key=key,
     )
+
+
+def test_force_releases_a_child_batch_on_its_parent_once() -> None:
+    parent = _Batch()
+    child = _Batch(parent)
+    child.add()
+    child.add()
+
+    child.force()
+    child.finish_one()
+
+    assert parent.remaining == 0
+    assert child.remaining == 0
+
+
+async def test_subscriber_joining_during_close_keeps_the_queued_message() -> None:
+    transport = InMemoryTransport()
+    started = asyncio.Event()
+    release = asyncio.Event()
+    seen: list[bytes] = []
+
+    async def first(message: IncomingMessage) -> None:
+        started.set()
+        await release.wait()
+        await message.ack()
+
+    async def second(message: IncomingMessage) -> None:
+        seen.append(bytes(message.body))
+        await message.ack()
+
+    subscription = await transport.subscribe("orders", first, SubscribeOptions(group="billing"))
+    await transport.send_message(_message("orders", b"1"))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    await transport.send_message(_message("orders", b"2"))
+    closing = asyncio.create_task(subscription.close())
+    opened = cast(_Subscription, subscription)
+    while opened.active:
+        await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    try:
+        await transport.subscribe("orders", second, SubscribeOptions(group="billing"))
+        release.set()
+        await asyncio.wait_for(closing, timeout=1)
+        await transport.drain(timeout=1)
+    finally:
+        if not release.is_set():
+            release.set()
+        await transport.close()
+    assert seen == [b"2"]
 
 
 async def test_transport_is_truthy_without_bool_or_len() -> None:
@@ -72,13 +123,18 @@ async def test_inline_nested_send_is_not_released_by_a_sibling() -> None:
     await transport.subscribe("paid", child, SubscribeOptions(group="billing"))
 
     send = asyncio.create_task(transport.send_message(_message("orders", b"order")))
-    await asyncio.wait_for(child_started.wait(), timeout=1)
-    await asyncio.sleep(0.05)
-    assert not nested_returned.is_set()
-    release_child.set()
-    await asyncio.wait_for(send, timeout=2)
+    try:
+        await asyncio.wait_for(child_started.wait(), timeout=1)
+        await asyncio.sleep(0.05)
+        nested_was_blocked = not nested_returned.is_set()
+        release_child.set()
+        await asyncio.wait_for(send, timeout=2)
+    finally:
+        if not release_child.is_set():
+            release_child.set()
+        await transport.close()
+    assert nested_was_blocked
     assert nested_returned.is_set()
-    await transport.close()
 
 
 async def test_closing_the_last_subscription_unblocks_drain() -> None:

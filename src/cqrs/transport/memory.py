@@ -82,8 +82,13 @@ class _Batch:
             self.parent.finish_one()
 
     def force(self) -> None:
+        released = self.remaining
         self.remaining = 0
         self.progress.set()
+        if self.parent is None:
+            return
+        for _ in range(released):
+            self.parent.finish_one()
 
     async def wait_until(self, target: int) -> None:
         while self.remaining > target:
@@ -171,18 +176,19 @@ class _Subscription(Subscription):
         for task in workers:
             task.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
-        last = not any(subscription.active for subscription in self.group.subscriptions)
-        if last:
-            while not self.group.queue.empty():
-                self._transport._finish_item(self.group.queue.get_nowait())
         pending = [task for task in self.inflight if not task.done()]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
-        if last:
-            for lane in self.group.lanes.values():
-                while lane.waiting:
-                    self._transport._finish_item(lane.waiting.popleft())
-            self.group.lanes.clear()
+        # A replacement can join while the handlers above are still running.
+        # The check from before that wait would drop the work it just admitted.
+        if any(subscription.active for subscription in self.group.subscriptions):
+            return
+        while not self.group.queue.empty():
+            self._transport._finish_item(self.group.queue.get_nowait())
+        for lane in self.group.lanes.values():
+            while lane.waiting:
+                self._transport._finish_item(lane.waiting.popleft())
+        self.group.lanes.clear()
 
 
 class _MemoryIncoming(IncomingMessage):

@@ -178,29 +178,67 @@ class _Lane:
         self.task: asyncio.Task[None] | None = None
 
 
+class _Tracked:
+    def __init__(self, offset: int) -> None:
+        self.offset = offset
+        self.wire_id: str | None = None
+        self.account: _Account | None = None
+        self.done = False
+
+
 class _Offsets:
+    """Commit through the completed prefix of records that were actually fetched.
+
+    Compacted partitions can skip offsets. Advancing by consecutive integers
+    stops at the gap and never commits the records after it.
+    """
+
     def __init__(self) -> None:
-        self._done: dict[tuple[int, int], bool] = {}
-        self._floor: dict[int, int] = {}
+        self._rows: dict[int, list[_Tracked]] = {}
+        self.owner: dict[int, asyncio.Task[None]] = {}
 
     def observe(self, partition: int, offset: int) -> None:
-        if (partition, offset) not in self._done:
-            self._done[(partition, offset)] = False
-        if partition not in self._floor:
-            self._floor[partition] = offset
+        row = self._rows.setdefault(partition, [])
+        if any(item.offset == offset for item in row):
+            return
+        row.append(_Tracked(offset))
 
-    def finish(self, partition: int, offset: int) -> int | None:
-        self._done[(partition, offset)] = True
-        floor = self._floor.get(partition)
-        if floor is None:
+    def bind(self, partition: int, offset: int, wire_id: str | None, account: _Account) -> None:
+        for item in self._rows.get(partition, ()):
+            if item.offset == offset and item.account is None:
+                item.wire_id = wire_id
+                item.account = account
+                return
+        tracked = _Tracked(offset)
+        tracked.wire_id = wire_id
+        tracked.account = account
+        self._rows.setdefault(partition, []).append(tracked)
+
+    def mark_done(self, partition: int, offset: int) -> None:
+        for item in self._rows.get(partition, ()):
+            if item.offset == offset:
+                item.done = True
+                return
+
+    def commit_point(self, partition: int) -> int | None:
+        row = self._rows.get(partition, [])
+        if not row or not row[0].done:
             return None
-        while self._done.get((partition, floor)) is True:
-            del self._done[(partition, floor)]
-            floor += 1
-        if floor == self._floor[partition]:
-            return None
-        self._floor[partition] = floor
-        return floor
+        last = row[0].offset
+        for item in row:
+            if not item.done:
+                break
+            last = item.offset
+        return last + 1
+
+    def accept(self, partition: int, next_offset: int) -> list[_Tracked]:
+        row = self._rows.get(partition, [])
+        accepted: list[_Tracked] = []
+        while row and row[0].done and row[0].offset < next_offset:
+            accepted.append(row.pop(0))
+        if not row:
+            self._rows.pop(partition, None)
+        return accepted
 
 
 class _KafkaGroup:
@@ -209,7 +247,8 @@ class _KafkaGroup:
         self.name = name
         self.consumer = consumer
         self.subscriptions: list[_KafkaSubscription] = []
-        self.slots = asyncio.Semaphore(0)
+        self.buffered = asyncio.Semaphore(0)
+        self.deliveries: set[asyncio.Task[None]] = set()
         self.offsets = _Offsets()
         self.offset_lock = asyncio.Lock()
         self.lanes: dict[str, _Lane] = {}
@@ -228,9 +267,9 @@ class _KafkaGroup:
         self.cursor += 1
         return subscription
 
-    def add_permits(self, count: int) -> None:
+    def add_buffer(self, count: int) -> None:
         for _ in range(count):
-            self.slots.release()
+            self.buffered.release()
 
     def queued(self) -> int:
         return sum(len(lane.waiting) for lane in self.lanes.values())
@@ -249,6 +288,7 @@ class _KafkaSubscription(Subscription):
         self.handler = handler
         self.options = options
         self.active = True
+        self.execution = asyncio.Semaphore(options.concurrency)
 
     async def close(self) -> None:
         await self._transport._close_subscription(self)
@@ -297,6 +337,7 @@ class KafkaTransport(Transport):
         self._group_lock = asyncio.Lock()
         self._producer: adapters_protocol.KafkaProducer | None = None
         self._aio_producer: typing.Any = None
+        self._commit_errors: dict[tuple[str, str, int], Exception] = {}
         self._idle = asyncio.Event()
         self._idle.set()
 
@@ -323,7 +364,7 @@ class KafkaTransport(Transport):
             group, created = await self._ensure_group(topic, options)
             subscription = _KafkaSubscription(self, group, handler, options)
             group.subscriptions.append(subscription)
-            group.add_permits(options.concurrency * options.prefetch)
+            group.add_buffer(options.concurrency * options.prefetch)
             if created:
                 group.poll_task = asyncio.create_task(self._poll(group))
                 self._track(group.poll_task)
@@ -376,18 +417,31 @@ class KafkaTransport(Transport):
             return
         subscription.active = False
         group = subscription.group
+        self._reassign_unstarted(group)
         if group.active() or self._closed:
             return
         async with self._group_lock:
             if group.active() or self._closed:
                 return
-            group.stopped = True
-            self._groups.pop((group.topic, group.name), None)
             poll_task = group.poll_task
             if poll_task is not None and not poll_task.done():
                 poll_task.cancel()
                 await asyncio.gather(poll_task, return_exceptions=True)
+            inflight = [task for task in group.deliveries if not task.done()]
+            if inflight:
+                await asyncio.gather(*inflight, return_exceptions=True)
+            group.stopped = True
+            self._groups.pop((group.topic, group.name), None)
             await _stop_quietly(group.consumer.stop())
+
+    def _reassign_unstarted(self, group: _KafkaGroup) -> None:
+        for lane in group.lanes.values():
+            for waiter in lane.waiting:
+                if waiter.subscription.active:
+                    continue
+                replacement = group.pick()
+                if replacement is not None:
+                    waiter.subscription = replacement
 
     async def _produce(self, message: protocol.Message, *, delivery_attempt: int) -> None:
         self._check_open("send_message")
@@ -429,8 +483,10 @@ class KafkaTransport(Transport):
             aio_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=self._bootstrap_servers)
             try:
                 await aio_producer.start()
-            except Exception:
-                await _stop_quietly(aio_producer.stop())
+            except BaseException:
+                from cqrs.adapters.kafka import stop_client
+
+                await stop_client(aio_producer)
                 raise
             if self._closed:
                 await _stop_quietly(aio_producer.stop())
@@ -457,7 +513,7 @@ class KafkaTransport(Transport):
         )
         try:
             await consumer.start()
-        except Exception:
+        except BaseException:
             await _stop_quietly(consumer.stop())
             raise
         if self._closed:
@@ -506,28 +562,38 @@ class KafkaTransport(Transport):
                     if self._closed or not group.active():
                         self._complete(_wire_id(record))
                         continue
-                    await group.slots.acquire()
+                    await group.buffered.acquire()
                     subscription = group.pick()
                     if subscription is None:
-                        group.slots.release()
+                        group.buffered.release()
                         self._complete(_wire_id(record))
                         continue
-                    self._track(asyncio.create_task(self._guarded(group, subscription, record)))
+                    delivery = asyncio.create_task(self._guarded(group, subscription, record))
+                    group.deliveries.add(delivery)
+                    delivery.add_done_callback(group.deliveries.discard)
+                    self._track(delivery)
         except asyncio.CancelledError:
             return
 
     async def _guarded(self, group: _KafkaGroup, subscription: _KafkaSubscription, record: KafkaRecord) -> None:
         account = _Account()
+        async with group.offset_lock:
+            group.offsets.bind(record.partition, record.offset, _wire_id(record), account)
         try:
             if record.key is None:
-                await self._drive(group, subscription, record, _attempt_of(record), account)
+                await subscription.execution.acquire()
+                try:
+                    await self._drive(group, subscription, record, _attempt_of(record), account)
+                finally:
+                    subscription.execution.release()
             else:
                 await self._on_lane(group, subscription, record, account)
         except asyncio.CancelledError:
-            self._finish_account(account, _wire_id(record))
+            if not account.done:
+                self._finish_account(account, _wire_id(record))
             raise
         finally:
-            group.slots.release()
+            group.buffered.release()
 
     async def _on_lane(
         self,
@@ -554,13 +620,17 @@ class KafkaTransport(Transport):
             while lane.waiting and not self._closed:
                 waiter = lane.waiting[0]
                 try:
-                    await self._drive(
-                        group,
-                        waiter.subscription,
-                        waiter.record,
-                        waiter.attempt,
-                        waiter.account,
-                    )
+                    await waiter.subscription.execution.acquire()
+                    try:
+                        await self._drive(
+                            group,
+                            waiter.subscription,
+                            waiter.record,
+                            waiter.attempt,
+                            waiter.account,
+                        )
+                    finally:
+                        waiter.subscription.execution.release()
                 finally:
                     if lane.waiting and lane.waiting[0] is waiter:
                         lane.waiting.popleft()
@@ -623,12 +693,13 @@ class KafkaTransport(Transport):
                     continue
                 await self._dead_letter(subscription, record, visible, content_type, attempt)
                 break
-            if not self._closed:
-                await self._commit(group, record)
+            if not self._closed and not group.stopped:
+                await self._commit_prefix(group, record)
         except asyncio.CancelledError:
             raise
         finally:
-            self._finish_account(account, _wire_id(record))
+            if not account.done and (self._closed or group.stopped):
+                self._finish_account(account, _wire_id(record))
 
     def _finish_account(self, account: _Account, wire_id: str | None) -> None:
         if account.done:
@@ -661,22 +732,54 @@ class KafkaTransport(Transport):
         except TransportClosed:
             return
 
-    async def _commit(self, group: _KafkaGroup, record: KafkaRecord) -> None:
-        if group.stopped or self._closed:
-            return
+    async def _commit_prefix(self, group: _KafkaGroup, record: KafkaRecord) -> None:
+        partition = record.partition
         async with group.offset_lock:
-            if group.stopped or self._closed:
+            group.offsets.mark_done(partition, record.offset)
+            owner = group.offsets.owner.get(partition)
+            current = asyncio.current_task()
+            if owner is not None and not owner.done():
                 return
-            next_offset = group.offsets.finish(record.partition, record.offset)
-            if next_offset is None:
+            if current is None:
                 return
-            try:
-                await group.consumer.commit(record.partition, next_offset)
-            except Exception:
-                if group.stopped or self._closed:
-                    logger.debug("kafka commit skipped on a stopped consumer", exc_info=True)
+            group.offsets.owner[partition] = current
+        try:
+            while not self._closed and not group.stopped:
+                async with group.offset_lock:
+                    next_offset = group.offsets.commit_point(partition)
+                if next_offset is None:
                     return
-                raise
+                if partition not in group.consumer.assigned_partitions():
+                    self._commit_errors[(group.topic, group.name, partition)] = TransportError(
+                        f"Kafka partition {partition} is not assigned; offset {next_offset} was not committed",
+                    )
+                    return
+                try:
+                    await group.consumer.commit(partition, next_offset)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    self._commit_errors[(group.topic, group.name, partition)] = exc
+                    if partition not in group.consumer.assigned_partitions():
+                        return
+                    logger.exception(
+                        "kafka commit failed for topic %s partition %s",
+                        group.topic,
+                        partition,
+                    )
+                    await asyncio.sleep(0.05)
+                    continue
+                self._commit_errors.pop((group.topic, group.name, partition), None)
+                async with group.offset_lock:
+                    accepted = group.offsets.accept(partition, next_offset)
+                for item in accepted:
+                    if item.account is not None and not item.account.done:
+                        self._finish_account(item.account, item.wire_id)
+        finally:
+            current = asyncio.current_task()
+            async with group.offset_lock:
+                if group.offsets.owner.get(partition) is current:
+                    group.offsets.owner.pop(partition, None)
 
     def _destinations(self, topic: str) -> int:
         return sum(1 for group in self._groups.values() if group.topic == topic and group.active())
@@ -717,6 +820,9 @@ class KafkaTransport(Transport):
         if not parts:
             parts.append(f"topic=* group=* queue_length=0 in_flight={self._in_flight}")
         parts.append(f"outstanding={sum(self._outstanding.values())}")
+        if self._commit_errors:
+            failed = ", ".join(str(error) for error in self._commit_errors.values())
+            parts.append(f"commit_error={failed}")
         return "drain timed out: " + "; ".join(parts)
 
 
