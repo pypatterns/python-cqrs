@@ -15,7 +15,10 @@ permissions:
 jobs:
   benchmarks:
     name: Run benchmarks
-    runs-on: ubuntu-latest
+    # ubuntu-latest is 26.04. CodSpeedHQ/action@v4 (runner 4.19.1) only
+    # ships valgrind for 22.04 and 24.04 and exits with "Unsupported system".
+    # Pin the image so measurements stay on the OS the baselines were recorded on.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
 
