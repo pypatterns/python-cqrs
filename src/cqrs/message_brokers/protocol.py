@@ -19,6 +19,8 @@ class Message:
         payload_bytes: Optional codec wire-bytes for the transport
         content_type: Optional MIME type (set only by typed codecs such as Protobuf)
         headers: Optional broker headers (set only when ``content_type`` is set)
+        key: Optional partition or ordering key. ``None`` leaves routing unchanged.
+            Kafka forwards it only when it is set. It is not part of ``to_dict``.
 
     [AI Instruction]
     Broker envelope built by the emitter or ``EventProducer``. Application
@@ -33,6 +35,7 @@ class Message:
     payload_bytes: bytes | None = None
     content_type: str | None = None
     headers: dict[str, str] | None = None
+    key: str | None = None
 
     def to_dict(self) -> dict[str, typing.Any]:
         """
@@ -57,6 +60,8 @@ class Message:
         data.pop("payloadBytes", None)
         data.pop("contentType", None)
         data.pop("headers", None)
+        # ``key`` is a transport hint. The JSON frame stays the historical shape.
+        data.pop("key", None)
         if self.content_type is not None:
             data["content_type"] = self.content_type
             if self.payload_bytes is not None:

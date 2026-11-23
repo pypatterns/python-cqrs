@@ -144,6 +144,12 @@ The payload class follows the same validation rule as the event: a dataclass pay
 
 Use a notification on the handler `events` list only when losing it is acceptable (metrics, a best-effort signal, a dev broker). Bootstrap must receive a real `message_broker`. The default broker drops the message.
 
+Publishing out of this process is a `MessageBroker`: `KafkaMessageBroker` (`python-cqrs[kafka]`), `AMQPMessageBroker` (`python-cqrs[rabbit]`), or `EventProducer` draining the outbox. `send_message` is the only publish method.
+
+Use a `Transport` when this process also receives the message, or when a test swaps the backend without changing the handler. `Transport` is a `MessageBroker`, so `bootstrap(..., message_broker=transport)` and `test_harness(message_broker=transport)` stay the same call. Subscribe on that transport. Do not add a second bus.
+
+The full command, saga, notification, and subscriber path in a unit test is `InMemoryTransport` plus `test_harness(message_broker=transport)`. `await transport.drain()` waits until handlers have acked. Do not read `DevnullMessageBroker.MESSAGE_BUS`. That list does not deliver. FastStream examples stay valid for a service that already uses FastStream.
+
 Skip a notification when no other service consumes it. A domain event is the in-process tool. Skip publishing with `broker.send` next to `session.commit()` in the handler. A crash between those two writes loses the message.
 
 ## Transactional outbox
@@ -440,7 +446,7 @@ Middleware (`middlewares=` on bootstrap) wraps every request: timing, tracing, a
 
 ## Testing
 
-Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read `DevnullMessageBroker.MESSAGE_BUS`. The harness swaps that broker for `CapturingMessageBroker` during the block and restores it.
+Import `from cqrs.testing import test_harness`. It is not on `cqrs`. Do not read `DevnullMessageBroker.MESSAGE_BUS`. The harness swaps that broker for `CapturingMessageBroker` during the block and restores it. A test that needs a subscriber to see the notice passes `message_broker=cqrs.InMemoryTransport()` and subscribes on that same instance. `await transport.drain()` waits for ack. The harness still records `published`. FastStream examples stay valid.
 
 Journals share `contains` / `of` / `one` / `assert_contains` / `assert_one` / `assert_empty` / `assert_not_contains`. `where=` is a predicate on the row. `published` accepts `topic=`, `invocations` accepts `method=`, `middlewares` accepts `called_next=`; other journals raise `TypeError` for those keywords. `invocations.assert_entered` is `assert_contains`. A failed `assert_*` raises `AssertionError` with the full harness report. Color needs `rich` (`python-cqrs[testing]`); without it, or if rendering fails, the same text is plain. There is no pytest plugin. `cqrs.testing` is in the base install.
 
@@ -480,6 +486,7 @@ Journals share `contains` / `of` / `one` / `assert_contains` / `assert_one` / `a
 - SQLAlchemy and SQLModel: `test_harness.around` wraps the real repository. `produce_available` runs against that repository. Roll the session back.
 - dishka and dependency-injector: `around` wraps a mediator that is already built. dependency-injector does not implement `SupportsScope`, so `scope_strategy` is not `SEND`.
 - Kafka and AMQP: a unit test uses `CapturingMessageBroker`. The real adapter stays in the integration test.
+- Transport: `InMemoryTransport` with `test_harness(message_broker=transport)`. Subscribe on the transport, `await transport.drain()`, then read `published`. Do not read `DevnullMessageBroker.MESSAGE_BUS`.
 - Mermaid, `ZlibCompressor`, Alembic `rebind_*_model`, and transaction log tailing are not run through `test_harness`.
 
 Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-cqrs.dev/latest/testing/>.
@@ -488,4 +495,4 @@ Detail is `.agents/skills/cqrs-testing/SKILL.md`. Pages: <https://mkdocs.python-
 
 Install extras explicitly. They are not core dependencies.
 
-`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `protobuf`, `di`, `dependency-injector`, `dishka`, `aiobreaker`, `testing`. 5.6.0 is a breaking change: `di` and `dependency-injector` left the base install. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`. `cqrs.DIContainer` needs `python-cqrs[di]`. `cqrs.SimpleContainer` and `cqrs.testing` are in the base install; `[testing]` only adds `rich` for colored harness dumps. `rich` is not a `cqrs` attribute.
+`pydantic`, `sqlalchemy`, `sqlmodel`, `kafka`, `rabbit`, `redis`, `nats`, `sqs`, `transports`, `protobuf`, `di`, `dependency-injector`, `dishka`, `aiobreaker`, `testing`. `transports` installs `kafka`, `rabbit`, `redis`, `nats`, and `sqs`. 5.6.0 is a breaking change: `di` and `dependency-injector` left the base install. Names that need an extra are lazy on `cqrs`. Importing one without the extra raises `ImportError`. `cqrs.DIContainer` needs `python-cqrs[di]`. `cqrs.SimpleContainer` and `cqrs.testing` are in the base install; `[testing]` only adds `rich` for colored harness dumps. `rich` is not a `cqrs` attribute. Kafka, AMQP, Redis, NATS, and SQS transports are lazy on `cqrs.transport` and are not attributes of `cqrs`.

@@ -59,10 +59,20 @@ Presentation calls ``add`` with a batch. ``InboxProcessor`` reads rows and
 calls the mediator that is already registered. FastAPI and FastStream are
 not imported here.
 
-Brokers are not on ``cqrs``. Kafka is
+Brokers are not constructed from this package root. Kafka is
 ``cqrs.adapters.kafka.kafka_producer_factory`` plus
 ``cqrs.message_brokers.kafka.KafkaMessageBroker`` (extra ``kafka``). AMQP is
-``cqrs.message_brokers.amqp.AMQPMessageBroker`` (extra ``rabbit``).
+``cqrs.message_brokers.amqp.AMQPMessageBroker`` (extra ``rabbit``). Importing
+``cqrs`` does not import ``aio_pika``, ``aiokafka``, ``redis``, ``nats``, or
+``aioboto3``.
+
+Transport on ``cqrs``: ``Transport``, ``MessageSubscriber``,
+``IncomingMessage``, ``SubscribeOptions``, ``Subscription``,
+``TransportCapabilities``, ``InMemoryTransport``, ``create_transport``,
+``register_transport``, ``TransportError``, ``TransportClosed``, and
+``UnsupportedCapability``. ``Transport`` is a ``MessageBroker``. Publish with
+``send_message`` only. Concrete broker transports stay lazy on
+``cqrs.transport`` and are not attributes of ``cqrs``.
 
 Containers: omit one and bootstrap uses ``cqrs.SimpleContainer``, which
 constructs a handler with no constructor arguments. ``register`` pins an
@@ -160,6 +170,20 @@ from cqrs.outbox.repository import (
     OutboxedEventRepository,
 )
 from cqrs.message_brokers.producer import EventProducer
+from cqrs.transport import (
+    InMemoryTransport,
+    IncomingMessage,
+    MessageSubscriber,
+    SubscribeOptions,
+    Subscription,
+    Transport,
+    TransportCapabilities,
+    TransportClosed,
+    TransportError,
+    UnsupportedCapability,
+    create_transport,
+    register_transport,
+)
 from cqrs.deserializers import DeserializeProtobufError, ProtobufDeserializer
 from cqrs.serializers import (
     EventCodec,
@@ -237,6 +261,18 @@ __all__ = (
     "SqlAlchemyInboxRepository",
     "SqlModelInboxRepository",
     "EventProducer",
+    "Transport",
+    "MessageSubscriber",
+    "IncomingMessage",
+    "SubscribeOptions",
+    "Subscription",
+    "TransportCapabilities",
+    "InMemoryTransport",
+    "create_transport",
+    "register_transport",
+    "TransportError",
+    "TransportClosed",
+    "UnsupportedCapability",
     "EventSerializer",
     "EventCodec",
     "JsonEventSerializer",

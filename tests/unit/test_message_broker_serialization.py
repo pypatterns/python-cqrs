@@ -62,6 +62,7 @@ async def test_event_emitter_json_path_keeps_payload_dict_and_class_message_name
     assert message.payload_bytes == JsonEventSerializer().serialize(event)
     assert message.content_type is None
     assert message.headers is None
+    assert message.key is None
     encoded = message.to_dict()
     assert "messageName" in encoded
     assert "messageId" in encoded
@@ -70,6 +71,7 @@ async def test_event_emitter_json_path_keeps_payload_dict_and_class_message_name
     assert "headers" not in encoded
     assert "payloadBytes" not in encoded
     assert "contentType" not in encoded
+    assert "key" not in encoded
 
 
 async def test_event_emitter_protobuf_sets_headers_and_keeps_payload_dict():
@@ -315,6 +317,71 @@ async def test_kafka_broker_protobuf_passes_headers():
         event.topic,
         payload_bytes,
         headers=headers,
+    )
+
+
+async def test_message_to_dict_omits_key_even_when_set():
+    message = Message(
+        message_name="named",
+        topic="topic",
+        payload={"n": 1},
+        key="partition-1",
+    )
+
+    encoded = message.to_dict()
+
+    assert message.key == "partition-1"
+    assert "key" not in encoded
+    assert "payload_bytes" not in encoded
+    assert "content_type" not in encoded
+
+
+async def test_kafka_broker_forwards_key_only_when_set():
+    producer = mock.AsyncMock()
+    producer.produce = mock.AsyncMock()
+    broker = kafka.KafkaMessageBroker(producer)
+    event = _json_event()
+    without_key = Message(
+        message_name=type(event).__name__,
+        topic=event.topic,
+        payload=event.to_dict(),
+        payload_bytes=b"body",
+    )
+    with_key = Message(
+        message_name=type(event).__name__,
+        topic=event.topic,
+        payload=event.to_dict(),
+        payload_bytes=b"body",
+        key="order-1",
+    )
+
+    await broker.send_message(without_key)
+    producer.produce.assert_awaited_once_with(event.topic, b"body")
+
+    producer.produce.reset_mock()
+    await broker.send_message(with_key)
+    producer.produce.assert_awaited_once_with(event.topic, b"body", key="order-1")
+
+
+async def test_kafka_producer_encodes_key_bytes_only_when_set():
+    from cqrs.adapters.kafka import KafkaProducer
+
+    raw = mock.Mock()
+    raw.client.get_random_node.return_value = 1
+    raw.client.ready = mock.AsyncMock(return_value=True)
+    raw.send_and_wait = mock.AsyncMock()
+    producer = KafkaProducer(raw)
+
+    await producer.produce("topic", b"body")
+    raw.send_and_wait.assert_awaited_once_with("topic", value=b"body")
+
+    raw.send_and_wait.reset_mock()
+    await producer.produce("topic", b"body", headers={"h": "v"}, key="order-1")
+    raw.send_and_wait.assert_awaited_once_with(
+        "topic",
+        value=b"body",
+        headers=[("h", b"v")],
+        key=b"order-1",
     )
 
 
