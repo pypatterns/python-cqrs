@@ -49,7 +49,7 @@ dev = [
   "rich>=13",  # from testing extra; colored harness AssertionError dumps
   "pytest-asyncio~=0.21.1",
   "pytest-cov>=4.0.0",
-  "pytest-codspeed==4.2.0",
+  "pytest-codspeed==5.0.4",
   # Tests
   "pydantic==2.*",
   "sqlalchemy[asyncio]==2.0.*",
