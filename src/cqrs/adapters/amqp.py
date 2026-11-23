@@ -137,14 +137,14 @@ class AMQPDelivery:
     async def ack(self) -> None:
         if self._settled:
             return
-        self._settled = True
         await self._message.ack()
+        self._settled = True
 
     async def nack(self, *, requeue: bool = True) -> None:
         if self._settled:
             return
-        self._settled = True
         await self._message.nack(requeue=requeue)
+        self._settled = True
 
 
 class AMQPConsumeSession:
@@ -266,12 +266,16 @@ class NeutralAMQPClient:
         queue_name: str,
         routing_key: str,
         prefetch: int,
+        concurrency: int,
         purge: bool,
     ) -> AMQPConsumeSession:
         """
         Declare ``queue_name``, bind it to ``routing_key``, and consume.
 
-        The session is cancelled with ``AMQPConsumeSession.close``.
+        ``prefetch`` is how many deliveries the broker may leave unacked.
+        ``concurrency`` is how many handlers run at once. Extra prefetched
+        deliveries stay queued until a handler slot is free. The session is
+        cancelled with ``AMQPConsumeSession.close``.
         """
 
         await self.connect()
@@ -287,7 +291,7 @@ class NeutralAMQPClient:
             exclusive=False,
         )
         await queue.bind(exchange, routing_key=routing_key)
-        if purge:
+        if purge and _queue_has_no_pending_work(queue):
             await queue.purge()
 
         incoming: asyncio.Queue[abc.AbstractIncomingMessage] = asyncio.Queue()
@@ -297,6 +301,7 @@ class NeutralAMQPClient:
 
         consumer_tag = await queue.consume(_enqueue)
         session = AMQPConsumeSession()
+        limit = asyncio.Semaphore(max(1, concurrency))
 
         async def _loop() -> None:
             try:
@@ -305,8 +310,12 @@ class NeutralAMQPClient:
                     if session._closed:
                         await AMQPDelivery(message).nack(requeue=True)
                         continue
-                    task = asyncio.create_task(_invoke(handler, message))
-                    session.watch(task)
+                    await limit.acquire()
+                    if session._closed:
+                        limit.release()
+                        await AMQPDelivery(message).nack(requeue=True)
+                        continue
+                    session.watch(asyncio.create_task(_invoke(handler, message, limit)))
             except asyncio.CancelledError:
                 return
 
@@ -324,8 +333,31 @@ class NeutralAMQPClient:
         return channel
 
 
-async def _invoke(handler: AMQPHandler, message: abc.AbstractIncomingMessage) -> None:
-    await handler(AMQPDelivery(message))
+async def _invoke(
+    handler: AMQPHandler,
+    message: abc.AbstractIncomingMessage,
+    limit: asyncio.Semaphore,
+) -> None:
+    try:
+        await handler(AMQPDelivery(message))
+    finally:
+        limit.release()
+
+
+def _queue_has_no_pending_work(queue: aio_pika.abc.AbstractQueue) -> bool:
+    """True when declare reported an empty queue and no existing consumer.
+
+    ``start_from="latest"`` may purge only that queue. A queue that already
+    has ready messages or consumers is an existing group; purging it would
+    drop work another transport is waiting on.
+    """
+
+    result = getattr(queue, "declaration_result", None)
+    if result is None:
+        return True
+    messages = int(getattr(result, "message_count", 0) or 0)
+    consumers = int(getattr(result, "consumer_count", 0) or 0)
+    return messages == 0 and consumers == 0
 
 
 async def _declare_direct(

@@ -235,13 +235,10 @@ class KafkaTopicConsumer:
         try:
             await consumer.start()
             self._consumer = consumer
+            # Leave the position alone. ``auto_offset_reset`` applies only when
+            # this group has no committed offset. Seeking would skip a committed
+            # position or replay records the group already acknowledged.
             await self._wait_for_assignment()
-            if self._auto_offset_reset == "earliest":
-                positioned = await consumer.seek_to_beginning()
-            else:
-                positioned = await consumer.seek_to_end()
-            if positioned is False:
-                raise TimeoutError(f"Kafka did not seek topic {self._topic}")
         except Exception:
             self._consumer = consumer
             try:

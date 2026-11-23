@@ -135,6 +135,29 @@ def test_invalid_memory_delivery() -> None:
         create_transport("memory://?delivery=fast")
 
 
+async def test_register_transport_lowercases_the_scheme() -> None:
+    created: list[InMemoryTransport] = []
+
+    def factory(parsed: object) -> InMemoryTransport:
+        transport = InMemoryTransport()
+        created.append(transport)
+        return transport
+
+    register_transport("CUSTOM", factory)
+    try:
+        first = create_transport("CUSTOM://bus")
+        second = create_transport("custom://bus")
+        assert isinstance(first, InMemoryTransport)
+        assert isinstance(second, InMemoryTransport)
+        assert first is not second
+        assert "custom" in transport_factory._FACTORIES
+        assert "CUSTOM" not in transport_factory._FACTORIES
+    finally:
+        transport_factory._FACTORIES.pop("custom", None)
+        for transport in created:
+            await transport.close()
+
+
 async def test_register_transport_replaces_the_previous_factory() -> None:
     created: list[InMemoryTransport] = []
 

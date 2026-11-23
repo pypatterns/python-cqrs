@@ -250,8 +250,9 @@ class RedisTransport(Transport):
             except Exception:
                 self._groups.pop((topic, options.group), None)
                 raise
-            if self._closed:
-                raise TransportClosed("subscribe")
+        if self._closed:
+            raise TransportClosed("subscribe")
+        if group.claimer is None or group.claimer.done():
             group.claimer = self._track(asyncio.create_task(self._claim_loop(group)))
         subscription = _RedisSubscription(self, group, handler, options)
         group.subscriptions.append(subscription)
@@ -390,7 +391,19 @@ class RedisTransport(Transport):
                     envelope = self._envelope(fetched[0])
                     for extra in fetched[1:]:
                         self._enqueue(group, self._envelope(extra))
-                await self._deliver(subscription, group, consumer, envelope)
+                try:
+                    await self._deliver(subscription, group, consumer, envelope)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    if self._closed or not subscription.active:
+                        return
+                    logger.exception(
+                        "delivery failed for topic %s group %s",
+                        group.topic,
+                        group.name,
+                    )
+                    await asyncio.sleep(0.05)
         except asyncio.CancelledError:
             return
 
@@ -551,6 +564,7 @@ class RedisTransport(Transport):
         if _active(group):
             return
         claimer = group.claimer
+        group.claimer = None
         if claimer is not None and not claimer.done():
             claimer.cancel()
 

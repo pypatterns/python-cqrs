@@ -12,10 +12,11 @@ Handler failures stay inside the poller and never leave ``send_message``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import logging
 import urllib.parse
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from typing import ClassVar
 
 from cqrs.adapters.sqs import SQSClient, SQSDelivery
@@ -90,6 +91,14 @@ class _Subscription(Subscription):
             await asyncio.gather(*pending, return_exceptions=True)
 
 
+class _KeyUse:
+    """A per-key lock plus the deliveries waiting on it or holding it."""
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.users = 0
+
+
 class _Bucket:
     def __init__(self, topic: str, group: str, queue_name: str) -> None:
         self.topic = topic
@@ -105,7 +114,7 @@ class _Bucket:
         self.room.set()
         self.slot = asyncio.Event()
         self.slot.set()
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._locks: dict[str, _KeyUse] = {}
 
     def has_active(self) -> bool:
         return any(subscription.active for subscription in self.subs)
@@ -130,12 +139,20 @@ class _Bucket:
         subscription.running += 1
         return subscription
 
-    def lock_for(self, key: str) -> asyncio.Lock:
-        lock = self._locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            self._locks[key] = lock
-        return lock
+    @contextlib.asynccontextmanager
+    async def key_lock(self, key: str) -> AsyncIterator[None]:
+        entry = self._locks.get(key)
+        if entry is None:
+            entry = _KeyUse()
+            self._locks[key] = entry
+        entry.users += 1
+        try:
+            async with entry.lock:
+                yield
+        finally:
+            entry.users -= 1
+            if entry.users == 0 and self._locks.get(key) is entry:
+                self._locks.pop(key, None)
 
 
 class _Incoming(IncomingMessage):
@@ -526,7 +543,7 @@ class SQSTransport(Transport):
             if not delivery.key:
                 await self._handle(bucket, delivery)
                 return
-            async with bucket.lock_for(delivery.key):
+            async with bucket.key_lock(delivery.key):
                 if self._closed or not bucket.has_active():
                     await self._release(bucket, delivery)
                     return

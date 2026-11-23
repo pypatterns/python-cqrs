@@ -48,6 +48,102 @@ async def test_queued_send_returns_before_the_handler_finishes() -> None:
     await transport.close()
 
 
+async def test_inline_nested_send_is_not_released_by_a_sibling() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    child_started = asyncio.Event()
+    release_child = asyncio.Event()
+    nested_returned = asyncio.Event()
+
+    async def billing(message: IncomingMessage) -> None:
+        await transport.send_message(_message("paid", b"child"))
+        nested_returned.set()
+        await message.ack()
+
+    async def warehouse(message: IncomingMessage) -> None:
+        await message.ack()
+
+    async def child(message: IncomingMessage) -> None:
+        child_started.set()
+        await release_child.wait()
+        await message.ack()
+
+    await transport.subscribe("orders", billing, SubscribeOptions(group="billing"))
+    await transport.subscribe("orders", warehouse, SubscribeOptions(group="warehouse"))
+    await transport.subscribe("paid", child, SubscribeOptions(group="billing"))
+
+    send = asyncio.create_task(transport.send_message(_message("orders", b"order")))
+    await asyncio.wait_for(child_started.wait(), timeout=1)
+    await asyncio.sleep(0.05)
+    assert not nested_returned.is_set()
+    release_child.set()
+    await asyncio.wait_for(send, timeout=2)
+    assert nested_returned.is_set()
+    await transport.close()
+
+
+async def test_closing_the_last_subscription_unblocks_drain() -> None:
+    transport = InMemoryTransport()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        started.set()
+        await release.wait()
+        await message.ack()
+
+    subscription = await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await transport.send_message(_message("orders", b"1"))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    await transport.send_message(_message("orders", b"2"))
+    await transport.send_message(_message("orders", b"3"))
+    closing = asyncio.create_task(subscription.close())
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.wait_for(closing, timeout=1)
+    await transport.drain(timeout=1)
+    await transport.close()
+
+
+async def test_closing_one_of_two_subscribers_keeps_the_queue() -> None:
+    transport = InMemoryTransport()
+    first_started = asyncio.Event()
+    second_started = asyncio.Event()
+    release = asyncio.Event()
+    third = asyncio.Event()
+    seen: list[bytes] = []
+
+    async def record(started: asyncio.Event, message: IncomingMessage) -> None:
+        started.set()
+        await release.wait()
+        seen.append(message.body)
+        if message.body == b"3":
+            third.set()
+        await message.ack()
+
+    subscription = await transport.subscribe(
+        "orders",
+        lambda message: record(first_started, message),
+        SubscribeOptions(group="billing"),
+    )
+    await transport.subscribe(
+        "orders",
+        lambda message: record(second_started, message),
+        SubscribeOptions(group="billing"),
+    )
+    await transport.send_message(_message("orders", b"1"))
+    await transport.send_message(_message("orders", b"2"))
+    await asyncio.wait_for(first_started.wait(), timeout=1)
+    await asyncio.wait_for(second_started.wait(), timeout=1)
+    await transport.send_message(_message("orders", b"3"))
+    closing = asyncio.create_task(subscription.close())
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.wait_for(closing, timeout=1)
+    await asyncio.wait_for(third.wait(), timeout=1)
+    await transport.close()
+    assert seen.count(b"3") == 1
+
+
 async def test_inline_send_waits_for_nested_publish() -> None:
     transport = InMemoryTransport(delivery="inline")
     order: list[str] = []

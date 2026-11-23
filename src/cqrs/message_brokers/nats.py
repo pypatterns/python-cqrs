@@ -64,6 +64,14 @@ class _Slot:
         self.tasks: set[asyncio.Task[None]] = set()
 
 
+class _KeyUse:
+    """A per-key lock plus the tasks waiting on it or holding it."""
+
+    def __init__(self) -> None:
+        self.lock = asyncio.Lock()
+        self.users = 0
+
+
 class _Group:
     def __init__(self, topic: str, durable: str, wire_subject: str, stream: str) -> None:
         self.topic = topic
@@ -72,7 +80,7 @@ class _Group:
         self.stream = stream
         self.slots: list[_Slot] = []
         self.cursor = 0
-        self.key_locks: dict[str, asyncio.Lock] = {}
+        self.key_locks: dict[str, _KeyUse] = {}
         self.outstanding = 0
         self.running = 0
         self.tasks: set[asyncio.Task[None]] = set()
@@ -151,12 +159,25 @@ class _NATSIncoming(IncomingMessage):
     async def nack(self, *, requeue: bool = True) -> None:
         if self.settled:
             return
-        self.settled = True
         if requeue and self.delivery_attempt < self._slot.options.max_deliveries:
             await self._wire.nak()
+            self.settled = True
             return
-        await self._transport._dead_letter(self)
+        try:
+            await self._transport._dead_letter(self)
+        except Exception:
+            logger.exception("nats dead-letter publish failed for topic %s", self.topic)
+            if self.delivery_attempt < self._slot.options.max_deliveries:
+                await self._wire.nak()
+                self.settled = True
+                return
+            # The last delivery could not be copied aside. Leave it unacked for
+            # JetStream, but release this publish so ``drain`` can finish.
+            self.settled = True
+            self._transport._settle(self._group)
+            raise
         await self._wire.term()
+        self.settled = True
         self._transport._settle(self._group)
 
 
@@ -409,12 +430,21 @@ class NATSTransport(Transport):
             if parsed.key is None:
                 await self._run(group, slot, message, parsed)
                 return
-            lock = group.key_locks.setdefault(parsed.key, asyncio.Lock())
-            async with lock:
-                if self._closed or not slot.active:
-                    await self._drop(group, message)
-                    return
-                await self._run(group, slot, message, parsed)
+            entry = group.key_locks.get(parsed.key)
+            if entry is None:
+                entry = _KeyUse()
+                group.key_locks[parsed.key] = entry
+            entry.users += 1
+            try:
+                async with entry.lock:
+                    if self._closed or not slot.active:
+                        await self._drop(group, message)
+                        return
+                    await self._run(group, slot, message, parsed)
+            finally:
+                entry.users -= 1
+                if entry.users == 0 and group.key_locks.get(parsed.key) is entry:
+                    group.key_locks.pop(parsed.key, None)
         except asyncio.CancelledError:
             raise
         except Exception:

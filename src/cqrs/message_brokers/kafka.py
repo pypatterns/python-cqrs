@@ -215,6 +215,7 @@ class _KafkaGroup:
         self.lanes: dict[str, _Lane] = {}
         self.cursor = 0
         self.poll_task: asyncio.Task[None] | None = None
+        self.stopped = False
 
     def active(self) -> bool:
         return any(subscription.active for subscription in self.subscriptions)
@@ -292,6 +293,8 @@ class KafkaTransport(Transport):
         self._in_flight = 0
         self._topics: set[str] = set()
         self._topic_lock = asyncio.Lock()
+        self._producer_lock = asyncio.Lock()
+        self._group_lock = asyncio.Lock()
         self._producer: adapters_protocol.KafkaProducer | None = None
         self._aio_producer: typing.Any = None
         self._idle = asyncio.Event()
@@ -314,13 +317,16 @@ class KafkaTransport(Transport):
         self._check_open("subscribe")
         _check_options(options)
         await self._ensure_producer()
-        group, created = await self._ensure_group(topic, options)
-        subscription = _KafkaSubscription(self, group, handler, options)
-        group.subscriptions.append(subscription)
-        group.add_permits(options.concurrency * options.prefetch)
-        if created:
-            group.poll_task = asyncio.create_task(self._poll(group))
-            self._track(group.poll_task)
+        async with self._group_lock:
+            if self._closed:
+                raise TransportClosed("subscribe")
+            group, created = await self._ensure_group(topic, options)
+            subscription = _KafkaSubscription(self, group, handler, options)
+            group.subscriptions.append(subscription)
+            group.add_permits(options.concurrency * options.prefetch)
+            if created:
+                group.poll_task = asyncio.create_task(self._poll(group))
+                self._track(group.poll_task)
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:
@@ -372,11 +378,16 @@ class KafkaTransport(Transport):
         group = subscription.group
         if group.active() or self._closed:
             return
-        poll_task = group.poll_task
-        if poll_task is not None and not poll_task.done():
-            poll_task.cancel()
-            await asyncio.gather(poll_task, return_exceptions=True)
-        await _stop_quietly(group.consumer.stop())
+        async with self._group_lock:
+            if group.active() or self._closed:
+                return
+            group.stopped = True
+            self._groups.pop((group.topic, group.name), None)
+            poll_task = group.poll_task
+            if poll_task is not None and not poll_task.done():
+                poll_task.cancel()
+                await asyncio.gather(poll_task, return_exceptions=True)
+            await _stop_quietly(group.consumer.stop())
 
     async def _produce(self, message: protocol.Message, *, delivery_attempt: int) -> None:
         self._check_open("send_message")
@@ -406,20 +417,34 @@ class KafkaTransport(Transport):
     async def _ensure_producer(self) -> adapters_protocol.KafkaProducer:
         if self._producer is not None:
             return self._producer
-        import aiokafka
+        async with self._producer_lock:
+            if self._producer is not None:
+                return self._producer
+            if self._closed:
+                raise TransportClosed("send_message")
+            import aiokafka
 
-        from cqrs.adapters.kafka import KafkaProducer
+            from cqrs.adapters.kafka import KafkaProducer
 
-        aio_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=self._bootstrap_servers)
-        await aio_producer.start()
-        self._aio_producer = aio_producer
-        self._producer = KafkaProducer(aio_producer)
-        return self._producer
+            aio_producer = aiokafka.AIOKafkaProducer(bootstrap_servers=self._bootstrap_servers)
+            try:
+                await aio_producer.start()
+            except Exception:
+                await _stop_quietly(aio_producer.stop())
+                raise
+            if self._closed:
+                await _stop_quietly(aio_producer.stop())
+                raise TransportClosed("send_message")
+            self._aio_producer = aio_producer
+            self._producer = KafkaProducer(aio_producer)
+            return self._producer
 
     async def _ensure_group(self, topic: str, options: SubscribeOptions) -> tuple[_KafkaGroup, bool]:
+        """Return the group for ``topic``. The caller holds ``_group_lock``."""
+
         key = (topic, options.group)
         existing = self._groups.get(key)
-        if existing is not None:
+        if existing is not None and not existing.stopped:
             return existing, False
         await self._ensure_topic(topic)
         from cqrs.adapters.kafka import KafkaTopicConsumer
@@ -430,7 +455,14 @@ class KafkaTransport(Transport):
             topic=topic,
             auto_offset_reset=options.start_from,
         )
-        await consumer.start()
+        try:
+            await consumer.start()
+        except Exception:
+            await _stop_quietly(consumer.stop())
+            raise
+        if self._closed:
+            await _stop_quietly(consumer.stop())
+            raise TransportClosed("subscribe")
         group = _KafkaGroup(topic, options.group, consumer)
         self._groups[key] = group
         return group, True
@@ -630,11 +662,21 @@ class KafkaTransport(Transport):
             return
 
     async def _commit(self, group: _KafkaGroup, record: KafkaRecord) -> None:
+        if group.stopped or self._closed:
+            return
         async with group.offset_lock:
+            if group.stopped or self._closed:
+                return
             next_offset = group.offsets.finish(record.partition, record.offset)
             if next_offset is None:
                 return
-            await group.consumer.commit(record.partition, next_offset)
+            try:
+                await group.consumer.commit(record.partition, next_offset)
+            except Exception:
+                if group.stopped or self._closed:
+                    logger.debug("kafka commit skipped on a stopped consumer", exc_info=True)
+                    return
+                raise
 
     def _destinations(self, topic: str) -> int:
         return sum(1 for group in self._groups.values() if group.topic == topic and group.active())

@@ -44,7 +44,8 @@ def register_transport(scheme: str, factory: _Factory) -> None:
 
     if not scheme or any(character in scheme for character in ":/"):
         raise TransportError(f"Invalid transport scheme {scheme!r}")
-    _FACTORIES[scheme] = factory
+    # urlparse lowercases the scheme, so the registry key has to match.
+    _FACTORIES[scheme.lower()] = factory
 
 
 def create_transport(url: str) -> Transport:

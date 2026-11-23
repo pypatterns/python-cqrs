@@ -93,10 +93,11 @@ class JetStreamConsumer:
 
 class JetStreamSession:
     """
-    One connection and the streams this transport created on it.
+    One connection and the streams this session ensured on it.
 
     ``storage`` is ``file`` or ``memory`` on the JetStream server. ``close``
-    deletes those streams only when ``delete_streams`` is set.
+    deletes a stream only when ``delete_streams`` is set and this session
+    created that stream. A stream that already existed is left in place.
     """
 
     def __init__(self, servers: str, *, connect_timeout: int = 2, storage: str = "file") -> None:
@@ -108,7 +109,8 @@ class JetStreamSession:
         self._nc: NATSClient | None = None
         self._js: JetStreamContext | None = None
         self._lock: asyncio.Lock | None = None
-        self._streams: set[str] = set()
+        self._ensured: set[str] = set()
+        self._owned: set[str] = set()
 
     async def connect(self) -> None:
         async with self._mutex():
@@ -125,12 +127,13 @@ class JetStreamSession:
         """Create ``stream`` for ``subject``, or keep it when it already captures that subject."""
 
         await self.connect()
-        if stream in self._streams:
+        if stream in self._ensured:
             return
         async with self._mutex():
-            if stream in self._streams:
+            if stream in self._ensured:
                 return
             jetstream = self._jetstream()
+            created = False
             try:
                 info = await jetstream.stream_info(stream)
             except NotFoundError:
@@ -145,13 +148,17 @@ class JetStreamSession:
                 except APIError as exc:
                     if exc.err_code != _STREAM_ALREADY_IN_USE and "already in use" not in (exc.description or ""):
                         raise
+                else:
+                    created = True
             else:
                 subjects = list(info.config.subjects or [])
                 if subject not in subjects:
                     raise TransportError(
                         f"JetStream stream {stream!r} does not include subject {subject!r}",
                     )
-            self._streams.add(stream)
+            self._ensured.add(stream)
+            if created:
+                self._owned.add(stream)
 
     async def publish(self, subject: str, body: bytes, headers: dict[str, str] | None) -> None:
         jetstream = self._jetstream()
@@ -196,8 +203,9 @@ class JetStreamSession:
     async def close(self, *, delete_streams: bool) -> None:
         jetstream = self._js
         connection = self._nc
-        streams = list(self._streams)
-        self._streams.clear()
+        streams = list(self._owned)
+        self._owned.clear()
+        self._ensured.clear()
         if delete_streams and jetstream is not None:
             for stream in streams:
                 try:

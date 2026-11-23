@@ -36,6 +36,7 @@ async def transport() -> AsyncIterator[Transport]:
         pytest.skip("Kafka is not reachable at localhost:9092")
     from cqrs.message_brokers.kafka import KafkaTransport
 
+    await _commit_shared_groups_at_end()
     broker = KafkaTransport("kafka://localhost:9092")
     try:
         await broker.start()
@@ -46,6 +47,55 @@ async def transport() -> AsyncIterator[Transport]:
         yield broker
     finally:
         await broker.close()
+
+
+async def _commit_shared_groups_at_end() -> None:
+    """Move the contract's reused groups to the log end.
+
+    ``start_from="latest"`` resumes a committed offset. These tests publish to
+    the same topics and groups on a broker that keeps that offset, so each case
+    commits the end before it subscribes and then sees only its own records.
+    """
+
+    import aiokafka
+
+    pairs = (
+        ("orders", "billing"),
+        ("orders", "warehouse"),
+        ("orders", "other"),
+        ("orders.dlq", "dead"),
+    )
+    for topic, group in pairs:
+        consumer = aiokafka.AIOKafkaConsumer(
+            topic,
+            bootstrap_servers="localhost:9092",
+            group_id=group,
+            enable_auto_commit=False,
+            auto_offset_reset="latest",
+        )
+        await consumer.start()
+        try:
+            await _wait_until_assigned(consumer, topic)
+            positioned = await consumer.seek_to_end()
+            if positioned is False:
+                raise TimeoutError(f"Kafka did not seek topic {topic} for group {group}")
+            offsets = {partition: await consumer.position(partition) for partition in consumer.assignment()}
+            if offsets:
+                await consumer.commit(offsets)
+        finally:
+            await consumer.stop()
+
+
+async def _wait_until_assigned(consumer: object, topic: str) -> None:
+    import asyncio
+
+    assigned = getattr(consumer, "assignment")
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 30
+    while not assigned():
+        if loop.time() >= deadline:
+            raise TimeoutError(f"Kafka assigned no partitions for topic {topic}")
+        await asyncio.sleep(0.05)
 
 
 def test_create_transport_builds_kafka_transport() -> None:

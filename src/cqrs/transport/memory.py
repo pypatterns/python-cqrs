@@ -53,13 +53,14 @@ _batch_var: contextvars.ContextVar[_Batch | None] = contextvars.ContextVar(
 class _Batch:
     """Unfinished deliveries for one inline ``send_message`` and its children.
 
-    A nested ``send_message`` waits until the copies it added have settled.
-    It does not wait for the handler that called it: that handler is still
-    running. The outermost ``send_message`` waits until nothing it caused
-    is left.
+    Each ``send_message`` has its own counter. A nested send links its batch
+    to the caller's batch, so the caller also waits for that work, but a
+    sibling delivery cannot satisfy the nested wait. The nested send does
+    not wait for the handler that called it: that handler is still running.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, parent: _Batch | None = None) -> None:
+        self.parent = parent
         self.remaining = 0
         self.progress = asyncio.Event()
         self.progress.set()
@@ -67,13 +68,18 @@ class _Batch:
     def add(self) -> None:
         self.remaining += 1
         self.progress.clear()
+        if self.parent is not None:
+            self.parent.add()
 
     def finish_one(self) -> None:
         if self.remaining <= 0:
             self.remaining = 0
-        else:
-            self.remaining -= 1
+            self.progress.set()
+            return
+        self.remaining -= 1
         self.progress.set()
+        if self.parent is not None:
+            self.parent.finish_one()
 
     def force(self) -> None:
         self.remaining = 0
@@ -165,9 +171,18 @@ class _Subscription(Subscription):
         for task in workers:
             task.cancel()
         await asyncio.gather(*workers, return_exceptions=True)
+        last = not any(subscription.active for subscription in self.group.subscriptions)
+        if last:
+            while not self.group.queue.empty():
+                self._transport._finish_item(self.group.queue.get_nowait())
         pending = [task for task in self.inflight if not task.done()]
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
+        if last:
+            for lane in self.group.lanes.values():
+                while lane.waiting:
+                    self._transport._finish_item(lane.waiting.popleft())
+            self.group.lanes.clear()
 
 
 class _MemoryIncoming(IncomingMessage):
@@ -358,27 +373,19 @@ class InMemoryTransport(Transport):
             raise TransportClosed("send_message")
         batch: _Batch | None = None
         token: contextvars.Token[_Batch | None] | None = None
-        own = False
-        target = 0
         if self.delivery == "inline":
-            batch = _batch_var.get()
-            if batch is None:
-                batch = _Batch()
-                token = _batch_var.set(batch)
-                own = True
-                self._batches.add(batch)
-                target = 0
-            else:
-                target = batch.remaining
+            batch = _Batch(parent=_batch_var.get())
+            token = _batch_var.set(batch)
+            self._batches.add(batch)
         try:
             self._fanout(message, delivery_attempt, batch)
-            if batch is not None and batch.remaining > target:
-                await batch.wait_until(target)
+            if batch is not None and batch.remaining > 0:
+                await batch.wait_until(0)
         finally:
-            if own and batch is not None:
+            if batch is not None:
                 self._batches.discard(batch)
-                if token is not None:
-                    _batch_var.reset(token)
+            if token is not None:
+                _batch_var.reset(token)
 
     def _fanout(
         self,
