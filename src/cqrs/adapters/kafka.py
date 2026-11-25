@@ -230,11 +230,12 @@ class KafkaTopicConsumer:
             fetch_max_wait_ms=50,
         )
         try:
+            # ``start`` joins the group. An empty assignment is a live member
+            # with no partitions yet, not a failed start. Leave the position
+            # alone: ``auto_offset_reset`` applies only when this group has no
+            # committed offset. Seeking would skip a committed position or
+            # replay records the group already acknowledged.
             await consumer.start()
-            # Leave the position alone. ``auto_offset_reset`` applies only when
-            # this group has no committed offset. Seeking would skip a committed
-            # position or replay records the group already acknowledged.
-            await self._wait_for_assignment(consumer)
         except BaseException:
             await stop_client(consumer)
             raise
@@ -290,14 +291,6 @@ class KafkaTopicConsumer:
         if consumer is None:
             return set()
         return {topic_partition.partition for topic_partition in consumer.assignment()}
-
-    async def _wait_for_assignment(self, consumer: aiokafka.AIOKafkaConsumer) -> None:
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + 30
-        while not consumer.assignment():
-            if loop.time() >= deadline:
-                raise TimeoutError(f"Kafka assigned no partitions for topic {self._topic}")
-            await asyncio.sleep(0.05)
 
     def _require(self) -> aiokafka.AIOKafkaConsumer:
         if self._consumer is None:

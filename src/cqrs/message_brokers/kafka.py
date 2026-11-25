@@ -233,7 +233,7 @@ class KafkaTransport(Transport):
             if message.key is not None:
                 kwargs["key"] = message.key
             metadata = await producer.produce(message.topic, message_wire_bytes(message), **kwargs)
-        except Exception:
+        except BaseException:
             self._watch.abandon(f"~{token}", expected)
             raise
         self._watch.bind(token, _record_id(metadata.topic, metadata.partition, metadata.offset))
@@ -402,23 +402,24 @@ class KafkaTransport(Transport):
     ) -> None:
         if incoming._kind == "dead":
             await self._dead_letter(subscription, record, headers, content_type)
-        try:
-            await subscription.consumer.commit(record.partition, record.offset + 1)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception(
-                "kafka commit failed for topic %s partition %s",
-                subscription.topic,
-                record.partition,
-            )
+        await subscription.consumer.commit(record.partition, record.offset + 1)
         self._watch.settle(_record_id(record.topic, record.partition, record.offset))
 
     async def _seek_unprocessed(self, subscription: _KafkaSubscription, records: list[KafkaRecord]) -> None:
         for partition, offset in _rewind_points(
             [(record.partition, record.offset) for record in records],
         ).items():
-            await subscription.consumer.seek(partition, offset)
+            try:
+                await subscription.consumer.seek(partition, offset)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.warning(
+                    "kafka seek skipped for topic %s partition %s",
+                    subscription.topic,
+                    partition,
+                    exc_info=True,
+                )
 
     async def _dead_letter(
         self,

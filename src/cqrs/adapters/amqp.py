@@ -106,7 +106,7 @@ def amqp_consumer_factory(
 
 def _header_text(value: typing.Any) -> str:
     if isinstance(value, bytes):
-        return value.decode("utf-8")
+        return value.decode("utf-8", errors="replace")
     return str(value)
 
 
@@ -208,13 +208,24 @@ class NeutralAMQPClient:
         self._connection: aio_pika.abc.AbstractRobustConnection | None = None
         self._publish_channel: aio_pika.abc.AbstractChannel | None = None
         self._publish_lock = asyncio.Lock()
+        self._connect_lock = asyncio.Lock()
         self._closed = False
 
     async def connect(self) -> None:
         if self._closed:
             return
-        if self._connection is None or self._connection.is_closed:
-            self._connection = await aio_pika.connect_robust(self._url)
+        if self._connection is not None and not self._connection.is_closed:
+            return
+        async with self._connect_lock:
+            if self._closed:
+                return
+            if self._connection is not None and not self._connection.is_closed:
+                return
+            connection = await aio_pika.connect_robust(self._url)
+            if self._closed:
+                await _close_connection(connection)
+                return
+            self._connection = connection
             self._publish_channel = None
 
     async def close(self) -> None:
@@ -284,7 +295,13 @@ class NeutralAMQPClient:
             if current is not None:
                 session.watch(current)
             try:
-                await handler(AMQPDelivery(message))
+                try:
+                    delivery = AMQPDelivery(message)
+                except Exception:
+                    logger.exception("AMQP delivery could not be decoded")
+                    await message.nack(requeue=False)
+                    return
+                await handler(delivery)
             finally:
                 if current is not None:
                     session._tasks.discard(current)
@@ -331,6 +348,14 @@ class NeutralAMQPClient:
             channel = await self._connection.channel()
             self._publish_channel = channel
         return channel
+
+
+async def _close_connection(connection: aio_pika.abc.AbstractRobustConnection) -> None:
+    try:
+        if not connection.is_closed:
+            await connection.close()
+    except Exception:
+        logger.debug("amqp connection cleanup failed", exc_info=True)
 
 
 async def _close_channel(channel: aio_pika.abc.AbstractChannel) -> None:

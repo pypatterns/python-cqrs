@@ -369,7 +369,12 @@ class RedisTransport(Transport):
             except Exception:
                 logger.exception("subscriber %s failed for topic %s", subscription.options.group, group.topic)
                 if not incoming._settled:
-                    await incoming.nack(requeue=True)
+                    try:
+                        await incoming.nack(requeue=True)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        logger.exception("redis nack failed for topic %s", group.topic)
         finally:
             self._handlers = max(0, self._handlers - 1)
 
@@ -414,6 +419,9 @@ class RedisTransport(Transport):
                 )
         if notes:
             self._backlog_note = "; ".join(notes)
+            return False
+        if self._handlers:
+            self._backlog_note = f"topic=* group=* queue_length=0 in_flight={self._handlers}"
             return False
         self._backlog_note = "topic=* group=* queue_length=0 in_flight=0"
         return True

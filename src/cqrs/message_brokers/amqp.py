@@ -243,7 +243,7 @@ class AMQPTransport(Transport):
                 content_type=message.content_type,
                 message_id=message_key,
             )
-        except Exception:
+        except BaseException:
             self._watch.abandon(message_key, expected)
             raise
 
@@ -265,29 +265,29 @@ class AMQPTransport(Transport):
             handler=handler,
             options=options,
         )
-        self._subscriptions.append(subscription)
 
         async def on_delivery(delivery: AMQPDelivery) -> None:
             await self._on_delivery(subscription, delivery)
 
-        try:
-            subscription.session = await self._client.consume(
-                on_delivery,
-                exchange_name=self._exchange_name,
-                queue_name=_queue_name(self._exchange_name, topic, options.group),
-                routing_key=topic,
-                prefetch=options.prefetch,
-                dead_letter_routing_key=options.dead_letter_topic or f"{topic}.dlq",
-                dead_letter_queue_name="cqrs-hold."
-                + _queue_name(
-                    self._exchange_name,
-                    options.dead_letter_topic or f"{topic}.dlq",
-                    "hold",
-                ),
-            )
-        except BaseException:
-            self._drop(subscription)
-            raise
+        session = await self._client.consume(
+            on_delivery,
+            exchange_name=self._exchange_name,
+            queue_name=_queue_name(self._exchange_name, topic, options.group),
+            routing_key=topic,
+            prefetch=options.prefetch,
+            dead_letter_routing_key=options.dead_letter_topic or f"{topic}.dlq",
+            dead_letter_queue_name="cqrs-hold."
+            + _queue_name(
+                self._exchange_name,
+                options.dead_letter_topic or f"{topic}.dlq",
+                "hold",
+            ),
+        )
+        if self._closed:
+            await session.close()
+            raise TransportClosed("subscribe")
+        subscription.session = session
+        self._subscriptions.append(subscription)
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:

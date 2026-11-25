@@ -10,8 +10,10 @@ stop.
 
 This is a queue and one task per subscription. It does not order by key,
 count deliveries, or run a worker pool. ``nack(requeue=True)`` puts the
-bytes back on that group's queue. ``nack(requeue=False)`` publishes them
-once to the dead-letter topic. ``delivery_attempt`` is always 1.
+bytes back on that group's queue. In ``inline`` mode the same send waits
+``redelivery_delay`` and calls the handler again, without nesting the
+call. ``nack(requeue=False)`` publishes them once to the dead-letter
+topic. ``delivery_attempt`` is always 1.
 """
 
 from __future__ import annotations
@@ -87,6 +89,7 @@ class _Subscription(Subscription):
         self.active = True
         self.inflight = 0
         self.task: asyncio.Task[None] | None = None
+        self.handlers: set[asyncio.Task[None]] = set()
 
     async def close(self) -> None:
         await self._transport._close_subscription(self)
@@ -105,6 +108,7 @@ class _Incoming(IncomingMessage):
         self._subscription = subscription
         self._record = record
         self._settled = False
+        self._retry = False
         self._headers = dict(record.headers)
 
     @property
@@ -143,13 +147,15 @@ class _Incoming(IncomingMessage):
         self._settled = True
         if requeue:
             if self._transport.delivery == "inline":
-                active = self._group.active()
-                if active:
-                    await self._transport._deliver(active[0], self._group, self._record.copy())
-                    return
+                self._retry = True
+                return
             self._transport._requeue(self._group, self._record.copy())
             return
-        await self._transport._dead_letter(self._record, self._subscription)
+        try:
+            await self._transport._dead_letter(self._record, self._subscription)
+        except asyncio.CancelledError:
+            self._transport._watch.settle(self._record.token)
+            raise
         self._transport._watch.settle(self._record.token)
 
 
@@ -206,7 +212,8 @@ class InMemoryTransport(Transport):
                 if not active:
                     continue
                 self._watch.expect(record.token)
-                awaits.append(asyncio.create_task(self._deliver(active[0], group, record.copy())))
+                task = asyncio.create_task(self._deliver(active[0], group, record.copy()))
+                awaits.append(self._own(active[0], task))
             if awaits:
                 await asyncio.gather(*awaits)
             return
@@ -266,10 +273,18 @@ class InMemoryTransport(Transport):
         if not subscription.active:
             return
         subscription.active = False
+        pending: list[asyncio.Task[None]] = []
         task = subscription.task
         if task is not None and not task.done():
             task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            pending.append(task)
+        for handler in list(subscription.handlers):
+            if handler is not task and not handler.done():
+                handler.cancel()
+                pending.append(handler)
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        subscription.task = None
         group = subscription.group
         if group.active():
             return
@@ -295,24 +310,36 @@ class InMemoryTransport(Transport):
             return
 
     async def _deliver(self, subscription: _Subscription, group: _Group, record: _Record) -> None:
-        incoming = _Incoming(self, group, subscription, record)
         subscription.inflight += 1
         self._watch.begin()
         try:
-            try:
-                await subscription.handler(incoming)
-            except asyncio.CancelledError:
-                if not incoming._settled:
+            while True:
+                incoming = _Incoming(self, group, subscription, record)
+                try:
+                    await subscription.handler(incoming)
+                except asyncio.CancelledError:
+                    if not incoming._settled:
+                        self._hand_off(subscription, group, record)
+                    raise
+                except Exception:
+                    logger.exception(
+                        "subscriber %s failed for topic %s",
+                        subscription.options.group,
+                        group.topic,
+                    )
+                    if not incoming._settled:
+                        await incoming.nack(requeue=False)
+                if not incoming._retry:
+                    return
+                try:
+                    if self.redelivery_delay > 0:
+                        await asyncio.sleep(self.redelivery_delay)
+                except asyncio.CancelledError:
                     self._hand_off(subscription, group, record)
-                raise
-            except Exception:
-                logger.exception(
-                    "subscriber %s failed for topic %s",
-                    subscription.options.group,
-                    group.topic,
-                )
-                if not incoming._settled:
-                    await incoming.nack(requeue=False)
+                    raise
+                if self._closed or not subscription.active:
+                    self._hand_off(subscription, group, record)
+                    return
         finally:
             subscription.inflight -= 1
             self._watch.end()
@@ -368,7 +395,7 @@ class InMemoryTransport(Transport):
             self._watch.abandon(record.token)
             return
         if self.delivery == "inline":
-            self._track(asyncio.create_task(self._deliver(others[0], group, record)))
+            self._own(others[0], asyncio.create_task(self._deliver(others[0], group, record)))
             return
         self._requeue(group, record)
 
@@ -395,6 +422,12 @@ class InMemoryTransport(Transport):
     def _track(self, task: asyncio.Task[None]) -> asyncio.Task[None]:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
+        return task
+
+    def _own(self, subscription: _Subscription, task: asyncio.Task[None]) -> asyncio.Task[None]:
+        self._track(task)
+        subscription.handlers.add(task)
+        task.add_done_callback(subscription.handlers.discard)
         return task
 
 

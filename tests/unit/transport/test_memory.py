@@ -352,6 +352,107 @@ async def test_rejected_subscribe_options() -> None:
     await transport.close()
 
 
+async def test_inline_redelivery_waits_for_the_configured_delay() -> None:
+    transport = InMemoryTransport(delivery="inline", redelivery_delay=0.15)
+    stamps: list[float] = []
+
+    async def handler(message: IncomingMessage) -> None:
+        stamps.append(asyncio.get_running_loop().time())
+        if len(stamps) == 1:
+            await message.nack(requeue=True)
+            return
+        await message.ack()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await asyncio.wait_for(transport.send_message(_message("orders", b"1")), timeout=2)
+    await transport.close()
+    assert len(stamps) == 2
+    assert stamps[1] - stamps[0] >= 0.1
+
+
+async def test_inline_retries_do_not_recurse() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    seen = 0
+
+    async def handler(message: IncomingMessage) -> None:
+        nonlocal seen
+        seen += 1
+        if seen < 1500:
+            await message.nack(requeue=True)
+            return
+        await message.ack()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await asyncio.wait_for(transport.send_message(_message("orders", b"1")), timeout=5)
+    await transport.close()
+    assert seen == 1500
+
+
+async def test_cancelled_inline_dead_letter_releases_the_source() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    blocked = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        await message.nack(requeue=False)
+
+    async def dead(message: IncomingMessage) -> None:
+        blocked.set()
+        await asyncio.Event().wait()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await transport.subscribe("orders.dlq", dead, SubscribeOptions(group="dead"))
+    send = asyncio.create_task(transport.send_message(_message("orders", b"row")))
+    await asyncio.wait_for(blocked.wait(), timeout=1)
+    send.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await send
+    await transport.drain(timeout=0.5)
+    await transport.close()
+
+
+async def test_close_waits_for_an_inline_handler() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    entered = asyncio.Event()
+    left = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            left.set()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    send = asyncio.create_task(transport.send_message(_message("orders", b"1")))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    await transport.close()
+    assert left.is_set()
+    with pytest.raises(asyncio.CancelledError):
+        await send
+
+
+async def test_subscription_close_waits_for_its_inline_handler() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    entered = asyncio.Event()
+    left = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            left.set()
+
+    subscription = await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    send = asyncio.create_task(transport.send_message(_message("orders", b"1")))
+    await asyncio.wait_for(entered.wait(), timeout=1)
+    await subscription.close()
+    assert left.is_set()
+    with pytest.raises(asyncio.CancelledError):
+        await send
+    await transport.close()
+
+
 async def _unused(message: IncomingMessage) -> None:
     await message.ack()
 

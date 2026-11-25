@@ -267,7 +267,7 @@ class SQSTransport(Transport):
                     key=message.key,
                     fifo=bucket.queue_name.endswith(".fifo"),
                 )
-            except Exception:
+            except BaseException:
                 self._watch.abandon(f"~{token}", 1)
                 raise
             self._watch.bind(token, message_id)
@@ -391,15 +391,15 @@ class SQSTransport(Transport):
                 for delivery in deliveries:
                     if not subscription.active or self._closed:
                         return
-                    if bucket.native_dlq and delivery.receive_count > subscription.options.max_deliveries:
-                        await self._defer(bucket, delivery)
-                        continue
                     try:
+                        if bucket.native_dlq and delivery.receive_count > subscription.options.max_deliveries:
+                            await self._defer(bucket, delivery)
+                            continue
                         await self._one(subscription, delivery)
                     except asyncio.CancelledError:
                         raise
                     except Exception:
-                        logger.exception("sqs handler failed for topic %s", bucket.topic)
+                        logger.exception("sqs delivery failed for topic %s", bucket.topic)
         except asyncio.CancelledError:
             return
 
@@ -487,7 +487,7 @@ class SQSTransport(Transport):
             )
             return
         client = await self._connect()
-        queue_name = default_sqs_queue_name(topic)
+        queue_name = self._queue_name(topic) if self._queue_name is not None else default_sqs_queue_name(topic)
         queue_url = await client.ensure_queue(queue_name)
         await client.send(
             queue_url,

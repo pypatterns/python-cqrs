@@ -207,7 +207,7 @@ class NATSTransport(Transport):
         try:
             await self._session.ensure_stream(_stream_name(subject), subject)
             seq = await self._session.publish(subject, message_wire_bytes(message), _outgoing_headers(message))
-        except Exception:
+        except BaseException:
             self._watch.abandon(f"~{token}", expected)
             raise
         self._watch.bind(token, _nats_id(message.topic, seq))
@@ -245,8 +245,11 @@ class NATSTransport(Transport):
         try:
             stored_limit = await consumer.max_deliver()
         except Exception:
-            logger.debug("nats consumer info failed for topic %s", topic, exc_info=True)
-            stored_limit = None
+            try:
+                await consumer.unsubscribe()
+            except Exception:
+                logger.debug("nats consumer close failed for topic %s", topic, exc_info=True)
+            raise
         if stored_limit is not None:
             subscription.delivery_limit = stored_limit
         self._subscriptions.append(subscription)
