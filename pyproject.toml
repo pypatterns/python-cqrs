@@ -29,7 +29,7 @@ maintainers = [{ name = "Vadim Kozyrevskiy", email = "vadikko2@mail.ru" }]
 name = "python-cqrs"
 readme = "README.md"
 requires-python = ">=3.10"
-version = "5.6.0"
+version = "5.7.0"
 
 [project.optional-dependencies]
 aiobreaker = ["aiobreaker>=0.3.0"]
@@ -49,7 +49,7 @@ dev = [
   "rich>=13",  # from testing extra; colored harness AssertionError dumps
   "pytest-asyncio~=0.21.1",
   "pytest-cov>=4.0.0",
-  "pytest-codspeed==4.2.0",
+  "pytest-codspeed==5.0.4",
   # Tests
   "pydantic==2.*",
   "sqlalchemy[asyncio]==2.0.*",
@@ -66,6 +66,8 @@ dev = [
   "asyncmy==0.2.9",
   "asyncpg>=0.29.0",
   "redis>=5.0.0",
+  "nats-py>=2.9,<3",
+  "aioboto3>=15,<16",
   # Circuit breaker for tests
   "aiobreaker>=0.3.0", # from aiobreaker
   "di[anyio]==0.*",  # from di
@@ -89,6 +91,9 @@ examples = [
 kafka = ["aiokafka==0.10.0", "retry-async==0.1.*"]
 protobuf = ["protobuf>=4.25.8"]
 rabbit = ["aio-pika==9.3.0"]
+redis = ["redis>=5,<8"]
+nats = ["nats-py>=2.9,<3"]
+sqs = ["aioboto3>=15,<16"]
 di = ["di[anyio]==0.*"]
 dependency-injector = ["dependency-injector>=4.0"]
 dishka = ["dishka>=1.0"]
