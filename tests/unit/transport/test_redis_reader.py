@@ -210,3 +210,29 @@ async def test_drain_sees_a_handler_that_starts_during_the_backlog_check() -> No
 
     assert await transport._is_drained() is False
     assert transport._backlog_note == "topic=* group=* queue_length=0 in_flight=1"
+
+
+async def test_a_handler_that_finishes_during_the_scan_forces_another_pass() -> None:
+    parsed = urllib.parse.urlparse("redis://localhost:6379/0")
+    transport = RedisTransport(parsed)
+    orders = _Group("orders", "billing", "orders")
+    paid = _Group("paid", "billing", "paid")
+
+    async def handler(message: IncomingMessage) -> None:
+        return None
+
+    for group in (orders, paid):
+        group.subscriptions.append(
+            _RedisSubscription(transport, group, handler, SubscribeOptions(group="billing")),
+        )
+        transport._groups[(group.topic, group.name)] = group
+
+    class _Client:
+        async def backlog(self, stream: str, name: str) -> tuple[int, int]:
+            if stream == "orders":
+                transport._dispatches += 1
+            return 0, 0
+
+    transport._client = _Client()  # type: ignore[assignment]
+
+    assert await transport._is_drained() is False

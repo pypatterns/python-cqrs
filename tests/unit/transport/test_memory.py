@@ -370,6 +370,61 @@ async def test_inline_redelivery_waits_for_the_configured_delay() -> None:
     assert stamps[1] - stamps[0] >= 0.1
 
 
+async def test_zero_delay_inline_retry_lets_other_tasks_run() -> None:
+    transport = InMemoryTransport(delivery="inline", redelivery_delay=0)
+    other_ran = asyncio.Event()
+
+    async def other() -> None:
+        other_ran.set()
+
+    async def handler(message: IncomingMessage) -> None:
+        if not other_ran.is_set():
+            asyncio.create_task(other())
+            await message.nack(requeue=True)
+            return
+        await message.ack()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await asyncio.wait_for(transport.send_message(_message("orders", b"1")), timeout=1)
+    await transport.close()
+    assert other_ran.is_set()
+
+
+async def test_close_before_an_inline_delivery_starts_releases_the_token() -> None:
+    transport = InMemoryTransport(delivery="inline")
+
+    async def handler(message: IncomingMessage) -> None:
+        await asyncio.Event().wait()
+
+    subscription = await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    send = asyncio.create_task(transport.send_message(_message("orders", b"1")))
+    closing = asyncio.create_task(subscription.close())
+    await closing
+    with pytest.raises(asyncio.CancelledError):
+        await send
+    await transport.drain(timeout=0.2)
+    await transport.close()
+
+
+async def test_cancelled_inline_retry_releases_the_token() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    waiting = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        await message.nack(requeue=True)
+        waiting.set()
+        await asyncio.Event().wait()
+
+    subscription = await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    send = asyncio.create_task(transport.send_message(_message("orders", b"1")))
+    await asyncio.wait_for(waiting.wait(), timeout=1)
+    await subscription.close()
+    with pytest.raises(asyncio.CancelledError):
+        await send
+    await transport.drain(timeout=0.2)
+    await transport.close()
+
+
 async def test_inline_retries_do_not_recurse() -> None:
     transport = InMemoryTransport(delivery="inline")
     seen = 0

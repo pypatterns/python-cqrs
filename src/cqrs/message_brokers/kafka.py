@@ -164,6 +164,7 @@ class _KafkaSubscription(Subscription):
         self.consumer = consumer
         self.active = True
         self.task: asyncio.Task[None] | None = None
+        self.dead_lettered: set[str] = set()
 
     async def close(self) -> None:
         await self._transport._close_subscription(self)
@@ -351,6 +352,9 @@ class KafkaTransport(Transport):
             return
 
     async def _handle(self, subscription: _KafkaSubscription, record: KafkaRecord) -> bool:
+        record_id = _record_id(record.topic, record.partition, record.offset)
+        if record_id in subscription.dead_lettered:
+            return await self._commit_source(subscription, record)
         visible, content_type = _visible(record)
         incoming = _KafkaIncoming(
             topic=record.topic,
@@ -378,7 +382,7 @@ class KafkaTransport(Transport):
             if incoming._kind == "requeue":
                 return True
             try:
-                await self._finish(subscription, record, incoming, visible, content_type)
+                return await self._finish(subscription, record, incoming, visible, content_type)
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -388,7 +392,6 @@ class KafkaTransport(Transport):
                     record.partition,
                 )
                 return True
-            return False
         finally:
             self._watch.end()
 
@@ -399,11 +402,12 @@ class KafkaTransport(Transport):
         incoming: _KafkaIncoming,
         headers: dict[str, str],
         content_type: str | None,
-    ) -> None:
-        if incoming._kind == "dead":
-            await self._dead_letter(subscription, record, headers, content_type)
-        await subscription.consumer.commit(record.partition, record.offset + 1)
-        self._watch.settle(_record_id(record.topic, record.partition, record.offset))
+    ) -> bool:
+        record_id = _record_id(record.topic, record.partition, record.offset)
+        if incoming._kind == "dead" and record_id not in subscription.dead_lettered:
+            if await self._dead_letter(subscription, record, headers, content_type):
+                subscription.dead_lettered.add(record_id)
+        return await self._commit_source(subscription, record)
 
     async def _seek_unprocessed(self, subscription: _KafkaSubscription, records: list[KafkaRecord]) -> None:
         for partition, offset in _rewind_points(
@@ -421,13 +425,32 @@ class KafkaTransport(Transport):
                     exc_info=True,
                 )
 
+    async def _commit_source(self, subscription: _KafkaSubscription, record: KafkaRecord) -> bool:
+        """Commit the source offset. ``True`` means the caller should rewind and retry."""
+
+        record_id = _record_id(record.topic, record.partition, record.offset)
+        try:
+            await subscription.consumer.commit(record.partition, record.offset + 1)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "kafka commit failed for topic %s partition %s",
+                subscription.topic,
+                record.partition,
+            )
+            return True
+        subscription.dead_lettered.discard(record_id)
+        self._watch.settle(record_id)
+        return False
+
     async def _dead_letter(
         self,
         subscription: _KafkaSubscription,
         record: KafkaRecord,
         headers: dict[str, str],
         content_type: str | None,
-    ) -> None:
+    ) -> bool:
         topic = subscription.options.dead_letter_topic or f"{subscription.topic}.dlq"
         try:
             await self.send_message(
@@ -442,7 +465,8 @@ class KafkaTransport(Transport):
                 ),
             )
         except TransportClosed:
-            return
+            return False
+        return True
 
     async def _ensure_producer(self) -> adapters_protocol.KafkaProducer:
         if self._producer is not None:

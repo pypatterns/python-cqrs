@@ -207,6 +207,7 @@ class RedisTransport(Transport):
         self._groups: dict[tuple[str, str], _Group] = {}
         self._tasks: set[asyncio.Task[None]] = set()
         self._handlers = 0
+        self._dispatches = 0
         self._backlog_note = "topic=* group=* queue_length=0 in_flight=0"
 
     async def start(self) -> None:
@@ -360,6 +361,7 @@ class RedisTransport(Transport):
             key=key,
             delivery_attempt=attempt,
         )
+        self._dispatches += 1
         self._handlers += 1
         try:
             try:
@@ -403,6 +405,7 @@ class RedisTransport(Transport):
         if self._handlers:
             self._backlog_note = f"topic=* group=* queue_length=0 in_flight={self._handlers}"
             return False
+        dispatched = self._dispatches
         notes: list[str] = []
         for group in self._groups.values():
             if not any(subscription.active for subscription in group.subscriptions):
@@ -420,7 +423,7 @@ class RedisTransport(Transport):
         if notes:
             self._backlog_note = "; ".join(notes)
             return False
-        if self._handlers:
+        if self._handlers or self._dispatches != dispatched:
             self._backlog_note = f"topic=* group=* queue_length=0 in_flight={self._handlers}"
             return False
         self._backlog_note = "topic=* group=* queue_length=0 in_flight=0"

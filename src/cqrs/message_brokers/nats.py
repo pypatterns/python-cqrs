@@ -252,6 +252,12 @@ class NATSTransport(Transport):
             raise
         if stored_limit is not None:
             subscription.delivery_limit = stored_limit
+        if self._closed:
+            try:
+                await consumer.unsubscribe()
+            except Exception:
+                logger.debug("nats consumer close failed for topic %s", topic, exc_info=True)
+            raise TransportClosed("subscribe")
         self._subscriptions.append(subscription)
         subscription.task = self._track(asyncio.create_task(self._fetch(subscription)))
         return subscription

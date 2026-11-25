@@ -12,7 +12,7 @@ from nats.js.errors import APIError, NotFoundError  # noqa: E402
 
 from cqrs.adapters.nats import JetStreamSession  # noqa: E402
 from cqrs.message_brokers.nats import NATSTransport, _NATSIncoming  # noqa: E402
-from cqrs.transport.errors import TransportError  # noqa: E402
+from cqrs.transport.errors import TransportClosed, TransportError  # noqa: E402
 from cqrs.transport.protocol import SubscribeOptions  # noqa: E402
 
 
@@ -177,6 +177,39 @@ async def test_subscribe_fails_when_the_durable_limit_cannot_be_read() -> None:
     transport._session.pull = pull  # type: ignore[method-assign]
 
     with pytest.raises(RuntimeError, match="consumer info failed"):
+        await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))  # type: ignore[arg-type]
+
+    assert unsubscribed
+    assert transport._subscriptions == []
+    assert not transport._tasks
+
+
+async def test_subscribe_rejects_a_consumer_when_shutdown_wins_the_lookup() -> None:
+    transport = NATSTransport("nats://localhost:4222")
+    unsubscribed = False
+
+    class _Consumer:
+        async def max_deliver(self) -> int:
+            transport._closed = True
+            return 5
+
+        async def unsubscribe(self) -> None:
+            nonlocal unsubscribed
+            unsubscribed = True
+
+    async def ensure_stream(stream: str, subject: str) -> None:
+        return None
+
+    async def pull(**kwargs: object) -> _Consumer:
+        return _Consumer()
+
+    async def handler(message: object) -> None:
+        return None
+
+    transport._session.ensure_stream = ensure_stream  # type: ignore[method-assign]
+    transport._session.pull = pull  # type: ignore[method-assign]
+
+    with pytest.raises(TransportClosed):
         await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))  # type: ignore[arg-type]
 
     assert unsubscribed

@@ -212,8 +212,7 @@ class InMemoryTransport(Transport):
                 if not active:
                     continue
                 self._watch.expect(record.token)
-                task = asyncio.create_task(self._deliver(active[0], group, record.copy()))
-                awaits.append(self._own(active[0], task))
+                awaits.append(self._schedule_inline(active[0], group, record.copy()))
             if awaits:
                 await asyncio.gather(*awaits)
             return
@@ -321,7 +320,7 @@ class InMemoryTransport(Transport):
                 try:
                     await subscription.handler(incoming)
                 except asyncio.CancelledError:
-                    if not incoming._settled:
+                    if incoming._retry or not incoming._settled:
                         self._hand_off(subscription, group, record)
                     raise
                 except Exception:
@@ -335,8 +334,7 @@ class InMemoryTransport(Transport):
                 if not incoming._retry:
                     return
                 try:
-                    if self.redelivery_delay > 0:
-                        await asyncio.sleep(self.redelivery_delay)
+                    await asyncio.sleep(self.redelivery_delay)
                 except asyncio.CancelledError:
                     self._hand_off(subscription, group, record)
                     raise
@@ -398,7 +396,7 @@ class InMemoryTransport(Transport):
             self._watch.abandon(record.token)
             return
         if self.delivery == "inline":
-            self._own(others[0], asyncio.create_task(self._deliver(others[0], group, record)))
+            self._schedule_inline(others[0], group, record)
             return
         self._requeue(group, record)
 
@@ -431,6 +429,25 @@ class InMemoryTransport(Transport):
         self._track(task)
         subscription.handlers.add(task)
         task.add_done_callback(subscription.handlers.discard)
+        return task
+
+    def _schedule_inline(self, subscription: _Subscription, group: _Group, record: _Record) -> asyncio.Task[None]:
+        """Start ``_deliver`` and release its token if cancellation wins before the body."""
+
+        started = False
+
+        async def run() -> None:
+            nonlocal started
+            started = True
+            await self._deliver(subscription, group, record)
+
+        task = self._own(subscription, asyncio.create_task(run()))
+
+        def release_if_never_started(finished: asyncio.Task[None]) -> None:
+            if finished.cancelled() and not started:
+                self._watch.abandon(record.token)
+
+        task.add_done_callback(release_if_never_started)
         return task
 
 

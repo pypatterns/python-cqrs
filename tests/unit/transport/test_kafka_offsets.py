@@ -163,10 +163,51 @@ async def test_failed_commit_leaves_the_record_outstanding() -> None:
     await incoming.ack()
     transport._watch.expect(_record_id(record.topic, record.partition, record.offset), 1)
 
-    with pytest.raises(RuntimeError, match="commit rejected"):
-        await transport._finish(subscription, record, incoming, {}, None)
-
+    assert await transport._finish(subscription, record, incoming, {}, None) is True
     assert transport._watch.owed == 1
+
+
+async def test_dead_letter_is_published_once_when_the_commit_is_retried() -> None:
+    commits = 0
+
+    class _Consumer:
+        async def commit(self, partition: int, next_offset: int) -> None:
+            nonlocal commits
+            commits += 1
+            if commits == 1:
+                raise RuntimeError("commit rejected")
+
+    transport = KafkaTransport(bootstrap_servers="localhost:9092")
+    subscription = _subscription(transport, _Consumer())
+    published = 0
+
+    async def send_message(message: object) -> None:
+        nonlocal published
+        published += 1
+
+    transport.send_message = send_message  # type: ignore[method-assign]
+    record = KafkaRecord(topic="orders", partition=0, offset=4, body=b"row", key=None, headers={})
+    incoming = _KafkaIncoming(topic="orders", body=b"row", headers={}, content_type=None, key=None)
+    await incoming.nack(requeue=False)
+    record_id = _record_id(record.topic, record.partition, record.offset)
+    transport._watch.expect(record_id, 1)
+
+    assert await transport._finish(subscription, record, incoming, {}, None) is True
+    assert published == 1
+    assert record_id in subscription.dead_lettered
+
+    called = 0
+
+    async def handler(message: object) -> None:
+        nonlocal called
+        called += 1
+
+    subscription.handler = handler
+    assert await transport._handle(subscription, record) is False
+    assert called == 0
+    assert published == 1
+    assert transport._watch.owed == 0
+    assert record_id not in subscription.dead_lettered
 
 
 async def test_cancelled_send_drops_the_drain_reservation() -> None:
