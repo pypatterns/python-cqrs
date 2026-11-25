@@ -431,6 +431,32 @@ async def test_close_waits_for_an_inline_handler() -> None:
         await send
 
 
+async def test_inline_handler_can_close_the_transport() -> None:
+    transport = InMemoryTransport(delivery="inline")
+
+    async def handler(message: IncomingMessage) -> None:
+        await transport.close()
+
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await asyncio.wait_for(transport.send_message(_message("orders", b"1")), timeout=1)
+
+
+async def test_inline_handler_can_close_its_subscription() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    entered = asyncio.Event()
+
+    async def handler(message: IncomingMessage) -> None:
+        entered.set()
+        await subscription.close()
+        await message.ack()
+
+    subscription = await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
+    await asyncio.wait_for(transport.send_message(_message("orders", b"1")), timeout=1)
+    assert entered.is_set()
+    await transport.drain(timeout=1)
+    await transport.close()
+
+
 async def test_subscription_close_waits_for_its_inline_handler() -> None:
     transport = InMemoryTransport(delivery="inline")
     entered = asyncio.Event()

@@ -260,7 +260,9 @@ class InMemoryTransport(Transport):
         for group in self._groups.values():
             for subscription in group.subscribers:
                 subscription.active = False
-        tasks = [task for task in self._tasks if not task.done()]
+        # A handler may be the one calling close. Waiting for that task deadlocks.
+        current = asyncio.current_task()
+        tasks = [task for task in self._tasks if not task.done() and task is not current]
         for task in tasks:
             task.cancel()
         if tasks:
@@ -274,12 +276,13 @@ class InMemoryTransport(Transport):
             return
         subscription.active = False
         pending: list[asyncio.Task[None]] = []
+        current = asyncio.current_task()
         task = subscription.task
-        if task is not None and not task.done():
+        if task is not None and not task.done() and task is not current:
             task.cancel()
             pending.append(task)
         for handler in list(subscription.handlers):
-            if handler is not task and not handler.done():
+            if handler is not task and handler is not current and not handler.done():
                 handler.cancel()
                 pending.append(handler)
         if pending:
