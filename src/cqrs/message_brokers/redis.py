@@ -2,23 +2,26 @@
 Redis Streams transport.
 
 [AI Instruction]
-``create_transport("redis://localhost:6379/0")`` builds ``RedisTransport``.
-The factory calls ``RedisTransport(parsed_url)``. Publish with ``send_message``.
+``create_transport`` in this module builds ``RedisTransport`` from a
+``redis://`` URL. Import this module to call it; install the ``redis`` extra
+(``pip install "python-cqrs[redis]"``). An ``ImportError`` here means that
+extra is missing. Publish with ``send_message``.
 Subscribe with ``subscribe``. There is no ``publish`` alias, no ``__bool__``,
 and no ``__len__``. Do not import FastAPI or FastStream.
 
-``topic`` is the Redis stream key. ``group`` is the consumer group. A second
-subscriber with the same topic and group competes for each message. A
-different group has its own cursor, so it receives its own copy. ``message.key``
-is stored as a stream field and does not order delivery. Dead letters are a
-republish to ``{topic}.dlq`` (or ``dead_letter_topic``). ``nack(requeue=True)``
-claims the pending id so the delivery count from ``XPENDING`` increases.
-Messages left pending past ``claim_idle_ms`` are reclaimed with ``XAUTOCLAIM``.
+``topic`` is the Redis stream key. ``group`` is the consumer group. Each
+``subscribe`` call is one ``XREADGROUP`` consumer. A second consumer in the
+same group competes. A different group has its own cursor. ``message.key``
+is a stream field and does not order delivery. ``prefetch`` is ``COUNT``.
+``delivery_attempt`` is ``XPENDING`` ``times_delivered``. There is no local
+counter and no retry queue. ``nack(requeue=True)`` leaves the id pending so
+``XAUTOCLAIM`` can deliver it again. At ``max_deliveries``, or on
+``nack(requeue=False)``, the bytes are published once to ``{topic}.dlq``
+and the id is ``XACK``ed.
 
 Pass ``prefix`` when two transports share one Redis and must not see each
 other's streams. The prefix is prepended to the stream key only.
-``IncomingMessage.topic`` stays the topic the caller used. State lives on the
-instance, not in a module global.
+``IncomingMessage.topic`` stays the topic the caller used.
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import urllib.parse
+import uuid
 from collections.abc import Mapping
 from typing import ClassVar
 
@@ -34,7 +38,7 @@ import orjson
 from cqrs.adapters.redis import RedisStreamClient, StreamEntry
 from cqrs.message_brokers.protocol import Message
 from cqrs.serializers.default import message_wire_bytes
-from cqrs.transport.errors import TransportClosed, TransportError, UnsupportedCapability
+from cqrs.transport.errors import TransportClosed, TransportError
 from cqrs.transport.protocol import (
     IncomingHandler,
     IncomingMessage,
@@ -42,6 +46,7 @@ from cqrs.transport.protocol import (
     Subscription,
     Transport,
     TransportCapabilities,
+    require_options,
 )
 
 logger = logging.getLogger("cqrs")
@@ -51,36 +56,12 @@ _DEFAULT_CLAIM_IDLE_MS = 30_000
 _DEFAULT_BLOCK_MS = 200
 
 
-class _Envelope:
-    def __init__(
-        self,
-        message_id: bytes,
-        body: bytes,
-        headers: dict[str, str],
-        content_type: str | None,
-        key: str | None,
-        stored_attempt: int,
-    ) -> None:
-        self.message_id = message_id
-        self.body = body
-        self.headers = headers
-        self.content_type = content_type
-        self.key = key
-        # Attempt number to report on the first delivery of this stream entry.
-        # A dead-letter republish stores the attempt that failed. Later
-        # claims add ``XPENDING.times_delivered - 1``.
-        self.stored_attempt = stored_attempt
-
-
 class _Group:
     def __init__(self, topic: str, name: str, stream: str) -> None:
         self.topic = topic
         self.name = name
         self.stream = stream
         self.subscriptions: list[_RedisSubscription] = []
-        self.retry: asyncio.Queue[_Envelope] = asyncio.Queue()
-        self.queued: set[bytes] = set()
-        self.claimer: asyncio.Task[None] | None = None
 
 
 class _RedisSubscription(Subscription):
@@ -96,18 +77,16 @@ class _RedisSubscription(Subscription):
         self.handler = handler
         self.options = options
         self.active = True
-        self.workers: list[asyncio.Task[None]] = []
+        self.worker: asyncio.Task[None] | None = None
 
     async def close(self) -> None:
         if not self.active:
             return
         self.active = False
-        workers = list(self.workers)
-        for task in workers:
-            task.cancel()
-        if workers:
-            await asyncio.gather(*workers, return_exceptions=True)
-        self._transport._stop_claimer_if_idle(self.group)
+        worker = self.worker
+        if worker is not None and not worker.done():
+            worker.cancel()
+            await asyncio.gather(worker, return_exceptions=True)
 
 
 class _RedisIncoming(IncomingMessage):
@@ -116,17 +95,23 @@ class _RedisIncoming(IncomingMessage):
         transport: RedisTransport,
         group: _Group,
         subscription: _RedisSubscription,
-        envelope: _Envelope,
-        consumer: str,
+        entry: StreamEntry,
+        *,
+        body: bytes,
+        headers: dict[str, str],
+        content_type: str | None,
+        key: str | None,
         delivery_attempt: int,
     ) -> None:
         self._transport = transport
         self._group = group
         self._subscription = subscription
-        self._envelope = envelope
-        self._consumer = consumer
+        self._entry = entry
+        self._body = body
+        self._headers = headers
+        self._content_type = content_type
+        self._key = key
         self._delivery_attempt = delivery_attempt
-        self._headers = dict(envelope.headers)
         self._settled = False
 
     @property
@@ -135,7 +120,7 @@ class _RedisIncoming(IncomingMessage):
 
     @property
     def body(self) -> bytes:
-        return self._envelope.body
+        return self._body
 
     @property
     def headers(self) -> Mapping[str, str]:
@@ -143,11 +128,11 @@ class _RedisIncoming(IncomingMessage):
 
     @property
     def content_type(self) -> str | None:
-        return self._envelope.content_type
+        return self._content_type
 
     @property
     def key(self) -> str | None:
-        return self._envelope.key
+        return self._key
 
     @property
     def delivery_attempt(self) -> int:
@@ -159,7 +144,7 @@ class _RedisIncoming(IncomingMessage):
         self._settled = True
         if self._transport._closed:
             return
-        await self._transport._client.ack(self._group.stream, self._group.name, self._envelope.message_id)
+        await self._transport._client.ack(self._group.stream, self._group.name, _as_bytes(self._entry.message_id))
 
     async def nack(self, *, requeue: bool = True) -> None:
         if self._settled:
@@ -171,19 +156,18 @@ class _RedisIncoming(IncomingMessage):
         if give_up:
             await self._transport._dead_letter(self)
             return
-        await self._transport._requeue(self)
 
 
 class RedisTransport(Transport):
     """
     Redis Streams transport.
 
-    Construct it with the parsed URL from ``create_transport``, or call
-    ``RedisTransport(parsed)`` directly. ``prefix`` isolates stream keys when
+    Construct it with the URL or parsed URL from ``create_transport``, or call
+    ``RedisTransport(url)`` directly. ``prefix`` isolates stream keys when
     several transports share one Redis. Do not define ``__bool__`` or ``__len__``.
-    Call ``drain`` to wait until handlers for published messages have finished.
-    Call ``close`` to stop readers. ``send_message`` and ``subscribe`` after
-    ``close`` raise ``TransportClosed``.
+    ``drain`` waits until subscribed groups have no lag, no pending entries,
+    and no handler still running. ``close`` stops readers. ``send_message``
+    and ``subscribe`` after ``close`` raise ``TransportClosed``.
     """
 
     capabilities: ClassVar[TransportCapabilities] = TransportCapabilities(
@@ -196,12 +180,14 @@ class RedisTransport(Transport):
 
     def __init__(
         self,
-        parsed: urllib.parse.ParseResult,
+        parsed: urllib.parse.ParseResult | str,
         *,
         prefix: str | None = None,
         claim_idle_ms: int | None = None,
         block_ms: int | None = None,
     ) -> None:
+        if isinstance(parsed, str):
+            parsed = urllib.parse.urlparse(parsed)
         query = urllib.parse.parse_qs(parsed.query)
         if prefix is None:
             prefix = query.get("prefix", [""])[0]
@@ -231,7 +217,17 @@ class RedisTransport(Transport):
         await self._client.ping()
 
     async def send_message(self, message: Message) -> None:
-        await self._publish(message, delivery_attempt=1)
+        if self._closed:
+            raise TransportClosed("send_message")
+        headers = dict(message.headers) if message.headers else {}
+        fields: dict[str, bytes | str] = {
+            "body": message_wire_bytes(message),
+            "headers": orjson.dumps(headers),
+            "content_type": message.content_type or "",
+        }
+        if message.key is not None:
+            fields["key"] = message.key
+        await self._client.add(self._stream_key(message.topic), fields)
 
     async def subscribe(
         self,
@@ -241,7 +237,7 @@ class RedisTransport(Transport):
     ) -> Subscription:
         if self._closed:
             raise TransportClosed("subscribe")
-        _check_options(options)
+        require_options(options)
         group, created = self._ensure_group(topic, options.group)
         if created:
             try:
@@ -252,25 +248,18 @@ class RedisTransport(Transport):
                 raise
         if self._closed:
             raise TransportClosed("subscribe")
-        if group.claimer is None or group.claimer.done():
-            group.claimer = self._track(asyncio.create_task(self._claim_loop(group)))
         subscription = _RedisSubscription(self, group, handler, options)
         group.subscriptions.append(subscription)
-        count = options.prefetch if options.prefetch > 0 else 1
-        for index in range(options.concurrency):
-            consumer = f"{options.group}-{id(subscription):x}-{index}"
-            worker = self._track(
-                asyncio.create_task(self._reader(subscription, group, consumer, count)),
-            )
-            subscription.workers.append(worker)
+        consumer = f"{options.group}-{uuid.uuid4().hex}"
+        subscription.worker = self._track(
+            asyncio.create_task(self._reader(subscription, group, consumer, options.prefetch)),
+        )
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:
         """
         Wait until subscribed groups have no lag, no pending entries, and no
         handlers still running.
-
-        Raises ``TimeoutError`` with the topic, group, lag, and in-flight count.
         """
 
         loop = asyncio.get_running_loop()
@@ -302,59 +291,6 @@ class RedisTransport(Transport):
         except Exception:
             logger.exception("redis transport close failed")
 
-    async def _publish(self, message: Message, *, delivery_attempt: int) -> None:
-        if self._closed:
-            raise TransportClosed("send_message")
-        headers = dict(message.headers) if message.headers else {}
-        fields: dict[str, bytes | str] = {
-            "body": message_wire_bytes(message),
-            "headers": orjson.dumps(headers),
-            "content_type": message.content_type or "",
-            "delivery_attempt": str(delivery_attempt),
-        }
-        if message.key is not None:
-            fields["key"] = message.key
-        await self._client.add(self._stream_key(message.topic), fields)
-
-    async def _dead_letter(self, incoming: _RedisIncoming) -> None:
-        topic = incoming._subscription.options.dead_letter_topic or f"{incoming.topic}.dlq"
-        message = Message(
-            message_name="dead_letter",
-            topic=topic,
-            payload=incoming.body,
-            payload_bytes=bytes(incoming.body),
-            content_type=incoming.content_type,
-            headers=dict(incoming.headers) or None,
-            key=incoming.key,
-        )
-        try:
-            await self._publish(message, delivery_attempt=incoming.delivery_attempt)
-        except TransportClosed:
-            return
-        await self._client.ack(incoming._group.stream, incoming._group.name, incoming._envelope.message_id)
-
-    async def _requeue(self, incoming: _RedisIncoming) -> None:
-        claimed: StreamEntry | None = None
-        for _ in range(3):
-            claimed = await self._client.claim(
-                incoming._group.stream,
-                incoming._group.name,
-                incoming._consumer,
-                incoming._envelope.message_id,
-            )
-            if claimed is not None:
-                break
-            await asyncio.sleep(0.01)
-        if claimed is None:
-            logger.error(
-                "XCLAIM failed for topic %s group %s id %s",
-                incoming.topic,
-                incoming._group.name,
-                incoming._envelope.message_id,
-            )
-            return
-        self._enqueue(incoming._group, self._envelope(claimed))
-
     async def _reader(
         self,
         subscription: _RedisSubscription,
@@ -364,61 +300,66 @@ class RedisTransport(Transport):
     ) -> None:
         try:
             while subscription.active and not self._closed:
-                envelope = self._pop_retry(group)
-                if envelope is None:
-                    try:
-                        fetched = await self._client.read_group(
-                            group.stream,
-                            group.name,
-                            consumer,
-                            count=count,
-                            block_ms=self._block_ms,
-                        )
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        if self._closed or not subscription.active:
-                            return
-                        logger.exception(
-                            "XREADGROUP failed for topic %s group %s",
-                            group.topic,
-                            group.name,
-                        )
-                        await asyncio.sleep(0.05)
-                        continue
-                    if self._closed or not subscription.active or not fetched:
-                        continue
-                    envelope = self._envelope(fetched[0])
-                    for extra in fetched[1:]:
-                        self._enqueue(group, self._envelope(extra))
                 try:
-                    await self._deliver(subscription, group, consumer, envelope)
+                    entries = await self._client.read_group(
+                        group.stream,
+                        group.name,
+                        consumer,
+                        count=count,
+                        block_ms=self._block_ms,
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    if self._closed or not subscription.active:
-                        return
-                    logger.exception(
-                        "delivery failed for topic %s group %s",
-                        group.topic,
-                        group.name,
-                    )
+                    logger.exception("redis read failed for topic %s", group.topic)
                     await asyncio.sleep(0.05)
+                    continue
+                claimed = await self._claim(group, consumer, count)
+                seen: set[bytes] = set()
+                for entry in (*entries, *claimed):
+                    identity = _as_bytes(entry.message_id)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    if not subscription.active or self._closed:
+                        return
+                    await self._handle(subscription, group, entry)
         except asyncio.CancelledError:
             return
 
-    async def _deliver(
-        self,
-        subscription: _RedisSubscription,
-        group: _Group,
-        consumer: str,
-        envelope: _Envelope,
-    ) -> None:
-        if self._closed or not subscription.active:
-            return
-        times = await self._client.times_delivered(group.stream, group.name, envelope.message_id)
-        attempt = (envelope.stored_attempt - 1) + times
-        incoming = _RedisIncoming(self, group, subscription, envelope, consumer, attempt)
+    async def _claim(self, group: _Group, consumer: str, count: int) -> list[StreamEntry]:
+        try:
+            return await self._client.autoclaim(
+                group.stream,
+                group.name,
+                consumer,
+                self._claim_idle_ms,
+                count=count,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug("redis autoclaim failed for topic %s", group.topic, exc_info=True)
+            return []
+
+    async def _handle(self, subscription: _RedisSubscription, group: _Group, entry: StreamEntry) -> None:
+        body, headers, content_type, key = _envelope(entry)
+        try:
+            attempt = await self._client.times_delivered(group.stream, group.name, _as_bytes(entry.message_id))
+        except Exception:
+            logger.exception("redis pending count failed for topic %s", group.topic)
+            attempt = 1
+        incoming = _RedisIncoming(
+            self,
+            group,
+            subscription,
+            entry,
+            body=body,
+            headers=headers,
+            content_type=content_type,
+            key=key,
+            delivery_attempt=attempt,
+        )
         self._handlers += 1
         try:
             try:
@@ -426,81 +367,56 @@ class RedisTransport(Transport):
             except asyncio.CancelledError:
                 raise
             except Exception:
-                logger.exception(
-                    "subscriber %s failed for topic %s",
-                    subscription.options.group,
-                    group.topic,
-                )
+                logger.exception("subscriber %s failed for topic %s", subscription.options.group, group.topic)
                 if not incoming._settled:
                     await incoming.nack(requeue=True)
         finally:
             self._handlers = max(0, self._handlers - 1)
 
-    async def _claim_loop(self, group: _Group) -> None:
-        delay = min(1.0, max(0.05, self._claim_idle_ms / 2000))
-        consumer = f"{group.name}-claim"
-        try:
-            while not self._closed and _active(group):
-                await asyncio.sleep(delay)
-                if self._closed or not _active(group):
-                    return
-                try:
-                    claimed = await self._client.autoclaim(
-                        group.stream,
-                        group.name,
-                        consumer,
-                        self._claim_idle_ms,
-                        count=10,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    logger.exception(
-                        "XAUTOCLAIM failed for topic %s group %s",
-                        group.topic,
-                        group.name,
-                    )
-                    continue
-                for entry in claimed:
-                    self._enqueue(group, self._envelope(entry))
-        except asyncio.CancelledError:
+    async def _dead_letter(self, incoming: _RedisIncoming) -> None:
+        topic = incoming._subscription.options.dead_letter_topic or f"{incoming.topic}.dlq"
+        await self.send_message(
+            Message(
+                message_name="dead_letter",
+                topic=topic,
+                payload=incoming.body,
+                payload_bytes=incoming.body,
+                headers=dict(incoming.headers) or None,
+                content_type=incoming.content_type,
+                key=incoming.key,
+            ),
+        )
+        if self._closed:
             return
+        await self._client.ack(
+            incoming._group.stream,
+            incoming._group.name,
+            _as_bytes(incoming._entry.message_id),
+        )
 
     async def _is_drained(self) -> bool:
-        if self._handlers or self._retry_waiting():
-            self._remember_local()
+        if self._handlers:
+            self._backlog_note = f"topic=* group=* queue_length=0 in_flight={self._handlers}"
             return False
         notes: list[str] = []
         for group in self._groups.values():
-            if not _active(group):
+            if not any(subscription.active for subscription in group.subscriptions):
                 continue
-            pending, lag = await self._client.backlog(group.stream, group.name)
-            queued = group.retry.qsize()
-            if pending or lag or queued or self._handlers:
+            try:
+                pending, lag = await self._client.backlog(group.stream, group.name)
+            except Exception:
+                logger.exception("redis backlog failed for topic %s", group.topic)
+                return False
+            if pending or lag:
                 notes.append(
                     f"topic={group.topic} group={group.name} "
-                    f"queue_length={lag + queued} in_flight={pending + self._handlers}",
+                    f"queue_length={lag} in_flight={pending + self._handlers}",
                 )
-        if notes or self._handlers or self._retry_waiting():
-            if notes:
-                self._backlog_note = "; ".join(notes)
-            else:
-                self._remember_local()
+        if notes:
+            self._backlog_note = "; ".join(notes)
             return False
+        self._backlog_note = "topic=* group=* queue_length=0 in_flight=0"
         return True
-
-    def _remember_local(self) -> None:
-        parts: list[str] = []
-        for group in self._groups.values():
-            queued = group.retry.qsize()
-            if queued or self._handlers:
-                parts.append(
-                    f"topic={group.topic} group={group.name} " f"queue_length={queued} in_flight={self._handlers}",
-                )
-        if parts:
-            self._backlog_note = "; ".join(parts)
-        else:
-            self._backlog_note = f"topic=* group=* queue_length=0 in_flight={self._handlers}"
 
     def _drain_message(self) -> str:
         return "drain timed out: " + self._backlog_note
@@ -517,67 +433,10 @@ class RedisTransport(Transport):
     def _stream_key(self, topic: str) -> str:
         return f"{self._prefix}{topic}"
 
-    def _enqueue(self, group: _Group, envelope: _Envelope) -> None:
-        if envelope.message_id in group.queued:
-            return
-        group.queued.add(envelope.message_id)
-        group.retry.put_nowait(envelope)
-
-    def _pop_retry(self, group: _Group) -> _Envelope | None:
-        try:
-            envelope = group.retry.get_nowait()
-        except asyncio.QueueEmpty:
-            return None
-        group.queued.discard(envelope.message_id)
-        return envelope
-
-    def _retry_waiting(self) -> bool:
-        return any(not group.retry.empty() for group in self._groups.values())
-
-    def _envelope(self, entry: StreamEntry) -> _Envelope:
-        fields = entry.fields
-        raw_headers = _field(fields, "headers")
-        content_type = _text(_field(fields, "content_type"))
-        key = _text(_field(fields, "key"))
-        attempt_text = _text(_field(fields, "delivery_attempt")) or "1"
-        try:
-            stored_attempt = int(attempt_text)
-        except ValueError:
-            stored_attempt = 1
-        if stored_attempt < 1:
-            stored_attempt = 1
-        return _Envelope(
-            message_id=_as_bytes(entry.message_id),
-            body=_as_bytes(_field(fields, "body")),
-            headers=_headers(raw_headers),
-            content_type=content_type or None,
-            key=key or None,
-            stored_attempt=stored_attempt,
-        )
-
     def _track(self, task: asyncio.Task[None]) -> asyncio.Task[None]:
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return task
-
-    def _stop_claimer_if_idle(self, group: _Group) -> None:
-        if _active(group):
-            return
-        claimer = group.claimer
-        group.claimer = None
-        if claimer is not None and not claimer.done():
-            claimer.cancel()
-
-
-def _active(group: _Group) -> bool:
-    return any(subscription.active for subscription in group.subscriptions)
-
-
-def _check_options(options: SubscribeOptions) -> None:
-    if options.start_from not in ("latest", "earliest"):
-        raise UnsupportedCapability(f"start_from={options.start_from!r} is not supported")
-    if options.concurrency < 1 or options.prefetch < 1 or options.max_deliveries < 1:
-        raise UnsupportedCapability("concurrency, prefetch, and max_deliveries must be >= 1")
 
 
 def _connection_url(parsed: urllib.parse.ParseResult) -> str:
@@ -594,6 +453,19 @@ def _query_int(query: dict[str, list[str]], name: str, default: int) -> int:
         return int(values[0])
     except ValueError as exc:
         raise TransportError(f"Invalid {name} {values[0]!r}") from exc
+
+
+def _envelope(entry: StreamEntry) -> tuple[bytes, dict[str, str], str | None, str | None]:
+    fields = entry.fields
+    raw_headers = _field(fields, "headers")
+    content_type = _text(_field(fields, "content_type"))
+    key = _text(_field(fields, "key"))
+    return (
+        _as_bytes(_field(fields, "body")),
+        _headers(raw_headers),
+        content_type or None,
+        key or None,
+    )
 
 
 def _field(fields: Mapping[bytes, bytes], name: str) -> bytes:
@@ -634,4 +506,17 @@ def _as_bytes(value: object) -> bytes:
     return str(value).encode()
 
 
-__all__ = ("RedisTransport",)
+def create_transport(url: str) -> RedisTransport:
+    """Build ``RedisTransport`` from a ``redis://`` URL."""
+
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme:
+        raise TransportError(f"Transport URL {url!r} has no scheme")
+    if parsed.scheme != "redis":
+        raise TransportError(
+            f"RedisTransport URL scheme must be 'redis', got {parsed.scheme!r}",
+        )
+    return RedisTransport(parsed)
+
+
+__all__ = ("RedisTransport", "create_transport")

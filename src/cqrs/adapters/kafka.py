@@ -8,10 +8,8 @@ extra. Application code does not call the producer directly when an outbox
 or an event emitter is already publishing.
 
 ``KafkaTopicConsumer`` is the subscribe side used by ``KafkaTransport``.
-Ack commits the record offset. Nack does not commit: the transport retries
-the record in process, and a restart redelivers from the last commit.
-Seeking back would replay later offsets that are still in flight, so nack
-does not seek.
+Ack commits the record offset. A requeue seeks every partition in that
+fetch that has not been handled yet, so a later partition is not skipped.
 """
 
 import asyncio
@@ -103,7 +101,7 @@ class KafkaProducer(protocol.KafkaProducer):
             ]
         if key is not None:
             produce_kwargs["key"] = key.encode()
-        await self._producer.send_and_wait(topic, **produce_kwargs)
+        return await self._producer.send_and_wait(topic, **produce_kwargs)
 
     async def produce(
         self,
@@ -116,7 +114,7 @@ class KafkaProducer(protocol.KafkaProducer):
         Produces event to kafka broker.
         Tries to reconnect if connect has been lost or has not been opened.
         """
-        await _retry(tries=self._retry_count, delay=self._retry_delay)(self._produce)(
+        return await _retry(tries=self._retry_count, delay=self._retry_delay)(self._produce)(
             topic,
             message,
             headers,
@@ -201,10 +199,9 @@ class KafkaTopicConsumer:
     """
     ``AIOKafkaConsumer`` for one topic and one ``group_id``.
 
-    ``commit`` records the next offset to read. ``nack`` does not commit and
-    does not seek: seeking would replay later offsets still in flight. The
-    transport retries the record until it commits. After a restart Kafka
-    redelivers from the last commit.
+    ``commit`` records the next offset to read. A requeue seeks to that
+    offset before later records from the same fetch are handled. After a
+    restart Kafka redelivers from the last commit.
     """
 
     def __init__(
@@ -281,6 +278,12 @@ class KafkaTopicConsumer:
         consumer = self._require()
         topic_partition = aiokafka.TopicPartition(self._topic, partition)
         await consumer.commit({topic_partition: next_offset})
+
+    async def seek(self, partition: int, offset: int) -> None:
+        """Move the next fetch on ``partition`` back to ``offset``."""
+
+        consumer = self._require()
+        consumer.seek(aiokafka.TopicPartition(self._topic, partition), offset)
 
     def assigned_partitions(self) -> set[int]:
         consumer = self._consumer

@@ -56,6 +56,12 @@ class JetStreamMessage:
 
         return self._message.metadata.num_delivered
 
+    @property
+    def stream_seq(self) -> int:
+        """Stream sequence. The same message has one sequence for every durable."""
+
+        return self._message.metadata.sequence.stream
+
     async def ack(self) -> None:
         await self._message.ack()
 
@@ -72,15 +78,15 @@ class JetStreamConsumer:
     def __init__(self, subscription: JetStreamContext.PullSubscription) -> None:
         self._subscription = subscription
 
-    async def fetch(self, *, timeout: float) -> list[JetStreamMessage]:
+    async def fetch(self, *, batch: int, timeout: float) -> list[JetStreamMessage]:
         """
-        Return the next message, or an empty list when the timeout expires.
+        Return up to ``batch`` messages, or an empty list when the timeout expires.
 
         An empty timeout result is the idle poll. Other client errors propagate.
         """
 
         try:
-            messages = await self._subscription.fetch(1, timeout=timeout)
+            messages = await self._subscription.fetch(max(1, batch), timeout=timeout)
         except nats.errors.TimeoutError:
             return []
         return [JetStreamMessage(message) for message in messages]
@@ -176,9 +182,10 @@ class JetStreamSession:
             if created:
                 self._owned.add(stream)
 
-    async def publish(self, subject: str, body: bytes, headers: dict[str, str] | None) -> None:
+    async def publish(self, subject: str, body: bytes, headers: dict[str, str] | None) -> int:
         jetstream = self._jetstream()
-        await jetstream.publish(subject, body, headers=dict(headers) if headers else None)
+        ack = await jetstream.publish(subject, body, headers=dict(headers) if headers else None)
+        return int(ack.seq)
 
     async def pull(
         self,
@@ -188,6 +195,7 @@ class JetStreamSession:
         durable: str,
         start_from: str,
         max_deliver: int,
+        max_ack_pending: int,
     ) -> JetStreamConsumer:
         """
         Bind a durable pull consumer.
@@ -205,7 +213,7 @@ class JetStreamSession:
             deliver_policy=policy,
             max_deliver=max_deliver,
             ack_wait=30,
-            max_ack_pending=1024,
+            max_ack_pending=max(1, max_ack_pending),
             filter_subject=subject,
         )
         subscription = await self._jetstream().pull_subscribe(

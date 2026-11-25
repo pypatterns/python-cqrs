@@ -1,4 +1,4 @@
-"""create_transport, registration, and lazy broker imports."""
+"""Per-module create_transport and lazy broker imports."""
 
 from __future__ import annotations
 
@@ -9,14 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from cqrs.transport import (
-    InMemoryTransport,
-    TransportError,
-    UnsupportedCapability,
-    create_transport,
-    register_transport,
-)
-from cqrs.transport import factory as transport_factory
+from cqrs.transport.errors import TransportError, UnsupportedCapability
+from cqrs.transport.memory import InMemoryTransport, create_transport
 
 
 def _pythonpath() -> dict[str, str]:
@@ -36,7 +30,7 @@ loaded = [name for name in banned if name in sys.modules]
 if loaded:
     raise SystemExit("loaded " + ",".join(loaded))
 assert cqrs.InMemoryTransport is not None
-assert cqrs.create_transport is not None
+assert not hasattr(cqrs, "create_transport")
 lazy = (
     "KafkaTransport",
     "AMQPTransport",
@@ -70,14 +64,16 @@ assert "aio_pika" in sys.modules
     subprocess.run([sys.executable, "-c", script], check=True, env=_pythonpath())
 
 
-def test_importing_factory_does_not_load_broker_clients() -> None:
+def test_importing_memory_does_not_load_broker_clients() -> None:
     script = """
 import sys
-import cqrs.transport.factory
+import cqrs.transport.memory
 banned = ("aio_pika", "aiokafka", "redis", "nats", "aioboto3")
 loaded = [name for name in banned if name in sys.modules]
 if loaded:
     raise SystemExit("loaded " + ",".join(loaded))
+from cqrs.transport.memory import create_transport
+assert create_transport("memory://") is not None
 """
     subprocess.run([sys.executable, "-c", script], check=True, env=_pythonpath())
 
@@ -96,38 +92,14 @@ async def test_memory_url_and_query() -> None:
         await configured.close()
 
 
-def test_unknown_scheme_lists_known_schemes() -> None:
-    with pytest.raises(TransportError, match="Unknown transport scheme 'mqtt'") as caught:
+def test_memory_rejects_foreign_scheme() -> None:
+    with pytest.raises(TransportError, match="scheme must be 'memory'"):
         create_transport("mqtt://localhost")
-    message = str(caught.value)
-    for scheme in ("memory", "amqp", "kafka", "redis", "nats", "sqs"):
-        assert scheme in message
 
 
-def test_future_scheme_reports_the_missing_extra(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(
-        transport_factory._FUTURE_SCHEMES,
-        "futureextra",
-        ("cqrs_missing_transport_futureextra", "FutureExtraTransport", "futureextra"),
-    )
-    with pytest.raises(
-        TransportError,
-        match=r'Transport \'futureextra\' requires: pip install "python-cqrs\[futureextra\]"',
-    ):
-        create_transport("futureextra://localhost")
-
-
-def test_missing_extra_uses_the_registry(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setitem(
-        transport_factory._FUTURE_SCHEMES,
-        "demo",
-        ("cqrs_missing_transport_demo", "DemoTransport", "demo"),
-    )
-    with pytest.raises(
-        TransportError,
-        match=r'Transport \'demo\' requires: pip install "python-cqrs\[demo\]"',
-    ):
-        create_transport("demo://bus")
+def test_memory_url_without_scheme() -> None:
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_transport("not-a-url")
 
 
 def test_invalid_memory_delivery() -> None:
@@ -135,52 +107,57 @@ def test_invalid_memory_delivery() -> None:
         create_transport("memory://?delivery=fast")
 
 
-async def test_register_transport_lowercases_the_scheme() -> None:
-    created: list[InMemoryTransport] = []
+def test_kafka_create_transport_rejects_foreign_scheme() -> None:
+    pytest.importorskip("aiokafka")
+    from cqrs.message_brokers.kafka import create_transport as create_kafka
 
-    def factory(parsed: object) -> InMemoryTransport:
-        transport = InMemoryTransport()
-        created.append(transport)
-        return transport
-
-    register_transport("CUSTOM", factory)
-    try:
-        first = create_transport("CUSTOM://bus")
-        second = create_transport("custom://bus")
-        assert isinstance(first, InMemoryTransport)
-        assert isinstance(second, InMemoryTransport)
-        assert first is not second
-        assert "custom" in transport_factory._FACTORIES
-        assert "CUSTOM" not in transport_factory._FACTORIES
-    finally:
-        transport_factory._FACTORIES.pop("custom", None)
-        for transport in created:
-            await transport.close()
+    with pytest.raises(TransportError, match="scheme must be 'kafka'"):
+        create_kafka("amqp://localhost")
 
 
-async def test_register_transport_replaces_the_previous_factory() -> None:
-    created: list[InMemoryTransport] = []
+def test_kafka_create_transport_rejects_missing_scheme() -> None:
+    pytest.importorskip("aiokafka")
+    from cqrs.message_brokers.kafka import create_transport as create_kafka
 
-    def first(parsed: object) -> InMemoryTransport:
-        transport = InMemoryTransport(delivery="queued")
-        created.append(transport)
-        return transport
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_kafka("not-a-url")
 
-    def second(parsed: object) -> InMemoryTransport:
-        transport = InMemoryTransport(delivery="inline")
-        created.append(transport)
-        return transport
 
-    register_transport("localmem", first)
-    try:
-        first_transport = create_transport("localmem://")
-        register_transport("localmem", second)
-        second_transport = create_transport("localmem://again")
-        assert isinstance(first_transport, InMemoryTransport)
-        assert isinstance(second_transport, InMemoryTransport)
-        assert first_transport.delivery == "queued"
-        assert second_transport.delivery == "inline"
-    finally:
-        transport_factory._FACTORIES.pop("localmem", None)
-        for transport in created:
-            await transport.close()
+def test_amqp_create_transport_rejects_wrong_scheme() -> None:
+    pytest.importorskip("aio_pika")
+    from cqrs.message_brokers.amqp import create_transport as create_amqp
+
+    with pytest.raises(TransportError, match="scheme must be 'amqp'"):
+        create_amqp("kafka://localhost")
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_amqp("not-a-url")
+
+
+def test_redis_create_transport_rejects_wrong_scheme() -> None:
+    pytest.importorskip("redis")
+    from cqrs.message_brokers.redis import create_transport as create_redis
+
+    with pytest.raises(TransportError, match="scheme must be 'redis'"):
+        create_redis("kafka://localhost")
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_redis("not-a-url")
+
+
+def test_nats_create_transport_rejects_wrong_scheme() -> None:
+    pytest.importorskip("nats")
+    from cqrs.message_brokers.nats import create_transport as create_nats
+
+    with pytest.raises(TransportError, match="scheme must be 'nats'"):
+        create_nats("kafka://localhost")
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_nats("not-a-url")
+
+
+def test_sqs_create_transport_rejects_wrong_scheme() -> None:
+    pytest.importorskip("aioboto3")
+    from cqrs.message_brokers.sqs import create_transport as create_sqs
+
+    with pytest.raises(TransportError, match="scheme must be 'sqs'"):
+        create_sqs("kafka://localhost")
+    with pytest.raises(TransportError, match="has no scheme"):
+        create_sqs("not-a-url")

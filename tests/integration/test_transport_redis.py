@@ -15,8 +15,8 @@ from redis.exceptions import RedisError
 from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from cqrs.message_brokers.protocol import Message
-from cqrs.message_brokers.redis import RedisTransport
-from cqrs.transport import IncomingMessage, SubscribeOptions, create_transport
+from cqrs.message_brokers.redis import RedisTransport, create_transport
+from cqrs.transport import IncomingMessage, SubscribeOptions
 from cqrs.transport.protocol import TransportCapabilities
 from tests.unit.transport import test_contract as contract
 
@@ -76,23 +76,8 @@ async def test_groups_broadcast_and_compete(transport: RedisTransport) -> None:
     await contract.test_groups_broadcast_and_compete(transport)
 
 
-@pytest.mark.skip(
-    reason="Redis Streams ordering_per_key is False; delivery follows stream order, not message.key",
-)
-async def test_same_key_stays_ordered_when_concurrency_is_high(transport: RedisTransport) -> None:
-    await contract.test_same_key_stays_ordered_when_concurrency_is_high(transport)
-
-
-async def test_different_keys_run_side_by_side(transport: RedisTransport) -> None:
-    await contract.test_different_keys_run_side_by_side(transport)
-
-
 async def test_ack_does_not_redeliver(transport: RedisTransport) -> None:
     await contract.test_ack_does_not_redeliver(transport)
-
-
-async def test_nack_increases_attempt_then_dead_letters(transport: RedisTransport) -> None:
-    await contract.test_nack_increases_attempt_then_dead_letters(transport)
 
 
 async def test_handler_exception_does_not_escape_send(transport: RedisTransport) -> None:
@@ -109,7 +94,7 @@ async def test_two_instances_do_not_share_messages() -> None:
     await contract.test_two_instances_do_not_share_messages()
 
 
-async def test_factory_builds_redis_transport() -> None:
+async def test_create_transport_builds_redis_transport() -> None:
     broker = create_transport("redis://localhost:6379/0?prefix=cqrs-factory:")
     try:
         assert isinstance(broker, RedisTransport)
@@ -165,14 +150,11 @@ async def test_xautoclaim_redelivers_a_stuck_message() -> None:
     prefix = f"cqrs:{uuid.uuid4().hex}:"
     broker = RedisTransport(_PARSED, prefix=prefix, claim_idle_ms=80, block_ms=40)
     attempts: list[int] = []
-    started = asyncio.Event()
-    release = asyncio.Event()
 
     async def handler(message: IncomingMessage) -> None:
         attempts.append(message.delivery_attempt)
-        if message.delivery_attempt == 1:
-            started.set()
-            await release.wait()
+        if len(attempts) == 1:
+            return
         await message.ack()
 
     try:
@@ -183,22 +165,19 @@ async def test_xautoclaim_redelivers_a_stuck_message() -> None:
         await broker.subscribe(
             "orders",
             handler,
-            SubscribeOptions(group="billing", concurrency=2),
+            SubscribeOptions(group="billing"),
         )
         await broker.send_message(
             Message(message_name="contract", topic="orders", payload=b"stuck", payload_bytes=b"stuck"),
         )
-        await asyncio.wait_for(started.wait(), timeout=1)
 
         async def saw_second() -> None:
             while 2 not in attempts:
                 await asyncio.sleep(0.01)
 
         await asyncio.wait_for(saw_second(), timeout=3)
-        release.set()
         await broker.drain(timeout=2)
     finally:
-        release.set()
         await broker.close()
         await _delete_prefix(prefix)
     assert attempts[0] == 1

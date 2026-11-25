@@ -2,8 +2,9 @@
 Publish and subscribe transport.
 
 [AI Instruction]
-Import the ports, ``InMemoryTransport``, ``create_transport``, and
-``register_transport`` from here or from ``cqrs``. ``KafkaTransport``,
+Import the ports and ``InMemoryTransport`` from here or from ``cqrs``.
+``create_transport`` for a backend lives in that backend's module
+(``cqrs.transport.memory`` or ``cqrs.message_brokers.<name>``). ``KafkaTransport``,
 ``AMQPTransport``, ``RedisTransport``, ``NATSTransport``, and
 ``SQSTransport`` are lazy attributes of this package. They are not
 attributes of ``cqrs`` and they are not in ``cqrs.__all__``. Importing
@@ -17,7 +18,6 @@ from __future__ import annotations
 import typing
 
 from cqrs.transport.errors import TransportClosed, TransportError, UnsupportedCapability
-from cqrs.transport.factory import create_transport, register_transport
 from cqrs.transport.memory import InMemoryTransport
 from cqrs.transport.protocol import (
     IncomingHandler,
@@ -41,8 +41,6 @@ __all__ = (
     "TransportClosed",
     "TransportError",
     "UnsupportedCapability",
-    "create_transport",
-    "register_transport",
 )
 
 # Imported on attribute access. Importing this package does not load a broker client.

@@ -17,7 +17,7 @@ class KafkaProducer(typing.Protocol):
         message: typing.Any,
         headers: dict[str, str] | None = None,
         key: str | None = None,
-    ) -> None: ...
+    ) -> typing.Any: ...
 
 
 class AMQPPublisher(typing.Protocol):

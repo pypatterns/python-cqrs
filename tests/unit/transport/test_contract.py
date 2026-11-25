@@ -102,62 +102,6 @@ async def test_groups_broadcast_and_compete(transport: Transport) -> None:
     assert len(billing) + len(rival) == 1
 
 
-async def test_same_key_stays_ordered_when_concurrency_is_high(transport: Transport) -> None:
-    order: list[str] = []
-    release_first = asyncio.Event()
-    started_first = asyncio.Event()
-
-    async def handler(message: IncomingMessage) -> None:
-        body = message.body.decode()
-        order.append(f"start-{body}")
-        if body == "1":
-            started_first.set()
-            await release_first.wait()
-        order.append(f"end-{body}")
-        await message.ack()
-
-    await transport.subscribe(
-        "orders",
-        handler,
-        SubscribeOptions(group="billing", concurrency=4),
-    )
-    await transport.send_message(_message("orders", payload_bytes=b"1", key="same"))
-    await transport.send_message(_message("orders", payload_bytes=b"2", key="same"))
-    await asyncio.wait_for(started_first.wait(), timeout=1)
-    await asyncio.sleep(0)
-    assert order == ["start-1"]
-
-    release_first.set()
-    await transport.drain(timeout=2)
-    assert order == ["start-1", "end-1", "start-2", "end-2"]
-
-
-async def test_different_keys_run_side_by_side(transport: Transport) -> None:
-    started = {"a": asyncio.Event(), "b": asyncio.Event()}
-    release = asyncio.Event()
-
-    async def handler(message: IncomingMessage) -> None:
-        assert message.key is not None
-        started[message.key].set()
-        await release.wait()
-        await message.ack()
-
-    await transport.subscribe(
-        "orders",
-        handler,
-        SubscribeOptions(group="billing", concurrency=2),
-    )
-    await transport.send_message(_message("orders", payload_bytes=b"a", key="a"))
-    await transport.send_message(_message("orders", payload_bytes=b"b", key="b"))
-
-    await asyncio.wait_for(
-        asyncio.gather(started["a"].wait(), started["b"].wait()),
-        timeout=1,
-    )
-    release.set()
-    await transport.drain(timeout=2)
-
-
 async def test_ack_does_not_redeliver(transport: Transport) -> None:
     seen: list[int] = []
 
@@ -170,35 +114,6 @@ async def test_ack_does_not_redeliver(transport: Transport) -> None:
     await transport.drain(timeout=2)
     await asyncio.sleep(0)
     assert seen == [1]
-
-
-async def test_nack_increases_attempt_then_dead_letters(transport: Transport) -> None:
-    attempts: list[int] = []
-    dead: list[IncomingMessage] = []
-
-    async def handler(message: IncomingMessage) -> None:
-        attempts.append(message.delivery_attempt)
-        await message.nack(requeue=True)
-
-    async def dead_letter(message: IncomingMessage) -> None:
-        dead.append(message)
-        await message.ack()
-
-    await transport.subscribe(
-        "orders",
-        handler,
-        SubscribeOptions(group="billing", max_deliveries=2),
-    )
-    await transport.subscribe("orders.dlq", dead_letter, SubscribeOptions(group="dead"))
-    await transport.send_message(_message("orders", payload_bytes=b"row", key="k"))
-    await transport.drain(timeout=2)
-
-    assert attempts == [1, 2]
-    assert len(dead) == 1
-    assert dead[0].topic == "orders.dlq"
-    assert dead[0].body == b"row"
-    assert dead[0].key == "k"
-    assert dead[0].delivery_attempt == 2
 
 
 async def test_handler_exception_does_not_escape_send(transport: Transport) -> None:

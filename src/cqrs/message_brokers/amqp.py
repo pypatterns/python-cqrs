@@ -2,21 +2,22 @@
 AMQP broker and transport.
 
 [AI Instruction]
-Import ``AMQPMessageBroker`` from this module. It needs the ``rabbit``
-extra. Pass it to bootstrap or to ``cqrs.EventProducer``. The publisher
+Import ``AMQPMessageBroker`` or ``create_transport`` from this module.
+It needs the ``rabbit`` extra (``pip install "python-cqrs[rabbit]"``).
+An ``ImportError`` here means that extra is missing. Pass the broker to
+bootstrap or to ``cqrs.EventProducer``. The publisher
 and consumer types live in ``cqrs.adapters.amqp``.
 
 ``AMQPTransport`` is the publish/subscribe transport. Construct it with a
-parsed URL (``create_transport("amqp://guest:guest@localhost:5672/")``), a
+parsed URL (``create_transport`` in this module), a
 URL string, or rely on that default. ``topic`` is the direct-exchange
 routing key. The queue name is derived from the exchange, the topic, and
-the group, so two topics or two exchanges can share a group name without
-sharing a queue. The subscriber declares and binds that queue. ``send_message`` publishes to the exchange
-and does not replace ``AMQPMessageBroker``. A set ``key`` is the reserved
-header ``cqrs-key`` and does not change the route. A user header named
-``key`` is left untouched. Do not define ``__bool__`` or ``__len__``.
-``AMQPMessageBroker`` still declares a queue named ``message.topic`` and
-does not read ``key``.
+the group. Each ``subscribe`` call is one consumer on that queue.
+``prefetch`` is channel QoS. Do not add a worker pool, a local delivery
+counter, or a header that pairs publish with consume. A set ``key`` is
+the header ``cqrs-key`` and does not change the route. Do not define
+``__bool__`` or ``__len__``. ``AMQPMessageBroker`` still declares a queue
+named ``message.topic`` and does not read ``key``.
 """
 
 from __future__ import annotations
@@ -24,7 +25,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import urllib.parse
-import uuid
 from typing import ClassVar
 
 import aio_pika
@@ -33,21 +33,22 @@ from cqrs.adapters import protocol as adapters_protocol
 from cqrs.adapters.amqp import AMQPConsumeSession, AMQPDelivery, NeutralAMQPClient
 from cqrs.message_brokers import protocol
 from cqrs.serializers.default import message_wire_bytes
-from cqrs.transport.errors import TransportClosed, UnsupportedCapability
+from cqrs.transport.errors import TransportClosed, TransportError, UnsupportedCapability
 from cqrs.transport.protocol import (
+    HandlerWatch,
     IncomingHandler,
     IncomingMessage,
     SubscribeOptions,
     Subscription,
     Transport,
     TransportCapabilities,
+    require_options,
 )
 
 logger = logging.getLogger("cqrs")
 
-_ATTEMPT = "cqrs-delivery-attempt"
-_WIRE_ID = "cqrs-message-id"
 _KEY = "cqrs-key"
+_DELIVERY_COUNT = "x-delivery-count"
 
 
 class AMQPMessageBroker(protocol.MessageBroker):
@@ -87,23 +88,18 @@ class _AMQPIncoming(IncomingMessage):
         *,
         headers: dict[str, str],
         key: str | None,
-        delivery_attempt: int,
     ) -> None:
         self._transport = transport
         self._subscription = subscription
         self._delivery = delivery
         self._headers = headers
         self._key = key
-        self._delivery_attempt = delivery_attempt
-        self._message_id = delivery.message_id
         self._settled = False
-        self._dlq_published = False
-        self._settle_lock = asyncio.Lock()
-        self._accounted = False
+        self._message_id = str(delivery.message_id or "")
 
     @property
     def topic(self) -> str:
-        return self._delivery.topic or self._subscription.group.topic
+        return self._delivery.topic or self._subscription.topic
 
     @property
     def body(self) -> bytes:
@@ -123,82 +119,49 @@ class _AMQPIncoming(IncomingMessage):
 
     @property
     def delivery_attempt(self) -> int:
-        return self._delivery_attempt
+        raw = self._headers.get(_DELIVERY_COUNT)
+        if raw is None:
+            return 1
+        try:
+            count = int(raw)
+        except ValueError:
+            return 1
+        return max(1, count + 1)
 
     async def ack(self) -> None:
-        async with self._settle_lock:
-            if self._settled:
-                return
-            await self._delivery.ack()
-            self._settled = True
-            self._transport._forget(self._attempt_key())
-            self._transport._finish_incoming(self)
+        if self._settled:
+            return
+        self._settled = True
+        await self._delivery.ack()
+        self._transport._watch.settle(self._message_id)
 
     async def nack(self, *, requeue: bool = True) -> None:
-        async with self._settle_lock:
-            if self._settled:
-                return
-            final = (not requeue) or self._delivery_attempt >= self._subscription.options.max_deliveries
-            if final:
-                await self._finish_final(requeue)
-                return
-            attempt_key = self._attempt_key()
-            if attempt_key is not None:
-                self._transport._attempts[attempt_key] = self._delivery_attempt + 1
-            await self._delivery.nack(requeue=True)
-            self._settled = True
-
-    async def _finish_final(self, requeue: bool) -> None:
-        """Publish the dead letter once, then settle the original.
-
-        The lock is held by ``nack``. A failed publish leaves the flag clear
-        so the next attempt can publish. A publish that succeeded is kept
-        when settling the original still has to be retried.
-        """
-
-        if not self._dlq_published:
-            try:
-                await self._transport._dead_letter(self)
-            except Exception:
-                logger.exception("amqp dead-letter publish failed for topic %s", self.topic)
-                await self._delivery.nack(requeue=True)
-                self._settled = True
-                return
-            self._dlq_published = True
-        if requeue:
-            await self._delivery.ack()
-        else:
-            await self._delivery.nack(requeue=False)
+        if self._settled:
+            return
         self._settled = True
-        self._transport._forget(self._attempt_key())
-        self._transport._finish_incoming(self)
-
-    def _attempt_key(self) -> tuple[str, str, str] | None:
-        if not self._message_id:
-            return None
-        group = self._subscription.group
-        return (group.topic, group.name, self._message_id)
-
-
-class _AMQPGroup:
-    def __init__(self, topic: str, name: str) -> None:
-        self.topic = topic
-        self.name = name
-        self.subscriptions: list[_AMQPSubscription] = []
-
-    def active(self) -> bool:
-        return any(subscription.active for subscription in self.subscriptions)
+        # Classic queues do not send x-delivery-count, so delivery_attempt stays 1
+        # and only max_deliveries=1 turns a requeue into the dead-letter exchange.
+        final = (not requeue) or self.delivery_attempt >= self._subscription.options.max_deliveries
+        await self._delivery.nack(requeue=not final)
+        if not final:
+            return
+        dlq_topic = self._subscription.options.dead_letter_topic or f"{self._subscription.topic}.dlq"
+        if self._transport._group_count(dlq_topic) < 1:
+            self._transport._watch.settle(self._message_id)
 
 
 class _AMQPSubscription(Subscription):
     def __init__(
         self,
         transport: AMQPTransport,
-        group: _AMQPGroup,
+        *,
+        topic: str,
+        group: str,
         handler: IncomingHandler,
         options: SubscribeOptions,
     ) -> None:
         self._transport = transport
+        self.topic = topic
         self.group = group
         self.handler = handler
         self.options = options
@@ -213,6 +176,7 @@ class _AMQPSubscription(Subscription):
         self.session = None
         if session is not None:
             await session.close()
+        self._transport._drop(self)
 
 
 class AMQPTransport(Transport):
@@ -221,15 +185,13 @@ class AMQPTransport(Transport):
 
     ``topic`` is the routing key on a direct exchange (default name
     ``cqrs``, or ``?exchange=`` on the URL). The queue name comes from the
-    exchange, the topic, and the group together. Competing subscribers of
-    that triple share the queue. The same group on another topic or another
-    exchange is a different queue. A different group is another queue and
-    gets its own copy.
-    ``ordering_per_key`` is false. ``native_dlq`` is false: after
-    ``max_deliveries``, or on ``nack(requeue=False)``, the bytes are
-    republished to ``{topic}.dlq``. ``ack`` and ``nack`` call aio_pika.
-    A set ``message.key`` is stored in the reserved header ``cqrs-key`` and
-    is not a routing key. There is no ``__bool__`` and no ``__len__``.
+    exchange, the topic, and the group together. Two subscriptions with
+    that triple are two consumers on one queue. A different group is
+    another queue and gets its own copy. ``ordering_per_key`` is false.
+    ``nack(requeue=False)`` is the queue dead-letter exchange.
+    ``delivery_attempt`` reads ``x-delivery-count`` when the broker set it.
+    A set ``message.key`` is the header ``cqrs-key``. There is no
+    ``__bool__`` and no ``__len__``.
 
     ``create_transport("amqp://guest:guest@localhost:5672/")`` calls this
     with the parsed URL. Each instance opens its own connection.
@@ -237,7 +199,7 @@ class AMQPTransport(Transport):
 
     capabilities: ClassVar[TransportCapabilities] = TransportCapabilities(
         ordering_per_key=False,
-        native_dlq=False,
+        native_dlq=True,
         delayed_redelivery=False,
         headers=True,
         topic="direct-exchange routing key; the queue is named from the exchange, the topic, and the group",
@@ -255,12 +217,8 @@ class AMQPTransport(Transport):
         self._exchange_name = exchange_name or parsed_exchange
         self._client = NeutralAMQPClient(self._url)
         self._closed = False
-        self._groups: dict[tuple[str, str], _AMQPGroup] = {}
-        self._outstanding: dict[str, int] = {}
-        self._attempts: dict[tuple[str, str, str], int] = {}
-        self._in_flight = 0
-        self._idle = asyncio.Event()
-        self._idle.set()
+        self._subscriptions: list[_AMQPSubscription] = []
+        self._watch = HandlerWatch()
 
     async def start(self) -> None:
         if self._closed:
@@ -268,7 +226,26 @@ class AMQPTransport(Transport):
         await self._client.connect()
 
     async def send_message(self, message: protocol.Message) -> None:
-        await self._produce(message, delivery_attempt=1)
+        self._check_open("send_message")
+        expected = self._group_count(message.topic)
+        message_key = str(message.message_id)
+        self._watch.expect(message_key, expected)
+        headers = dict(message.headers) if message.headers else {}
+        if message.key is not None:
+            headers[_KEY] = message.key
+        try:
+            await self._client.connect()
+            await self._client.publish(
+                exchange_name=self._exchange_name,
+                routing_key=message.topic,
+                body=message_wire_bytes(message),
+                headers=headers or None,
+                content_type=message.content_type,
+                message_id=message_key,
+            )
+        except Exception:
+            self._watch.abandon(message_key, expected)
+            raise
 
     async def subscribe(
         self,
@@ -277,14 +254,18 @@ class AMQPTransport(Transport):
         options: SubscribeOptions,
     ) -> Subscription:
         self._check_open("subscribe")
-        _check_options(options)
+        require_options(options)
+        if options.start_from == "earliest":
+            raise UnsupportedCapability("AMQPTransport has no log to replay; start_from must be latest")
         await self._client.connect()
-        group = self._groups.get((topic, options.group))
-        if group is None:
-            group = _AMQPGroup(topic, options.group)
-            self._groups[(topic, options.group)] = group
-        subscription = _AMQPSubscription(self, group, handler, options)
-        group.subscriptions.append(subscription)
+        subscription = _AMQPSubscription(
+            self,
+            topic=topic,
+            group=options.group,
+            handler=handler,
+            options=options,
+        )
+        self._subscriptions.append(subscription)
 
         async def on_delivery(delivery: AMQPDelivery) -> None:
             await self._on_delivery(subscription, delivery)
@@ -295,38 +276,30 @@ class AMQPTransport(Transport):
                 exchange_name=self._exchange_name,
                 queue_name=_queue_name(self._exchange_name, topic, options.group),
                 routing_key=topic,
-                prefetch=options.concurrency * options.prefetch,
-                concurrency=options.concurrency,
+                prefetch=options.prefetch,
+                dead_letter_routing_key=options.dead_letter_topic or f"{topic}.dlq",
+                dead_letter_queue_name="cqrs-hold."
+                + _queue_name(
+                    self._exchange_name,
+                    options.dead_letter_topic or f"{topic}.dlq",
+                    "hold",
+                ),
             )
         except BaseException:
-            self._drop_subscription(topic, options.group, subscription)
+            self._drop(subscription)
             raise
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:
-        """Wait until published messages have been acked or dead-lettered."""
+        """Wait until handlers for published messages have finished."""
 
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while not self._is_idle():
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise TimeoutError(self._drain_message())
-            self._idle.clear()
-            if self._is_idle():
-                return
-            try:
-                await asyncio.wait_for(self._idle.wait(), remaining)
-            except asyncio.TimeoutError:
-                if self._is_idle():
-                    return
-                raise TimeoutError(self._drain_message()) from None
+        await self._watch.wait(timeout, self._describe)
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        subscriptions = [subscription for group in self._groups.values() for subscription in group.subscriptions]
+        subscriptions = list(self._subscriptions)
         for subscription in subscriptions:
             subscription.active = False
         for subscription in subscriptions:
@@ -334,164 +307,61 @@ class AMQPTransport(Transport):
             subscription.session = None
             if session is not None:
                 await session.close()
+        self._subscriptions.clear()
         await self._client.close()
-        self._outstanding.clear()
-        self._in_flight = 0
-        self._note()
-
-    async def _produce(self, message: protocol.Message, *, delivery_attempt: int) -> None:
-        self._check_open("send_message")
-        copies = self._destinations(message.topic)
-        wire_id = uuid.uuid4().hex
-        if copies:
-            self._outstanding[wire_id] = copies
-            self._note_work()
-        headers = dict(message.headers) if message.headers else {}
-        headers[_WIRE_ID] = wire_id
-        if message.key is not None:
-            headers[_KEY] = message.key
-        if delivery_attempt > 1:
-            headers[_ATTEMPT] = str(delivery_attempt)
-        try:
-            await self._client.connect()
-            await self._client.publish(
-                exchange_name=self._exchange_name,
-                routing_key=message.topic,
-                body=message_wire_bytes(message),
-                headers=headers or None,
-                content_type=message.content_type,
-                message_id=wire_id,
-            )
-        except Exception:
-            if copies:
-                self._outstanding.pop(wire_id, None)
-                self._note()
-            raise
+        self._watch.abandon_all()
+        self._watch.inflight = 0
+        self._watch.poke()
 
     async def _on_delivery(self, subscription: _AMQPSubscription, delivery: AMQPDelivery) -> None:
         if not subscription.active or self._closed:
             if not delivery.settled:
                 await delivery.nack(requeue=True)
             return
-        headers, key, header_attempt, wire_id = _view(delivery.headers)
-        identity = wire_id or delivery.message_id
-        attempt = self._attempt_for(subscription.group.topic, subscription.group.name, identity, header_attempt)
+        headers, key = _view(delivery.headers)
         incoming = _AMQPIncoming(
             self,
             subscription,
             delivery,
             headers=headers,
             key=key,
-            delivery_attempt=attempt,
         )
-        incoming._message_id = identity
-        self._in_flight += 1
+        self._watch.begin()
         try:
             try:
                 await subscription.handler(incoming)
             except asyncio.CancelledError:
-                if not incoming._settled:
-                    self._finish_incoming(incoming)
                 raise
             except Exception:
                 logger.exception(
                     "subscriber %s failed for topic %s",
-                    subscription.options.group,
+                    subscription.group,
                     incoming.topic,
                 )
                 if not incoming._settled:
-                    await incoming.nack(requeue=True)
+                    await incoming.nack(requeue=False)
         finally:
-            self._in_flight = max(0, self._in_flight - 1)
-            self._note()
+            self._watch.end()
 
-    async def _dead_letter(self, incoming: _AMQPIncoming) -> None:
-        topic = incoming._subscription.options.dead_letter_topic or f"{incoming._subscription.group.topic}.dlq"
-        try:
-            await self._produce(
-                protocol.Message(
-                    message_name="dead_letter",
-                    topic=topic,
-                    payload=incoming.body,
-                    payload_bytes=incoming.body,
-                    content_type=incoming.content_type,
-                    headers=dict(incoming.headers) or None,
-                    key=incoming.key,
-                ),
-                delivery_attempt=incoming.delivery_attempt,
-            )
-        except TransportClosed:
-            return
+    def _drop(self, subscription: _AMQPSubscription) -> None:
+        if subscription in self._subscriptions:
+            self._subscriptions.remove(subscription)
 
-    def _attempt_for(
-        self,
-        topic: str,
-        group: str,
-        message_id: str | None,
-        header_attempt: int | None,
-    ) -> int:
-        if message_id is not None:
-            stored = self._attempts.get((topic, group, message_id))
-            if stored is not None:
-                return stored
-        if header_attempt is not None:
-            return header_attempt
-        return 1
-
-    def _drop_subscription(self, topic: str, group_name: str, subscription: _AMQPSubscription) -> None:
-        group = self._groups.get((topic, group_name))
-        if group is None:
-            return
-        if subscription in group.subscriptions:
-            group.subscriptions.remove(subscription)
-        if not group.subscriptions:
-            self._groups.pop((topic, group_name), None)
-
-    def _forget(self, attempt_key: tuple[str, str, str] | None) -> None:
-        if attempt_key is not None:
-            self._attempts.pop(attempt_key, None)
-
-    def _destinations(self, topic: str) -> int:
-        return sum(1 for group in self._groups.values() if group.topic == topic and group.active())
-
-    def _finish_incoming(self, incoming: _AMQPIncoming) -> None:
-        if incoming._accounted:
-            return
-        incoming._accounted = True
-        self._complete(incoming._message_id)
-
-    def _complete(self, wire_id: str | None) -> None:
-        if wire_id is None or wire_id not in self._outstanding:
-            return
-        remaining = self._outstanding[wire_id] - 1
-        if remaining <= 0:
-            del self._outstanding[wire_id]
-        else:
-            self._outstanding[wire_id] = remaining
-        self._note()
+    def _group_count(self, topic: str) -> int:
+        return len({item.group for item in self._subscriptions if item.topic == topic and item.active})
 
     def _check_open(self, operation: str) -> None:
         if self._closed:
             raise TransportClosed(operation)
 
-    def _is_idle(self) -> bool:
-        return not self._outstanding and self._in_flight == 0
-
-    def _note_work(self) -> None:
-        self._idle.clear()
-
-    def _note(self) -> None:
-        if self._is_idle():
-            self._idle.set()
-
-    def _drain_message(self) -> str:
+    def _describe(self) -> str:
         parts = [
-            f"topic={group.topic} group={group.name} queue_length=0 in_flight={self._in_flight}"
-            for group in self._groups.values()
+            f"topic={item.topic} group={item.group} pending={self._watch.owed} in_flight={self._watch.inflight}"
+            for item in self._subscriptions
+            if item.active
         ]
         if not parts:
-            parts.append(f"topic=* group=* queue_length=0 in_flight={self._in_flight}")
-        parts.append(f"outstanding={sum(self._outstanding.values())}")
+            parts.append(f"topic=* group=* queue_length=0 in_flight={self._watch.inflight}")
         return "drain timed out: " + "; ".join(parts)
 
 
@@ -523,22 +393,23 @@ def _amqp_endpoint(url: urllib.parse.ParseResult | str | None) -> tuple[str, str
     return cleaned, exchange
 
 
-def _check_options(options: SubscribeOptions) -> None:
-    if options.start_from not in ("latest", "earliest"):
-        raise UnsupportedCapability(f"start_from={options.start_from!r} is not supported")
-    if options.concurrency < 1 or options.prefetch < 1 or options.max_deliveries < 1:
-        raise UnsupportedCapability("concurrency, prefetch, and max_deliveries must be >= 1")
-
-
-def _view(headers: dict[str, str]) -> tuple[dict[str, str], str | None, int | None, str | None]:
+def _view(headers: dict[str, str]) -> tuple[dict[str, str], str | None]:
     visible = dict(headers)
-    wire_id = visible.pop(_WIRE_ID, None)
     key = visible.pop(_KEY, None)
-    raw_attempt = visible.pop(_ATTEMPT, None)
-    attempt: int | None = None
-    if raw_attempt is not None:
-        try:
-            attempt = int(raw_attempt)
-        except ValueError:
-            attempt = None
-    return visible, key, attempt, wire_id
+    return visible, key
+
+
+def create_transport(url: str) -> AMQPTransport:
+    """Build ``AMQPTransport`` from an ``amqp://`` URL."""
+
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme:
+        raise TransportError(f"Transport URL {url!r} has no scheme")
+    if parsed.scheme != "amqp":
+        raise TransportError(
+            f"AMQPTransport URL scheme must be 'amqp', got {parsed.scheme!r}",
+        )
+    return AMQPTransport(parsed)
+
+
+__all__ = ("AMQPTransport", "create_transport")

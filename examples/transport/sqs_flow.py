@@ -21,13 +21,13 @@ from __future__ import annotations
 
 import asyncio
 
-import cqrs
+from cqrs.message_brokers.sqs import create_transport
 
 from payment import run_payment_flow
 
 
 async def main() -> None:
-    transport = cqrs.create_transport("sqs://localhost:4566?region=us-east-1&wait_time_seconds=0")
+    transport = create_transport("sqs://localhost:4566?region=us-east-1&wait_time_seconds=0")
     await run_payment_flow(transport, topic="payments-completed")
     print("sqs flow ok")
 

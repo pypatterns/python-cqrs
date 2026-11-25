@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import asyncio
 
-import cqrs
+from cqrs.message_brokers.redis import create_transport
 
 from payment import run_payment_flow
 
 
 async def main() -> None:
-    transport = cqrs.create_transport("redis://localhost:6379/0")
+    transport = create_transport("redis://localhost:6379/0")
     await run_payment_flow(transport)
     print("redis flow ok")
 

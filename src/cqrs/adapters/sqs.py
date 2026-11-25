@@ -3,7 +3,8 @@ SQS client used by ``SQSTransport``.
 
 [AI Instruction]
 This module is the ``sqs`` extra. It imports ``aioboto3`` and is loaded only
-when something imports it (the factory does that for an ``sqs://`` URL).
+when ``cqrs.message_brokers.sqs`` is imported (for example to call
+``create_transport`` with an ``sqs://`` URL).
 Queue names are passed through. Do not replace dots here. The transport
 decides the name, including the ``{topic}-dlq`` emulation and the
 ``{queue}-{group}`` fan-out suffix.
@@ -32,7 +33,6 @@ _ATTR_CONTENT_TYPE = "content_type"
 _ATTR_KEY = "key"
 _ATTR_HEADERS = "headers"
 _ATTR_BODY_ENCODING = "body_encoding"
-_ATTR_ATTEMPT = "delivery_attempt"
 _ENCODING_BASE64 = "base64"
 _UNKEYED_GROUP = "_cqrs"
 _ALREADY_EXISTS = {"QueueAlreadyExists", "QueueNameExists"}
@@ -49,7 +49,6 @@ class SQSDelivery:
     content_type: str | None
     key: str | None
     receive_count: int
-    preserved_attempt: int | None
     sent_timestamp: int
 
 
@@ -172,15 +171,13 @@ class SQSClient:
         headers: Mapping[str, str],
         content_type: str | None,
         key: str | None,
-        preserved_attempt: int | None,
         fifo: bool,
-    ) -> None:
+    ) -> str:
         client = self._require()
         attributes = _message_attributes(
             headers=headers,
             content_type=content_type,
             key=key,
-            preserved_attempt=preserved_attempt,
         )
         encoded = base64.b64encode(body).decode("ascii")
         # SQS rejects an empty body. A single space stands in for empty bytes.
@@ -197,9 +194,10 @@ class SQSClient:
             params["MessageGroupId"] = key if key else _UNKEYED_GROUP
             params["MessageDeduplicationId"] = _deduplication_id()
         try:
-            await client.send_message(**params)
+            response = await client.send_message(**params)
         except ClientError as exc:
             raise TransportError(f"SQS send failed: {_error_message(exc)}") from exc
+        return str(response.get("MessageId") or "")
 
     async def receive(
         self,
@@ -273,7 +271,6 @@ def _message_attributes(
     headers: Mapping[str, str],
     content_type: str | None,
     key: str | None,
-    preserved_attempt: int | None,
 ) -> dict[str, dict[str, str]]:
     attributes: dict[str, dict[str, str]] = {
         _ATTR_BODY_ENCODING: _string_attribute(_ENCODING_BASE64),
@@ -286,8 +283,6 @@ def _message_attributes(
         attributes[_ATTR_HEADERS] = _string_attribute(
             json.dumps({str(name): str(value) for name, value in headers.items()}, sort_keys=True),
         )
-    if preserved_attempt is not None:
-        attributes[_ATTR_ATTEMPT] = _string_attribute(str(preserved_attempt))
     return attributes
 
 
@@ -306,13 +301,6 @@ def _delivery(message: Mapping[str, Any]) -> SQSDelivery:
     headers = _headers(_attribute(attributes, _ATTR_HEADERS))
     content_type = _attribute(attributes, _ATTR_CONTENT_TYPE)
     key = _attribute(attributes, _ATTR_KEY)
-    preserved = _attribute(attributes, _ATTR_ATTEMPT)
-    attempt: int | None = None
-    if preserved:
-        try:
-            attempt = int(preserved)
-        except ValueError:
-            attempt = None
     try:
         receive_count = int(system.get("ApproximateReceiveCount", "1"))
     except (TypeError, ValueError):
@@ -331,7 +319,6 @@ def _delivery(message: Mapping[str, Any]) -> SQSDelivery:
         content_type=content_type,
         key=key,
         receive_count=max(1, receive_count),
-        preserved_attempt=attempt,
         sent_timestamp=sent_timestamp,
     )
 

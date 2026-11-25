@@ -152,7 +152,6 @@ class AMQPConsumeSession:
 
     def __init__(self) -> None:
         self._closed = False
-        self._loop: asyncio.Task[None] | None = None
         self._channel: aio_pika.abc.AbstractChannel | None = None
         self._queue: aio_pika.abc.AbstractQueue | None = None
         self._consumer_tag: typing.Any = None
@@ -160,12 +159,10 @@ class AMQPConsumeSession:
 
     def attach(
         self,
-        loop: asyncio.Task[None],
         channel: aio_pika.abc.AbstractChannel,
         queue: aio_pika.abc.AbstractQueue,
         consumer_tag: typing.Any,
     ) -> None:
-        self._loop = loop
         self._channel = channel
         self._queue = queue
         self._consumer_tag = consumer_tag
@@ -178,9 +175,6 @@ class AMQPConsumeSession:
         if self._closed:
             return
         self._closed = True
-        if self._loop is not None and not self._loop.done():
-            self._loop.cancel()
-            await asyncio.gather(self._loop, return_exceptions=True)
         pending = [task for task in self._tasks if not task.done()]
         for task in pending:
             task.cancel()
@@ -266,64 +260,66 @@ class NeutralAMQPClient:
         queue_name: str,
         routing_key: str,
         prefetch: int,
-        concurrency: int,
+        dead_letter_routing_key: str | None = None,
+        dead_letter_queue_name: str | None = None,
     ) -> AMQPConsumeSession:
         """
         Declare ``queue_name``, bind it to ``routing_key``, and consume.
 
-        ``prefetch`` is how many deliveries the broker may leave unacked.
-        ``concurrency`` is how many handlers run at once. Extra prefetched
-        deliveries stay queued until a handler slot is free. The session is
-        cancelled with ``AMQPConsumeSession.close``. A new queue is empty.
-        An existing queue keeps whatever it already holds: declare counts are
-        a snapshot, so purging from them can delete a message that arrived
-        after the snapshot.
+        ``prefetch`` is the channel QoS. The callback awaits ``handler``,
+        so this consumer does not run a second worker pool. When
+        ``dead_letter_routing_key`` is set, ``nack(requeue=False)`` is the
+        broker dead-letter exchange. The session is cancelled with
+        ``AMQPConsumeSession.close``.
         """
 
         await self.connect()
         if self._connection is None:
             raise RuntimeError("AMQP connection is closed")
         channel = await self._connection.channel()
-        incoming: asyncio.Queue[abc.AbstractIncomingMessage] = asyncio.Queue()
+        session = AMQPConsumeSession()
 
-        async def _enqueue(message: abc.AbstractIncomingMessage) -> None:
-            await incoming.put(message)
+        async def _on_message(message: abc.AbstractIncomingMessage) -> None:
+            current = asyncio.current_task()
+            if current is not None:
+                session.watch(current)
+            try:
+                await handler(AMQPDelivery(message))
+            finally:
+                if current is not None:
+                    session._tasks.discard(current)
 
         try:
             await channel.set_qos(prefetch_count=max(1, prefetch))
             exchange = await _declare_direct(channel, exchange_name)
+            arguments: dict[str, typing.Any] | None = None
+            if dead_letter_routing_key is not None:
+                arguments = {
+                    "x-dead-letter-exchange": exchange_name,
+                    "x-dead-letter-routing-key": dead_letter_routing_key,
+                }
+                if dead_letter_queue_name is not None:
+                    retained = await channel.declare_queue(
+                        dead_letter_queue_name,
+                        durable=False,
+                        auto_delete=False,
+                        exclusive=False,
+                    )
+                    await retained.bind(exchange, routing_key=dead_letter_routing_key)
             queue = await channel.declare_queue(
                 queue_name,
                 durable=False,
                 auto_delete=True,
                 exclusive=False,
+                arguments=arguments,
             )
             await queue.bind(exchange, routing_key=routing_key)
-            consumer_tag = await queue.consume(_enqueue)
+            consumer_tag = await queue.consume(_on_message)
         except BaseException:
             await _close_channel(channel)
             raise
 
-        session = AMQPConsumeSession()
-        limit = asyncio.Semaphore(max(1, concurrency))
-
-        async def _loop() -> None:
-            try:
-                while not session._closed:
-                    message = await incoming.get()
-                    if session._closed:
-                        await AMQPDelivery(message).nack(requeue=True)
-                        continue
-                    await limit.acquire()
-                    if session._closed:
-                        limit.release()
-                        await AMQPDelivery(message).nack(requeue=True)
-                        continue
-                    session.watch(asyncio.create_task(_invoke(handler, message, limit)))
-            except asyncio.CancelledError:
-                return
-
-        session.attach(asyncio.create_task(_loop()), channel, queue, consumer_tag)
+        session.attach(channel, queue, consumer_tag)
         return session
 
     async def _channel_for_publish(self) -> aio_pika.abc.AbstractChannel:
@@ -335,17 +331,6 @@ class NeutralAMQPClient:
             channel = await self._connection.channel()
             self._publish_channel = channel
         return channel
-
-
-async def _invoke(
-    handler: AMQPHandler,
-    message: abc.AbstractIncomingMessage,
-    limit: asyncio.Semaphore,
-) -> None:
-    try:
-        await handler(AMQPDelivery(message))
-    finally:
-        limit.release()
 
 
 async def _close_channel(channel: aio_pika.abc.AbstractChannel) -> None:

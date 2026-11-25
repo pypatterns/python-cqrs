@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import asyncio
 
-import cqrs
+from cqrs.message_brokers.amqp import create_transport
 
 from payment import run_payment_flow
 
 
 async def main() -> None:
-    transport = cqrs.create_transport("amqp://guest:guest@localhost:5672/")
+    transport = create_transport("amqp://guest:guest@localhost:5672/")
     await run_payment_flow(transport)
     print("amqp flow ok")
 

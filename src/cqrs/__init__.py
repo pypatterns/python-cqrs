@@ -68,8 +68,8 @@ Brokers are not constructed from this package root. Kafka is
 
 Transport on ``cqrs``: ``Transport``, ``MessageSubscriber``,
 ``IncomingMessage``, ``SubscribeOptions``, ``Subscription``,
-``TransportCapabilities``, ``InMemoryTransport``, ``create_transport``,
-``register_transport``, ``TransportError``, ``TransportClosed``, and
+``TransportCapabilities``, ``InMemoryTransport``, ``TransportError``,
+``TransportClosed``, and
 ``UnsupportedCapability``. ``Transport`` is a ``MessageBroker``. Publish with
 ``send_message`` only. Concrete broker transports stay lazy on
 ``cqrs.transport`` and are not attributes of ``cqrs``.
@@ -181,8 +181,6 @@ from cqrs.transport import (
     TransportClosed,
     TransportError,
     UnsupportedCapability,
-    create_transport,
-    register_transport,
 )
 from cqrs.deserializers import DeserializeProtobufError, ProtobufDeserializer
 from cqrs.serializers import (
@@ -268,8 +266,6 @@ __all__ = (
     "Subscription",
     "TransportCapabilities",
     "InMemoryTransport",
-    "create_transport",
-    "register_transport",
     "TransportError",
     "TransportClosed",
     "UnsupportedCapability",

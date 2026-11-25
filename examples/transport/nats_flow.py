@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import asyncio
 
-import cqrs
+from cqrs.message_brokers.nats import create_transport
 
 from payment import run_payment_flow
 
 
 async def main() -> None:
-    transport = cqrs.create_transport("nats://localhost:4222")
+    transport = create_transport("nats://localhost:4222")
     await run_payment_flow(transport)
     print("nats flow ok")
 

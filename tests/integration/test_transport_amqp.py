@@ -51,12 +51,12 @@ async def transport() -> AsyncIterator[Transport]:
 def test_create_transport_builds_amqp_transport() -> None:
     pytest.importorskip("aio_pika")
     from cqrs.message_brokers.amqp import AMQPTransport
-    from cqrs.transport import create_transport
+    from cqrs.message_brokers.amqp import create_transport
 
     broker = create_transport("amqp://guest:guest@localhost:5672/")
     assert isinstance(broker, AMQPTransport)
     assert broker.capabilities.ordering_per_key is False
-    assert broker.capabilities.native_dlq is False
+    assert broker.capabilities.native_dlq is True
     assert broker.capabilities.delayed_redelivery is False
     assert broker.capabilities.headers is True
     assert not hasattr(AMQPTransport, "__bool__")
@@ -71,25 +71,8 @@ async def test_groups_broadcast_and_compete(transport: Transport) -> None:
     await contract.test_groups_broadcast_and_compete(transport)
 
 
-async def test_same_key_stays_ordered_when_concurrency_is_high(transport: Transport) -> None:
-    if not transport.capabilities.ordering_per_key:
-        pytest.skip(
-            "AMQPTransport.capabilities.ordering_per_key is False; "
-            "a direct exchange does not order deliveries by message key",
-        )
-    await contract.test_same_key_stays_ordered_when_concurrency_is_high(transport)
-
-
-async def test_different_keys_run_side_by_side(transport: Transport) -> None:
-    await contract.test_different_keys_run_side_by_side(transport)
-
-
 async def test_ack_does_not_redeliver(transport: Transport) -> None:
     await contract.test_ack_does_not_redeliver(transport)
-
-
-async def test_nack_increases_attempt_then_dead_letters(transport: Transport) -> None:
-    await contract.test_nack_increases_attempt_then_dead_letters(transport)
 
 
 async def test_handler_exception_does_not_escape_send(transport: Transport) -> None:

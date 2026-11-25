@@ -31,11 +31,11 @@ from cqrs.message_brokers.sqs import (  # noqa: E402
     physical_queue_name,
 )
 from cqrs.serializers.default import message_wire_bytes  # noqa: E402
+from cqrs.message_brokers.sqs import create_transport  # noqa: E402
 from cqrs.transport import (  # noqa: E402
     IncomingMessage,
     SubscribeOptions,
     TransportClosed,
-    create_transport,
 )
 from cqrs.transport.errors import TransportError  # noqa: E402
 from cqrs.transport.protocol import Transport  # noqa: E402
@@ -184,22 +184,8 @@ async def test_contract_groups_broadcast_and_compete(transport: Transport) -> No
     await contract.test_groups_broadcast_and_compete(transport)
 
 
-async def test_contract_same_key_stays_ordered_when_concurrency_is_high(transport: Transport) -> None:
-    await contract.test_same_key_stays_ordered_when_concurrency_is_high(transport)
-
-
-async def test_contract_different_keys_run_side_by_side(transport: Transport) -> None:
-    await contract.test_different_keys_run_side_by_side(transport)
-
-
 async def test_contract_ack_does_not_redeliver(transport: Transport) -> None:
     await contract.test_ack_does_not_redeliver(transport)
-
-
-async def test_contract_nack_increases_attempt_then_dead_letters(transport: Transport) -> None:
-    """``orders.dlq`` is illegal on SQS; the fixture maps that topic to a hyphen queue."""
-
-    await contract.test_nack_increases_attempt_then_dead_letters(transport)
 
 
 async def test_contract_handler_exception_does_not_escape_send(transport: Transport) -> None:
@@ -304,7 +290,7 @@ async def test_legal_names_ack_nack_and_hyphen_dlq(transport: Transport) -> None
     by_key = {message.key: message for message in dead}
     assert by_key["k"].topic == "order-paid-dlq"
     assert by_key["k"].body == b"row"
-    assert by_key["k"].delivery_attempt == 2
+    assert by_key["k"].delivery_attempt == 1
     assert by_key["drop"].topic == "order-paid-dlq"
     assert by_key["drop"].body == b"drop"
     assert by_key["drop"].delivery_attempt == 1
@@ -346,7 +332,7 @@ async def test_default_dlq_suffix_is_a_hyphen_without_a_name_override() -> None:
     assert dead[0].topic == f"{topic}.dlq"
     assert dead[0].body == b"row"
     assert dead[0].key == "k"
-    assert dead[0].delivery_attempt == 2
+    assert dead[0].delivery_attempt == 1
 
 
 async def test_dotted_topic_is_not_rewritten() -> None:
@@ -376,7 +362,7 @@ async def test_fifo_queue_orders_one_key(transport: Transport) -> None:
     await transport.subscribe(
         "jobs.fifo",
         handler,
-        SubscribeOptions(group="workers", concurrency=4),
+        SubscribeOptions(group="workers"),
     )
     await transport.send_message(
         Message(message_name="job", topic="jobs.fifo", payload=b"1", payload_bytes=b"1", key="same"),

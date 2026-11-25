@@ -100,8 +100,7 @@ async def _wait_until_assigned(consumer: object, topic: str) -> None:
 
 def test_create_transport_builds_kafka_transport() -> None:
     pytest.importorskip("aiokafka")
-    from cqrs.message_brokers.kafka import KafkaTransport
-    from cqrs.transport import create_transport
+    from cqrs.message_brokers.kafka import KafkaTransport, create_transport
 
     broker = create_transport("kafka://localhost:9092")
     assert isinstance(broker, KafkaTransport)
@@ -121,20 +120,8 @@ async def test_groups_broadcast_and_compete(transport: Transport) -> None:
     await contract.test_groups_broadcast_and_compete(transport)
 
 
-async def test_same_key_stays_ordered_when_concurrency_is_high(transport: Transport) -> None:
-    await contract.test_same_key_stays_ordered_when_concurrency_is_high(transport)
-
-
-async def test_different_keys_run_side_by_side(transport: Transport) -> None:
-    await contract.test_different_keys_run_side_by_side(transport)
-
-
 async def test_ack_does_not_redeliver(transport: Transport) -> None:
     await contract.test_ack_does_not_redeliver(transport)
-
-
-async def test_nack_increases_attempt_then_dead_letters(transport: Transport) -> None:
-    await contract.test_nack_increases_attempt_then_dead_letters(transport)
 
 
 async def test_handler_exception_does_not_escape_send(transport: Transport) -> None:

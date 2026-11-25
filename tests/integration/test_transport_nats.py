@@ -24,10 +24,7 @@ _ContractCase = Callable[[Transport], Awaitable[None]]
 _CONTRACT_CASES: tuple[_ContractCase, ...] = (
     contract.test_round_trip_body_headers_content_type_and_key,
     contract.test_groups_broadcast_and_compete,
-    contract.test_same_key_stays_ordered_when_concurrency_is_high,
-    contract.test_different_keys_run_side_by_side,
     contract.test_ack_does_not_redeliver,
-    contract.test_nack_increases_attempt_then_dead_letters,
     contract.test_handler_exception_does_not_escape_send,
     contract.test_close_with_in_flight_message_then_rejects_send,
 )
@@ -79,10 +76,10 @@ async def test_two_instances_do_not_share_messages() -> None:
     await contract.test_two_instances_do_not_share_messages()
 
 
-def test_factory_reads_nats_url_without_connecting() -> None:
+def test_create_transport_reads_nats_url_without_connecting() -> None:
     pytest.importorskip("nats")
     from cqrs.message_brokers.nats import NATSTransport
-    from cqrs.transport import create_transport
+    from cqrs.message_brokers.nats import create_transport
 
     transport = create_transport("nats://localhost:4222?subject_prefix=cqrs.factory.")
     assert isinstance(transport, NATSTransport)

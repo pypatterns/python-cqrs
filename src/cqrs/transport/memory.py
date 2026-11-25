@@ -4,98 +4,41 @@ In-memory transport for tests and a single local process.
 [AI Instruction]
 Construct ``InMemoryTransport`` per test. It does not share messages with
 another instance. ``queued`` (the default) returns from ``send_message``
-after the enqueue. ``inline`` returns after this message and anything the
-handlers published before they finished have been acked, dead-lettered, or
-dropped by ``close``. Call ``drain`` to wait. Call ``close`` to stop.
-Handlers must ``ack`` or ``nack``. An exception is a ``nack(requeue=True)``
-and does not escape ``send_message``.
+after the enqueue. ``inline`` returns after the handlers for this message
+have finished. Call ``drain`` to wait for handler tasks. Call ``close`` to
+stop.
 
-The topic log is unbounded. The instance lives for one test or one local
-process and keeps every published message until ``close``.
+This is a queue and one task per subscription. It does not order by key,
+count deliveries, or run a worker pool. ``nack(requeue=True)`` puts the
+bytes back on that group's queue. ``nack(requeue=False)`` publishes them
+once to the dead-letter topic. ``delivery_attempt`` is always 1.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import logging
-from collections import deque
-from collections.abc import Awaitable, Callable
+import urllib.parse
+import uuid
 from typing import ClassVar, Literal
 
 from cqrs.message_brokers.protocol import Message
 from cqrs.serializers.default import message_wire_bytes
-from cqrs.transport.errors import TransportClosed, UnsupportedCapability
+from cqrs.transport.errors import TransportClosed, TransportError, UnsupportedCapability
 from cqrs.transport.protocol import (
+    HandlerWatch,
     IncomingHandler,
     IncomingMessage,
     SubscribeOptions,
     Subscription,
     Transport,
     TransportCapabilities,
+    require_options,
 )
 
 logger = logging.getLogger("cqrs")
 
 Delivery = Literal["queued", "inline"]
-_Attempt = Callable[[], Awaitable[None]]
-
-_handling: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "cqrs_transport_handling",
-    default=False,
-)
-_batch_var: contextvars.ContextVar[_Batch | None] = contextvars.ContextVar(
-    "cqrs_transport_batch",
-    default=None,
-)
-
-
-class _Batch:
-    """Unfinished deliveries for one inline ``send_message`` and its children.
-
-    Each ``send_message`` has its own counter. A nested send links its batch
-    to the caller's batch, so the caller also waits for that work, but a
-    sibling delivery cannot satisfy the nested wait. The nested send does
-    not wait for the handler that called it: that handler is still running.
-    """
-
-    def __init__(self, parent: _Batch | None = None) -> None:
-        self.parent = parent
-        self.remaining = 0
-        self.progress = asyncio.Event()
-        self.progress.set()
-
-    def add(self) -> None:
-        self.remaining += 1
-        self.progress.clear()
-        if self.parent is not None:
-            self.parent.add()
-
-    def finish_one(self) -> None:
-        if self.remaining <= 0:
-            self.remaining = 0
-            self.progress.set()
-            return
-        self.remaining -= 1
-        self.progress.set()
-        if self.parent is not None:
-            self.parent.finish_one()
-
-    def force(self) -> None:
-        released = self.remaining
-        self.remaining = 0
-        self.progress.set()
-        if self.parent is None:
-            return
-        for _ in range(released):
-            self.parent.finish_one()
-
-    async def wait_until(self, target: int) -> None:
-        while self.remaining > target:
-            self.progress.clear()
-            if self.remaining <= target:
-                return
-            await self.progress.wait()
 
 
 class _Record:
@@ -105,50 +48,28 @@ class _Record:
         headers: dict[str, str],
         content_type: str | None,
         key: str | None,
+        token: str,
     ) -> None:
         self.body = body
         self.headers = headers
         self.content_type = content_type
         self.key = key
+        self.token = token
 
-
-class _Item:
-    def __init__(
-        self,
-        *,
-        body: bytes,
-        headers: dict[str, str],
-        content_type: str | None,
-        key: str | None,
-        delivery_attempt: int,
-        batch: _Batch | None,
-    ) -> None:
-        self.body = body
-        self.headers = headers
-        self.content_type = content_type
-        self.key = key
-        self.delivery_attempt = delivery_attempt
-        self.batch = batch
-        self.sub: _Subscription | None = None
-        self.completed = False
-        self.finished = asyncio.Event()
-
-
-class _Lane:
-    def __init__(self) -> None:
-        self.waiting: deque[_Item] = deque()
-        self.task: asyncio.Task[None] | None = None
+    def copy(self) -> _Record:
+        return _Record(self.body, dict(self.headers), self.content_type, self.key, self.token)
 
 
 class _Group:
     def __init__(self, topic: str, name: str) -> None:
         self.topic = topic
         self.name = name
-        self.queue: asyncio.Queue[_Item] = asyncio.Queue()
-        self.subscriptions: list[_Subscription] = []
-        self.lanes: dict[str, _Lane] = {}
-        self.in_flight = 0
-        self.cursor = 0
+        self.queue: asyncio.Queue[_Record] = asyncio.Queue()
+        self.subscribers: list[_Subscription] = []
+        self.start_from: str | None = None
+
+    def active(self) -> list[_Subscription]:
+        return [subscriber for subscriber in self.subscribers if subscriber.active]
 
 
 class _Subscription(Subscription):
@@ -164,49 +85,27 @@ class _Subscription(Subscription):
         self.handler = handler
         self.options = options
         self.active = True
-        self.workers: list[asyncio.Task[None]] = []
-        self.inflight: set[asyncio.Task[None]] = set()
-        self.slots = asyncio.Semaphore(options.concurrency * options.prefetch)
+        self.inflight = 0
+        self.task: asyncio.Task[None] | None = None
 
     async def close(self) -> None:
-        if not self.active:
-            return
-        self.active = False
-        workers = list(self.workers)
-        for task in workers:
-            task.cancel()
-        await asyncio.gather(*workers, return_exceptions=True)
-        pending = [task for task in self.inflight if not task.done()]
-        if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
-        # A replacement can join while the handlers above are still running.
-        # The check from before that wait would drop the work it just admitted.
-        if any(subscription.active for subscription in self.group.subscriptions):
-            return
-        while not self.group.queue.empty():
-            self._transport._finish_item(self.group.queue.get_nowait())
-        for lane in self.group.lanes.values():
-            while lane.waiting:
-                self._transport._finish_item(lane.waiting.popleft())
-        self.group.lanes.clear()
+        await self._transport._close_subscription(self)
 
 
-class _MemoryIncoming(IncomingMessage):
+class _Incoming(IncomingMessage):
     def __init__(
         self,
         transport: InMemoryTransport,
         group: _Group,
-        sub: _Subscription,
-        item: _Item,
-        attempt: _Attempt,
+        subscription: _Subscription,
+        record: _Record,
     ) -> None:
         self._transport = transport
         self._group = group
-        self._sub = sub
-        self._item = item
-        self._attempt = attempt
-        self._headers = dict(item.headers)
-        self.settled = False
+        self._subscription = subscription
+        self._record = record
+        self._settled = False
+        self._headers = dict(record.headers)
 
     @property
     def topic(self) -> str:
@@ -214,7 +113,7 @@ class _MemoryIncoming(IncomingMessage):
 
     @property
     def body(self) -> bytes:
-        return self._item.body
+        return self._record.body
 
     @property
     def headers(self) -> dict[str, str]:
@@ -222,45 +121,51 @@ class _MemoryIncoming(IncomingMessage):
 
     @property
     def content_type(self) -> str | None:
-        return self._item.content_type
+        return self._record.content_type
 
     @property
     def key(self) -> str | None:
-        return self._item.key
+        return self._record.key
 
     @property
     def delivery_attempt(self) -> int:
-        return self._item.delivery_attempt
+        return 1
 
     async def ack(self) -> None:
-        if self.settled:
+        if self._settled:
             return
-        self.settled = True
-        self._transport._finish_item(self._item)
+        self._settled = True
+        self._transport._watch.settle(self._record.token)
 
     async def nack(self, *, requeue: bool = True) -> None:
-        if self.settled:
+        if self._settled:
             return
-        self.settled = True
-        await self._transport._reject(self._sub, self._item, self._attempt, requeue=requeue)
+        self._settled = True
+        if requeue:
+            if self._transport.delivery == "inline":
+                active = self._group.active()
+                if active:
+                    await self._transport._deliver(active[0], self._group, self._record.copy())
+                    return
+            self._transport._requeue(self._group, self._record.copy())
+            return
+        await self._transport._dead_letter(self._record, self._subscription)
+        self._transport._watch.settle(self._record.token)
 
 
 class InMemoryTransport(Transport):
     """
-    Process-local transport.
+    Process-local queue.
 
-    State belongs to the instance: two transports do not see each other's
-    messages. ``key is None`` is not ordered beyond the group queue. A key
-    that is set runs one delivery at a time for that ``(topic, group, key)``
-    until ack, a dead-letter nack, or the attempt limit. Do not wait, inside
-    a handler, for a later message that uses the same key: that message waits
-    for this delivery to finish.
-
-    There is no ``__bool__`` and no ``__len__``.
+    Two instances do not see each other's messages. One task per
+    subscription reads that group's queue. A second subscription with the
+    same topic and group is another task on the same queue, so they compete.
+    A different group gets its own copy. ``key`` is delivered as given and
+    does not select a lane. There is no ``__bool__`` and no ``__len__``.
     """
 
     capabilities: ClassVar[TransportCapabilities] = TransportCapabilities(
-        ordering_per_key=True,
+        ordering_per_key=False,
         native_dlq=False,
         delayed_redelivery=True,
         headers=True,
@@ -284,14 +189,30 @@ class InMemoryTransport(Transport):
         self._closed = False
         self._groups: dict[tuple[str, str], _Group] = {}
         self._log: dict[str, list[_Record]] = {}
+        self._watch = HandlerWatch()
         self._tasks: set[asyncio.Task[None]] = set()
-        self._batches: set[_Batch] = set()
-        self._delayed = 0
-        self._idle = asyncio.Event()
-        self._idle.set()
 
     async def send_message(self, message: Message) -> None:
-        await self._emit(message, delivery_attempt=1)
+        self._check_open("send_message")
+        record = _record(message)
+        self._log.setdefault(message.topic, []).append(record.copy())
+        groups = self._groups_for(message.topic)
+        if not groups:
+            return
+        if self.delivery == "inline":
+            awaits: list[asyncio.Task[None]] = []
+            for group in groups:
+                active = group.active()
+                if not active:
+                    continue
+                self._watch.expect(record.token)
+                awaits.append(asyncio.create_task(self._deliver(active[0], group, record.copy())))
+            if awaits:
+                await asyncio.gather(*awaits)
+            return
+        for group in groups:
+            self._watch.expect(record.token)
+            group.queue.put_nowait(record.copy())
 
     async def subscribe(
         self,
@@ -299,230 +220,90 @@ class InMemoryTransport(Transport):
         handler: IncomingHandler,
         options: SubscribeOptions,
     ) -> Subscription:
-        if self._closed:
-            raise TransportClosed("subscribe")
-        self._check_options(options)
-        group, created = self._ensure_group(topic, options.group)
+        self._check_open("subscribe")
+        require_options(options)
+        key = (topic, options.group)
+        group = self._groups.get(key)
+        created = group is None
+        if group is None:
+            group = _Group(topic, options.group)
+            group.start_from = options.start_from
+            self._groups[key] = group
+        elif group.start_from != options.start_from:
+            raise UnsupportedCapability(
+                f"group {options.group!r} on {topic!r} already consumes from {group.start_from}",
+            )
         subscription = _Subscription(self, group, handler, options)
-        group.subscriptions.append(subscription)
+        group.subscribers.append(subscription)
+        if self.delivery == "queued":
+            subscription.task = self._track(asyncio.create_task(self._read(subscription)))
         if created and options.start_from == "earliest":
-            for record in self._log.get(topic, []):
-                group.queue.put_nowait(
-                    _Item(
-                        body=record.body,
-                        headers=dict(record.headers),
-                        content_type=record.content_type,
-                        key=record.key,
-                        delivery_attempt=1,
-                        batch=None,
-                    ),
-                )
-            if self._log.get(topic):
-                self._note_work()
-        for _ in range(options.concurrency):
-            worker = asyncio.create_task(self._worker(subscription, group))
-            subscription.workers.append(worker)
-            self._track(worker)
+            await self._replay(subscription, group)
         return subscription
 
     async def drain(self, timeout: float = 5) -> None:
-        """
-        Wait until queues, handlers, key lanes, and delayed redelivery are idle.
+        """Wait until queued records have been acked or dead-lettered."""
 
-        Raises ``TimeoutError`` with the topic, group, queue length, and
-        in-flight count.
-        """
-
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + timeout
-        while not self._is_idle():
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                raise TimeoutError(self._drain_message())
-            self._idle.clear()
-            if self._is_idle():
-                return
-            try:
-                await asyncio.wait_for(self._idle.wait(), remaining)
-            except asyncio.TimeoutError:
-                if self._is_idle():
-                    return
-                raise TimeoutError(self._drain_message()) from None
+        await self._watch.wait(timeout, self._describe)
 
     async def close(self) -> None:
         if self._closed:
             return
         self._closed = True
         for group in self._groups.values():
-            for subscription in group.subscriptions:
+            for subscription in group.subscribers:
                 subscription.active = False
         tasks = [task for task in self._tasks if not task.done()]
         for task in tasks:
             task.cancel()
-        for group in self._groups.values():
-            while not group.queue.empty():
-                self._finish_item(group.queue.get_nowait())
-            for lane in group.lanes.values():
-                while lane.waiting:
-                    self._finish_item(lane.waiting.popleft())
-            group.lanes.clear()
-        for batch in list(self._batches):
-            batch.force()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        self._tasks.clear()
-        self._delayed = 0
-        self._note_progress()
+        self._watch.abandon_all()
+        self._watch.inflight = 0
+        self._watch.poke()
 
-    async def _emit(self, message: Message, *, delivery_attempt: int) -> None:
-        if self._closed:
-            raise TransportClosed("send_message")
-        batch: _Batch | None = None
-        token: contextvars.Token[_Batch | None] | None = None
-        if self.delivery == "inline":
-            batch = _Batch(parent=_batch_var.get())
-            token = _batch_var.set(batch)
-            self._batches.add(batch)
-        try:
-            self._fanout(message, delivery_attempt, batch)
-            if batch is not None and batch.remaining > 0:
-                await batch.wait_until(0)
-        finally:
-            if batch is not None:
-                self._batches.discard(batch)
-            if token is not None:
-                _batch_var.reset(token)
-
-    def _fanout(
-        self,
-        message: Message,
-        delivery_attempt: int,
-        batch: _Batch | None,
-    ) -> None:
-        headers = dict(message.headers) if message.headers else {}
-        record = _Record(
-            body=message_wire_bytes(message),
-            headers=headers,
-            content_type=message.content_type,
-            key=message.key,
-        )
-        self._log.setdefault(message.topic, []).append(record)
-        inside_handler = _handling.get()
-        for group in self._groups.values():
-            if group.topic != message.topic or not _active(group):
-                continue
-            item = _Item(
-                body=record.body,
-                headers=dict(record.headers),
-                content_type=record.content_type,
-                key=record.key,
-                delivery_attempt=delivery_attempt,
-                batch=batch,
-            )
-            if batch is not None:
-                batch.add()
-            if self.delivery == "inline" and inside_handler:
-                self._dispatch_now(group, item)
-            else:
-                group.queue.put_nowait(item)
-            self._note_work()
-
-    def _dispatch_now(self, group: _Group, item: _Item) -> None:
-        subscription = self._pick(group)
-        if subscription is None:
-            self._finish_item(item)
+    async def _close_subscription(self, subscription: _Subscription) -> None:
+        if not subscription.active:
             return
-        item.sub = subscription
-        if item.key is None:
-            task = asyncio.create_task(self._deliver(group, subscription, item))
-            self._watch(subscription, task)
+        subscription.active = False
+        task = subscription.task
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        group = subscription.group
+        if group.active():
             return
-        self._enqueue_key(group, subscription, item)
+        while not group.queue.empty():
+            self._watch.abandon(group.queue.get_nowait().token)
 
-    async def _worker(self, subscription: _Subscription, group: _Group) -> None:
-        outstanding: set[asyncio.Task[None]] = set()
+    async def _read(self, subscription: _Subscription) -> None:
+        group = subscription.group
         try:
             while subscription.active and not self._closed:
-                while len(outstanding) >= subscription.options.prefetch:
-                    _, pending = await asyncio.wait(
-                        outstanding,
-                        return_when=asyncio.FIRST_COMPLETED,
-                    )
-                    outstanding = set(pending)
-                item = await group.queue.get()
-                if self._closed or not subscription.active:
-                    self._finish_item(item)
-                    continue
-                task = asyncio.create_task(self._consume(group, subscription, item))
-                self._watch(subscription, task)
-                outstanding.add(task)
-                task.add_done_callback(outstanding.discard)
+                record = await group.queue.get()
+                if not subscription.active or self._closed:
+                    if group.active():
+                        group.queue.put_nowait(record)
+                    else:
+                        self._watch.abandon(record.token)
+                    return
+                try:
+                    await self._deliver(subscription, group, record)
+                except asyncio.CancelledError:
+                    raise
         except asyncio.CancelledError:
             return
 
-    async def _consume(self, group: _Group, subscription: _Subscription, item: _Item) -> None:
-        item.sub = subscription
-        if item.key is None:
-            await self._deliver(group, subscription, item)
-            return
-        self._enqueue_key(group, subscription, item)
-
-    def _enqueue_key(self, group: _Group, subscription: _Subscription, item: _Item) -> None:
-        assert item.key is not None
-        item.sub = subscription
-        lane = group.lanes.setdefault(item.key, _Lane())
-        lane.waiting.append(item)
-        self._ensure_lane(group, lane, item.key)
-
-    def _ensure_lane(self, group: _Group, lane: _Lane, key: str) -> None:
-        if lane.task is not None and not lane.task.done():
-            return
-        lane.task = asyncio.create_task(self._run_lane(group, lane, key))
-        self._track(lane.task)
-        subscription = lane.waiting[0].sub if lane.waiting else None
-        if subscription is not None:
-            self._watch(subscription, lane.task)
-
-    async def _run_lane(self, group: _Group, lane: _Lane, key: str) -> None:
+    async def _deliver(self, subscription: _Subscription, group: _Group, record: _Record) -> None:
+        incoming = _Incoming(self, group, subscription, record)
+        subscription.inflight += 1
+        self._watch.begin()
         try:
-            while lane.waiting and not self._closed:
-                item = lane.waiting[0]
-                subscription = item.sub
-                if subscription is None:
-                    lane.waiting.popleft()
-                    self._finish_item(item)
-                    continue
-                await self._deliver(group, subscription, item)
-                if lane.waiting and lane.waiting[0] is item:
-                    lane.waiting.popleft()
-                self._note_progress()
-        except asyncio.CancelledError:
-            while lane.waiting:
-                self._finish_item(lane.waiting.popleft())
-            raise
-        finally:
-            lane.task = None
-            if lane.waiting and not self._closed:
-                self._ensure_lane(group, lane, key)
-            elif not lane.waiting:
-                group.lanes.pop(key, None)
-            self._note_progress()
-
-    async def _deliver(self, group: _Group, subscription: _Subscription, item: _Item) -> None:
-        if item.completed:
-            return
-
-        async def attempt() -> None:
-            if self._closed or item.completed:
-                self._finish_item(item)
-                return
-            incoming = _MemoryIncoming(self, group, subscription, item, attempt)
             try:
-                await self._invoke(subscription, incoming)
+                await subscription.handler(incoming)
             except asyncio.CancelledError:
-                if not incoming.settled:
-                    incoming.settled = True
-                    self._finish_item(item)
+                if not incoming._settled:
+                    self._hand_off(subscription, group, record)
                 raise
             except Exception:
                 logger.exception(
@@ -530,193 +311,133 @@ class InMemoryTransport(Transport):
                     subscription.options.group,
                     group.topic,
                 )
-                if not incoming.settled:
-                    await incoming.nack(requeue=True)
-
-        try:
-            await attempt()
-        except asyncio.CancelledError:
-            self._finish_item(item)
-            raise
-        except Exception:
-            logger.exception(
-                "delivery failed for topic %s",
-                group.topic,
-            )
-            self._finish_item(item)
-        await item.finished.wait()
-
-    async def _invoke(self, subscription: _Subscription, incoming: _MemoryIncoming) -> None:
-        nested = _handling.get()
-        acquired = False
-        if not nested:
-            await subscription.slots.acquire()
-            acquired = True
-        handling_token = _handling.set(True)
-        batch_token: contextvars.Token[_Batch | None] | None = None
-        if incoming._item.batch is not None:
-            batch_token = _batch_var.set(incoming._item.batch)
-        incoming._group.in_flight += 1
-        try:
-            await subscription.handler(incoming)
+                if not incoming._settled:
+                    await incoming.nack(requeue=False)
         finally:
-            incoming._group.in_flight = max(0, incoming._group.in_flight - 1)
-            if batch_token is not None:
-                _batch_var.reset(batch_token)
-            _handling.reset(handling_token)
-            if acquired:
-                subscription.slots.release()
-            self._note_progress()
+            subscription.inflight -= 1
+            self._watch.end()
 
-    async def _reject(
-        self,
-        subscription: _Subscription,
-        item: _Item,
-        attempt: _Attempt,
-        *,
-        requeue: bool,
-    ) -> None:
-        if item.completed or self._closed:
-            self._finish_item(item)
+    async def _replay(self, subscription: _Subscription, group: _Group) -> None:
+        past = list(self._log.get(group.topic, ()))
+        if not past:
             return
-        if (not requeue) or item.delivery_attempt >= subscription.options.max_deliveries:
-            try:
-                await self._publish_dlq(subscription, item)
-            except TransportClosed:
-                pass
-            self._finish_item(item)
+        if self.delivery == "inline":
+            for record in past:
+                self._watch.expect(record.token)
+                await self._deliver(subscription, group, record.copy())
             return
-        item.delivery_attempt += 1
-        self._schedule_redelivery(attempt, item)
+        for record in past:
+            self._watch.expect(record.token)
+            group.queue.put_nowait(record.copy())
 
-    async def _publish_dlq(self, subscription: _Subscription, item: _Item) -> None:
-        """Republish onto the dead-letter topic without waiting for its handlers.
+    def _requeue(self, group: _Group, record: _Record) -> None:
+        if self.redelivery_delay <= 0 and not self._closed and group.active():
+            group.queue.put_nowait(record)
+            return
+        self._track(asyncio.create_task(self._requeue_later(group, record)))
 
-        Waiting here would hold the worker that must stay free to finish this
-        delivery. The original inline batch, when there is one, already counts
-        the dead-letter copy and waits for it.
-        """
+    async def _requeue_later(self, group: _Group, record: _Record) -> None:
+        try:
+            if self.redelivery_delay > 0:
+                await asyncio.sleep(self.redelivery_delay)
+            if self._closed or not group.active():
+                self._watch.abandon(record.token)
+                return
+            group.queue.put_nowait(record)
+        except asyncio.CancelledError:
+            self._watch.abandon(record.token)
+            raise
 
-        if self._closed:
-            raise TransportClosed("send_message")
+    async def _dead_letter(self, record: _Record, subscription: _Subscription) -> None:
         topic = subscription.options.dead_letter_topic or f"{subscription.group.topic}.dlq"
-        self._fanout(
+        await self.send_message(
             Message(
                 message_name="dead_letter",
                 topic=topic,
-                payload=item.body,
-                payload_bytes=item.body,
-                content_type=item.content_type,
-                headers=dict(item.headers) or None,
-                key=item.key,
+                payload=record.body,
+                payload_bytes=record.body,
+                headers=dict(record.headers) or None,
+                content_type=record.content_type,
+                key=record.key,
             ),
-            item.delivery_attempt,
-            item.batch,
         )
 
-    def _schedule_redelivery(self, attempt: _Attempt, item: _Item) -> None:
-        # Count the delay before yielding so ``drain`` cannot observe a gap
-        # where the message is neither queued, in a handler, nor delayed.
-        self._delayed += 1
-        self._note_work()
+    def _hand_off(self, subscription: _Subscription, group: _Group, record: _Record) -> None:
+        others = [item for item in group.active() if item is not subscription]
+        if not others:
+            self._watch.abandon(record.token)
+            return
+        if self.delivery == "inline":
+            self._track(asyncio.create_task(self._deliver(others[0], group, record)))
+            return
+        self._requeue(group, record)
 
-        async def wait_and_retry() -> None:
-            try:
-                await asyncio.sleep(self.redelivery_delay)
-                if self._closed or item.completed:
-                    self._finish_item(item)
-                    return
-                await attempt()
-            except asyncio.CancelledError:
-                self._finish_item(item)
-                raise
-            finally:
-                self._delayed = max(0, self._delayed - 1)
-                self._note_progress()
+    def _groups_for(self, topic: str) -> list[_Group]:
+        return [group for group in self._groups.values() if group.topic == topic and group.active()]
 
-        self._track(asyncio.create_task(wait_and_retry()))
+    def _check_open(self, operation: str) -> None:
+        if self._closed:
+            raise TransportClosed(operation)
 
-    def _finish_item(self, item: _Item) -> None:
-        if not item.completed:
-            item.completed = True
-            if item.batch is not None:
-                item.batch.finish_one()
-        item.finished.set()
-        self._note_progress()
-
-    def _ensure_group(self, topic: str, name: str) -> tuple[_Group, bool]:
-        key = (topic, name)
-        created = key not in self._groups
-        if created:
-            self._groups[key] = _Group(topic, name)
-        return self._groups[key], created
-
-    def _pick(self, group: _Group) -> _Subscription | None:
-        active = [subscription for subscription in group.subscriptions if subscription.active]
-        if not active:
-            return None
-        subscription = active[group.cursor % len(active)]
-        group.cursor += 1
-        return subscription
-
-    def _check_options(self, options: SubscribeOptions) -> None:
-        if options.start_from not in ("latest", "earliest"):
-            raise UnsupportedCapability(
-                f"start_from={options.start_from!r} is not supported",
-            )
-        if options.concurrency < 1 or options.prefetch < 1 or options.max_deliveries < 1:
-            raise UnsupportedCapability(
-                "concurrency, prefetch, and max_deliveries must be >= 1",
-            )
-        if not self.capabilities.delayed_redelivery and self.redelivery_delay > 0:
-            raise UnsupportedCapability("delayed redelivery is not supported")
-
-    def _watch(self, subscription: _Subscription, task: asyncio.Task[None]) -> None:
-        self._track(task)
-        subscription.inflight.add(task)
-        task.add_done_callback(subscription.inflight.discard)
-
-    def _track(self, task: asyncio.Task[None]) -> None:
-        self._tasks.add(task)
-        task.add_done_callback(self._tasks.discard)
-
-    def _is_idle(self) -> bool:
-        if self._delayed:
-            return False
-        for group in self._groups.values():
-            if group.in_flight or not group.queue.empty():
-                return False
-            for lane in group.lanes.values():
-                if lane.waiting:
-                    return False
-        return True
-
-    def _note_work(self) -> None:
-        self._idle.clear()
-
-    def _note_progress(self) -> None:
-        if self._is_idle():
-            self._idle.set()
-
-    def _drain_message(self) -> str:
+    def _describe(self) -> str:
         parts: list[str] = []
         for group in self._groups.values():
-            parked = sum(len(lane.waiting) for lane in group.lanes.values())
-            in_flight = group.in_flight + parked
-            if group.queue.qsize() or in_flight or self._delayed:
+            inflight = sum(subscriber.inflight for subscriber in group.subscribers if subscriber.active)
+            queued = group.queue.qsize()
+            if queued or inflight:
                 parts.append(
-                    f"topic={group.topic} group={group.name} "
-                    f"queue_length={group.queue.qsize()} in_flight={in_flight}",
+                    f"topic={group.topic} group={group.name} queue_length={queued} in_flight={inflight}",
                 )
         if not parts:
-            parts.append(f"topic=* group=* queue_length=0 in_flight={self._delayed}")
-        if self._delayed:
-            parts.append(f"delayed={self._delayed}")
+            parts.append(f"topic=* group=* queue_length=0 in_flight={self._watch.inflight}")
         return "drain timed out: " + "; ".join(parts)
 
+    def _track(self, task: asyncio.Task[None]) -> asyncio.Task[None]:
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return task
 
-def _active(group: _Group) -> bool:
-    return any(subscription.active for subscription in group.subscriptions)
+
+def _record(message: Message) -> _Record:
+    return _Record(
+        message_wire_bytes(message),
+        dict(message.headers) if message.headers else {},
+        message.content_type,
+        message.key,
+        uuid.uuid4().hex,
+    )
 
 
-__all__ = ("InMemoryTransport",)
+def create_transport(url: str) -> InMemoryTransport:
+    """
+    Build an ``InMemoryTransport`` from a ``memory://`` URL.
+
+    ``memory://`` and ``memory://?delivery=inline&redelivery_delay=0`` are
+    supported. A wrong scheme or an invalid query raises ``TransportError`` or
+    ``UnsupportedCapability``.
+    """
+
+    parsed = urllib.parse.urlparse(url)
+    if not parsed.scheme:
+        raise TransportError(f"Transport URL {url!r} has no scheme")
+    if parsed.scheme != "memory":
+        raise TransportError(
+            f"InMemoryTransport URL scheme must be 'memory', got {parsed.scheme!r}",
+        )
+    query = urllib.parse.parse_qs(parsed.query)
+    delivery = query.get("delivery", ["queued"])[0]
+    if delivery not in ("queued", "inline"):
+        raise UnsupportedCapability(
+            f"InMemoryTransport does not support delivery={delivery!r}",
+        )
+    raw_delay = query.get("redelivery_delay", ["0"])[0]
+    try:
+        delay = float(raw_delay)
+    except ValueError as exc:
+        raise TransportError(f"Invalid redelivery_delay {raw_delay!r}") from exc
+    if delivery == "inline":
+        return InMemoryTransport(delivery="inline", redelivery_delay=delay)
+    return InMemoryTransport(delivery="queued", redelivery_delay=delay)
+
+
+__all__ = ("InMemoryTransport", "create_transport")

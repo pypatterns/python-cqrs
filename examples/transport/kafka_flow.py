@@ -17,13 +17,13 @@ from __future__ import annotations
 
 import asyncio
 
-import cqrs
+from cqrs.message_brokers.kafka import create_transport
 
 from payment import run_payment_flow
 
 
 async def main() -> None:
-    transport = cqrs.create_transport("kafka://localhost:9092")
+    transport = create_transport("kafka://localhost:9092")
     await run_payment_flow(transport)
     print("kafka flow ok")
 

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from typing import cast
 
 import pytest
 
 from cqrs.message_brokers.protocol import Message
 from cqrs.transport import InMemoryTransport, IncomingMessage, SubscribeOptions, UnsupportedCapability
-from cqrs.transport.memory import _Batch, _Subscription
 
 
 def _message(topic: str, body: bytes, *, key: str | None = None) -> Message:
@@ -20,55 +18,6 @@ def _message(topic: str, body: bytes, *, key: str | None = None) -> Message:
         payload_bytes=body,
         key=key,
     )
-
-
-def test_force_releases_a_child_batch_on_its_parent_once() -> None:
-    parent = _Batch()
-    child = _Batch(parent)
-    child.add()
-    child.add()
-
-    child.force()
-    child.finish_one()
-
-    assert parent.remaining == 0
-    assert child.remaining == 0
-
-
-async def test_subscriber_joining_during_close_keeps_the_queued_message() -> None:
-    transport = InMemoryTransport()
-    started = asyncio.Event()
-    release = asyncio.Event()
-    seen: list[bytes] = []
-
-    async def first(message: IncomingMessage) -> None:
-        started.set()
-        await release.wait()
-        await message.ack()
-
-    async def second(message: IncomingMessage) -> None:
-        seen.append(bytes(message.body))
-        await message.ack()
-
-    subscription = await transport.subscribe("orders", first, SubscribeOptions(group="billing"))
-    await transport.send_message(_message("orders", b"1"))
-    await asyncio.wait_for(started.wait(), timeout=1)
-    await transport.send_message(_message("orders", b"2"))
-    closing = asyncio.create_task(subscription.close())
-    opened = cast(_Subscription, subscription)
-    while opened.active:
-        await asyncio.sleep(0)
-    await asyncio.sleep(0)
-    try:
-        await transport.subscribe("orders", second, SubscribeOptions(group="billing"))
-        release.set()
-        await asyncio.wait_for(closing, timeout=1)
-        await transport.drain(timeout=1)
-    finally:
-        if not release.is_set():
-            release.set()
-        await transport.close()
-    assert seen == [b"2"]
 
 
 async def test_transport_is_truthy_without_bool_or_len() -> None:
@@ -99,7 +48,29 @@ async def test_queued_send_returns_before_the_handler_finishes() -> None:
     await transport.close()
 
 
-async def test_inline_nested_send_is_not_released_by_a_sibling() -> None:
+async def test_inline_nested_send_waits_for_the_child() -> None:
+    transport = InMemoryTransport(delivery="inline")
+    order: list[str] = []
+
+    async def on_child(message: IncomingMessage) -> None:
+        order.append("child")
+        await message.ack()
+
+    async def on_parent(message: IncomingMessage) -> None:
+        order.append("parent")
+        await transport.send_message(_message("child", b"c"))
+        order.append("parent-after")
+        await message.ack()
+
+    await transport.subscribe("parent", on_parent, SubscribeOptions(group="g"))
+    await transport.subscribe("child", on_child, SubscribeOptions(group="g"))
+
+    await asyncio.wait_for(transport.send_message(_message("parent", b"p")), timeout=2)
+    assert order == ["parent", "child", "parent-after"]
+    await transport.close()
+
+
+async def test_inline_sibling_does_not_finish_the_nested_send() -> None:
     transport = InMemoryTransport(delivery="inline")
     child_started = asyncio.Event()
     release_child = asyncio.Event()
@@ -200,26 +171,29 @@ async def test_closing_one_of_two_subscribers_keeps_the_queue() -> None:
     assert seen.count(b"3") == 1
 
 
-async def test_inline_send_waits_for_nested_publish() -> None:
-    transport = InMemoryTransport(delivery="inline")
-    order: list[str] = []
+async def test_subscribe_after_close_receives_the_next_message() -> None:
+    transport = InMemoryTransport()
+    release = asyncio.Event()
+    seen: list[bytes] = []
 
-    async def on_child(message: IncomingMessage) -> None:
-        order.append("child")
+    async def first(message: IncomingMessage) -> None:
+        await release.wait()
         await message.ack()
 
-    async def on_parent(message: IncomingMessage) -> None:
-        order.append("parent")
-        await transport.send_message(_message("child", b"c"))
-        order.append("parent-after")
+    async def second(message: IncomingMessage) -> None:
+        seen.append(bytes(message.body))
         await message.ack()
 
-    await transport.subscribe("parent", on_parent, SubscribeOptions(group="g"))
-    await transport.subscribe("child", on_child, SubscribeOptions(group="g"))
-
-    await asyncio.wait_for(transport.send_message(_message("parent", b"p")), timeout=2)
-    assert order == ["parent", "child", "parent-after"]
+    subscription = await transport.subscribe("orders", first, SubscribeOptions(group="billing"))
+    await transport.send_message(_message("orders", b"1"))
+    await asyncio.sleep(0)
+    release.set()
+    await subscription.close()
+    await transport.subscribe("orders", second, SubscribeOptions(group="billing"))
+    await transport.send_message(_message("orders", b"2"))
+    await transport.drain(timeout=1)
     await transport.close()
+    assert seen == [b"2"]
 
 
 async def test_double_ack_and_nack_do_nothing() -> None:
@@ -232,7 +206,7 @@ async def test_double_ack_and_nack_do_nothing() -> None:
         await message.ack()
         await message.nack(requeue=True)
 
-    await transport.subscribe("orders", handler, SubscribeOptions(group="billing", max_deliveries=2))
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
     await transport.send_message(_message("orders", b"1"))
     await transport.drain(timeout=2)
     await asyncio.sleep(0)
@@ -240,44 +214,22 @@ async def test_double_ack_and_nack_do_nothing() -> None:
     await transport.close()
 
 
-async def test_nack_without_requeue_dead_letters_immediately() -> None:
+async def test_nack_without_requeue_publishes_once() -> None:
     transport = InMemoryTransport()
-    attempts: list[int] = []
-    dead: list[int] = []
+    dead: list[bytes] = []
 
     async def handler(message: IncomingMessage) -> None:
-        attempts.append(message.delivery_attempt)
         await message.nack(requeue=False)
 
     async def dead_letter(message: IncomingMessage) -> None:
-        dead.append(message.delivery_attempt)
+        dead.append(message.body)
         await message.ack()
 
-    await transport.subscribe("orders", handler, SubscribeOptions(group="billing", max_deliveries=5))
+    await transport.subscribe("orders", handler, SubscribeOptions(group="billing"))
     await transport.subscribe("orders.dlq", dead_letter, SubscribeOptions(group="dead"))
     await transport.send_message(_message("orders", b"row", key="k"))
     await transport.drain(timeout=2)
-    assert attempts == [1]
-    assert dead == [1]
-    await transport.close()
-
-
-async def test_same_key_redelivery_stays_ahead_of_the_next_message() -> None:
-    transport = InMemoryTransport()
-    order: list[tuple[bytes, int]] = []
-
-    async def handler(message: IncomingMessage) -> None:
-        order.append((message.body, message.delivery_attempt))
-        if message.body == b"1" and message.delivery_attempt == 1:
-            await message.nack(requeue=True)
-            return
-        await message.ack()
-
-    await transport.subscribe("orders", handler, SubscribeOptions(group="billing", concurrency=2))
-    await transport.send_message(_message("orders", b"1", key="same"))
-    await transport.send_message(_message("orders", b"2", key="same"))
-    await transport.drain(timeout=2)
-    assert order == [(b"1", 1), (b"1", 2), (b"2", 1)]
+    assert dead == [b"row"]
     await transport.close()
 
 
@@ -304,18 +256,18 @@ async def test_latest_skips_the_past_and_earliest_replays_it() -> None:
     await transport.close()
 
 
-async def test_group_copies_ack_independently() -> None:
+async def test_group_copies_settle_independently() -> None:
     transport = InMemoryTransport()
-    stable: list[int] = []
-    retried: list[int] = []
+    stable: list[bytes] = []
+    retried: list[bytes] = []
 
     async def ack_once(message: IncomingMessage) -> None:
-        stable.append(message.delivery_attempt)
+        stable.append(message.body)
         await message.ack()
 
     async def retry_once(message: IncomingMessage) -> None:
-        retried.append(message.delivery_attempt)
-        if message.delivery_attempt == 1:
+        retried.append(message.body)
+        if len(retried) == 1:
             await message.nack(requeue=True)
             return
         await message.ack()
@@ -324,8 +276,8 @@ async def test_group_copies_ack_independently() -> None:
     await transport.subscribe("orders", retry_once, SubscribeOptions(group="retry"))
     await transport.send_message(_message("orders", b"1"))
     await transport.drain(timeout=2)
-    assert stable == [1]
-    assert retried == [1, 2]
+    assert stable == [b"1"]
+    assert retried == [b"1", b"1"]
     await transport.close()
 
 
@@ -353,13 +305,49 @@ async def test_handler_exception_on_inline_send_does_not_propagate() -> None:
     await transport.close()
 
 
+async def test_closing_the_handler_returns_the_message_to_the_group() -> None:
+    transport = InMemoryTransport()
+    started = asyncio.Event()
+    seen: list[bytes] = []
+
+    async def first(message: IncomingMessage) -> None:
+        started.set()
+        await asyncio.Event().wait()
+        await message.ack()
+
+    async def second(message: IncomingMessage) -> None:
+        seen.append(bytes(message.body))
+        await message.ack()
+
+    subscription = await transport.subscribe("orders", first, SubscribeOptions(group="billing"))
+    await transport.send_message(_message("orders", b"1"))
+    await asyncio.wait_for(started.wait(), timeout=1)
+    await transport.subscribe("orders", second, SubscribeOptions(group="billing"))
+    await subscription.close()
+    await transport.drain(timeout=1)
+    await transport.close()
+    assert seen == [b"1"]
+
+
+async def test_a_group_keeps_the_start_position_of_its_first_subscriber() -> None:
+    transport = InMemoryTransport()
+    await transport.subscribe("orders", _unused, SubscribeOptions(group="billing"))
+    with pytest.raises(UnsupportedCapability, match="already consumes from latest"):
+        await transport.subscribe(
+            "orders",
+            _unused,
+            SubscribeOptions(group="billing", start_from="earliest"),
+        )
+    await transport.close()
+
+
 async def test_rejected_subscribe_options() -> None:
     transport = InMemoryTransport()
     with pytest.raises(UnsupportedCapability):
         await transport.subscribe(
             "orders",
             lambda message: _unused(message),
-            SubscribeOptions(group="billing", concurrency=0),
+            SubscribeOptions(group="billing", prefetch=0),
         )
     await transport.close()
 

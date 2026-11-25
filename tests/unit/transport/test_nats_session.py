@@ -1,8 +1,7 @@
-"""JetStream stream ownership and final dead-letter recovery. No broker."""
+"""JetStream stream ownership and nack. No broker."""
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -12,13 +11,7 @@ pytest.importorskip("nats")
 from nats.js.errors import APIError, NotFoundError  # noqa: E402
 
 from cqrs.adapters.nats import JetStreamSession  # noqa: E402
-from cqrs.message_brokers.nats import (  # noqa: E402
-    NATSTransport,
-    _Group,
-    _NATSIncoming,
-    _Parsed,
-    _Slot,
-)
+from cqrs.message_brokers.nats import NATSTransport, _NATSIncoming  # noqa: E402
 from cqrs.transport.errors import TransportError  # noqa: E402
 from cqrs.transport.protocol import SubscribeOptions  # noqa: E402
 
@@ -100,6 +93,7 @@ class _Wire:
     def __init__(self, *, delivered: int = 1, key: str | None = None) -> None:
         self.data = b"body"
         self.delivery_count = delivered
+        self.stream_seq = 1
         self.headers = {} if key is None else {"cqrs-key": key}
         self.actions: list[str] = []
 
@@ -113,100 +107,46 @@ class _Wire:
         self.actions.append("term")
 
 
-def _incoming(
-    transport: NATSTransport,
-    *,
-    delivered: int,
-    group_limit: int,
-    slot_limit: int,
-) -> tuple[_NATSIncoming, _Wire, _Group]:
-    group = _Group("orders", "billing", "orders", "orders")
-    group.delivery_limit = group_limit
-    options = SubscribeOptions(group="billing", max_deliveries=slot_limit)
-    slot = _Slot(lambda message: asyncio.sleep(0), options)  # type: ignore[arg-type]
+def _incoming(transport: NATSTransport, *, delivered: int, limit: int) -> tuple[_NATSIncoming, _Wire]:
+    options = SubscribeOptions(group="billing", max_deliveries=limit)
+    subscription = SimpleNamespace(topic="orders", options=options, delivery_limit=limit)
     wire = _Wire(delivered=delivered)
-    parsed = _Parsed({}, None, None, None)
-    incoming = _NATSIncoming(transport, group, slot, wire, parsed)  # type: ignore[arg-type]
-    return incoming, wire, group
+    incoming = _NATSIncoming(
+        transport,
+        subscription,  # type: ignore[arg-type]
+        wire,  # type: ignore[arg-type]
+        headers={},
+        content_type=None,
+        key=None,
+    )
+    return incoming, wire
 
 
-async def test_requeue_uses_the_durable_limit_not_the_joining_slot() -> None:
+async def test_requeue_naks_before_the_broker_limit() -> None:
     transport = NATSTransport("nats://localhost:4222")
-    incoming, wire, _group = _incoming(transport, delivered=1, group_limit=1, slot_limit=5)
-    published: list[object] = []
-
-    async def dead_letter(message: _NATSIncoming) -> None:
-        published.append(message)
-
-    transport._dead_letter = dead_letter  # type: ignore[method-assign]
+    incoming, wire = _incoming(transport, delivered=1, limit=5)
 
     await incoming.nack(requeue=True)
 
-    assert published == [incoming]
-    assert wire.actions == ["term"]
-    assert incoming.settled
+    assert wire.actions == ["nak"]
+    assert incoming._settled
 
 
-async def test_final_dead_letter_failure_is_reported_by_drain() -> None:
+async def test_requeue_at_the_broker_limit_terms() -> None:
     transport = NATSTransport("nats://localhost:4222")
-    incoming, wire, group = _incoming(transport, delivered=1, group_limit=1, slot_limit=1)
-    group.outstanding = 1
+    incoming, wire = _incoming(transport, delivered=2, limit=2)
 
-    async def dead_letter(message: _NATSIncoming) -> None:
-        raise RuntimeError("dlq down")
+    await incoming.nack(requeue=True)
 
-    transport._dead_letter = dead_letter  # type: ignore[method-assign]
+    assert wire.actions == ["term"]
+    assert incoming._settled
+
+
+async def test_nack_without_requeue_terms() -> None:
+    transport = NATSTransport("nats://localhost:4222")
+    incoming, wire = _incoming(transport, delivered=1, limit=5)
 
     await incoming.nack(requeue=False)
 
-    assert wire.actions == []
-    assert not incoming.settled
-    assert group.outstanding == 1
-    with pytest.raises(TransportError, match="dead-letter publish failed"):
-        await transport.drain(timeout=0.2)
-
-
-async def test_drain_retries_a_held_dead_letter_without_the_handler() -> None:
-    transport = NATSTransport("nats://localhost:4222")
-    incoming, wire, group = _incoming(transport, delivered=1, group_limit=1, slot_limit=1)
-    group.outstanding = 1
-    calls = 0
-
-    async def dead_letter(message: _NATSIncoming) -> None:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            raise RuntimeError("dlq down")
-
-    transport._dead_letter = dead_letter  # type: ignore[method-assign]
-    await incoming.nack(requeue=False)
-
-    await transport.drain(timeout=0.2)
-
-    assert calls == 2
     assert wire.actions == ["term"]
-    assert incoming.settled
-    assert group.outstanding == 0
-
-
-async def test_closed_slot_reassigns_a_keyed_delivery() -> None:
-    transport = NATSTransport("nats://localhost:4222")
-    group = _Group("orders", "billing", "orders", "orders")
-    group.delivery_limit = 5
-    options = SubscribeOptions(group="billing")
-    closed = _Slot(lambda message: asyncio.sleep(0), options)  # type: ignore[arg-type]
-    closed.active = False
-    ran: list[bytes] = []
-
-    async def handler(message: object) -> None:
-        ran.append(bytes(getattr(message, "body")))
-        await getattr(message, "ack")()
-
-    active = _Slot(handler, options)  # type: ignore[arg-type]
-    group.slots.extend([closed, active])
-    wire = _Wire(key="order-1")
-
-    await transport._dispatch(group, closed, wire)  # type: ignore[arg-type]
-
-    assert ran == [b"body"]
-    assert wire.actions == ["ack"]
+    assert incoming._settled
